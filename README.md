@@ -101,7 +101,7 @@ In the main loop, read a key, process messages, and possibly change font-size:
          \m (zat/apply-font! terminal "Consolas" "Monospaced" 18 true)
          \l (zat/apply-font! terminal "Consolas" "Monospaced" 24 true)
          nil)
-       (recur)))))
+       (recur))))
 ```
 
 ## License
