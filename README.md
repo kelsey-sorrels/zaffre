@@ -31,15 +31,15 @@ Create a terminal:
 
 ```clojure
   ;; render in background thread
-  (let [terminal   (make-terminal {:title "Zaffre demo"
-                                  :columns 80 :rows 24
-                                  :default-fg-color [250 250 250]
-                                  :default-bg-color [5 5 8]
-                                  :font-size 18
-                                  :antialias true
-                                  :icon-paths ["images/icon-16x16.png"
-                                               "images/icon-32x32.png"
-                                               "images/icon-128x128.png"]})
+  (let [terminal   (zaffre.glterminal/make-terminal {:title "Zaffre demo"
+                                                     :columns 80 :rows 24
+                                                     :default-fg-color [250 250 250]
+                                                     :default-bg-color [5 5 8]
+                                                     :font-size 18
+                                                     :antialias true
+                                                     :icon-paths ["images/icon-16x16.png"
+                                                                  "images/icon-32x32.png"
+                                                                  "images/icon-128x128.png"]})
 ```
 
 Store some state, in this case the last key that was pressed:
