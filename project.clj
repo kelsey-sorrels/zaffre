@@ -1,4 +1,4 @@
-(defproject zaffre "0.1.0-SNAPSHOT"
+(defproject zaffre "0.1.0"
   :description "A fast Clojure console library"
   :url "https://github.com/aaron-santos/zaffre"
   :license {:name "The MIT License (MIT)"

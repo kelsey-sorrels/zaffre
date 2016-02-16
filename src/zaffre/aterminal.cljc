@@ -8,7 +8,7 @@
   (set-bg! [this x y bg])
   (get-key-chan [this])
   (apply-font! [this windows-font else-font size antialias])
-  (set-cursor! [this xy])
+  (set-cursor! [this x y])
   (refresh! [this])
   (clear! [this])
   (set-fx-fg! [this x y fg])

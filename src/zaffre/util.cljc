@@ -10,7 +10,7 @@
    (put-string screen (int (Math/ceil x)) (int (Math/ceil y)) string fg bg #{}))
   ([^ATerminal screen x y string fg bg styles]
    {:pre [(clojure.set/superset? #{:underline :bold} styles)]}
-   (let [characters (map-indexed (fn [i c] {:c  (str c)
+   (let [characters (map-indexed (fn [i c] {:c  c
                                             :fg fg
                                             :bg bg
                                             :x  (+ x i)

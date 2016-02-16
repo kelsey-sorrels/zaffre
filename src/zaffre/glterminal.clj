@@ -372,9 +372,9 @@
 
 (defn- init-shaders
   []
-  (let [[ok? vs-id] (load-shader (slurp "resources/shader.vs")  GL20/GL_VERTEX_SHADER)
+  (let [[ok? vs-id] (load-shader (-> "shader.vs" clojure.java.io/resource slurp)  GL20/GL_VERTEX_SHADER)
         _           (assert (== ok? GL11/GL_TRUE)) ;; something is really wrong if our vs is bad
-        [ok? fs-id] (load-shader (slurp "resources/shader.fs") GL20/GL_FRAGMENT_SHADER)]
+        [ok? fs-id] (load-shader (-> "shader.fs" clojure.java.io/resource slurp) GL20/GL_FRAGMENT_SHADER)]
     (if (== ok? GL11/GL_TRUE)
       (let [pgm-id                (GL20/glCreateProgram)
             _ (except-gl-errors "@ let init-shaders glCreateProgram")
@@ -511,7 +511,7 @@
                                          bg        (get c :bg)
                                          fg-color  fg
                                          bg-color  bg
-                                         character (make-terminal-character (first (get c :c)) fg-color bg-color #{})]
+                                         character (make-terminal-character (get c :c) fg-color bg-color #{})]
                                      (assoc! line (get c :x) character))
                                    line))
                                (transient (get cm row))
@@ -552,8 +552,8 @@
           (catch Throwable t
             (log/error "Eror changing font" t))))
       (reset! antialias smooth)))
-  (set-cursor! [_ xy]
-    (reset! cursor-xy xy))
+  (set-cursor! [_ x y]
+    (reset! cursor-xy [x y]))
   (refresh! [this]
     (with-gl-context this
       (let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id]} :buffers
