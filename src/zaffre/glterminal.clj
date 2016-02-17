@@ -39,10 +39,12 @@
   `(let [lockee# ~x]
      (try
        (monitor-enter lockee#)
-       (Display/makeCurrent)
-       ~@body
+       (when @lockee#
+         (Display/makeCurrent)
+         ~@body)
        (finally
-         (Display/releaseContext)
+         (when @lockee#
+           (Display/releaseContext))
          (monitor-exit lockee#)))))
 
 (defmacro defn-memoized [fn-name & body]
@@ -315,7 +317,7 @@
     [LWJGLUtil/PLATFORM_WINDOWS true]
       (System/setProperty "org.lwjgl.librarypath", (.getAbsolutePath (File. "natives/windows/x86_64"))))))
 
-(defn- init-display [title screen-width screen-height icon-paths]
+(defn- init-display [title screen-width screen-height icon-paths gl-lock]
   (let [pixel-format       (PixelFormat.)
         context-attributes (ContextAttribs. 3 0)
         icon-array         (when icon-paths
@@ -329,18 +331,42 @@
                                LWJGLUtil/PLATFORM_WINDOWS (let [icon-array (make-array ByteBuffer 2)]
                                                             (aset icon-array 0 (png-bytes (get icon-paths 0)))
                                                             (aset icon-array 1 (png-bytes (get icon-paths 1)))
-                                                            icon-array)))]
-    ;; init-natives must be called before the Display is created
+                                                            icon-array)))
+        latch              (java.util.concurrent.CountDownLatch. 1)]
+     ;; init-natives must be called before the Display is created
      (init-natives)
-     (Display/setDisplayMode (DisplayMode. screen-width screen-height))
-     (Display/setTitle title)
-     (when icon-array
-       (Display/setIcon icon-array))
-     (Display/create pixel-format context-attributes)
-     (Keyboard/create)
-     (Mouse/create)
-     (log/info "byte-buffer" icon-array)
-     (GL11/glViewport 0 0 screen-width screen-height)))
+     (future
+       (Display/setDisplayMode (DisplayMode. screen-width screen-height))
+       (Display/setTitle title)
+       (when icon-array
+         (Display/setIcon icon-array))
+       (Display/create pixel-format context-attributes)
+       (Keyboard/create)
+       (Mouse/create)
+       (log/info "byte-buffer" icon-array)
+       (GL11/glViewport 0 0 screen-width screen-height)
+       ;; Release the Display so that any thread can aquire it including this thread - the thread that
+       ;; created it.j
+       (Display/releaseContext)
+       ;; Signal to parent that display has been created
+       (.countDown latch)
+       (loop []
+         (if (with-gl-context gl-lock
+               ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
+               ; input on the thread that created the window
+               (Display/processMessages)
+               (Display/isCloseRequested))
+           (do
+             (log/info "Destroying display")
+             (with-gl-context gl-lock
+               (Display/destroy)
+               (reset! gl-lock false))
+             (log/info "Exiting"))
+           (do
+             (Thread/sleep 1)
+             (recur)))))
+     ;; Wait for Display to be created
+     (.await latch)))
 
 (defn- shader-error-str [shader-id]
   (let [infoLogLength (BufferUtils/createIntBuffer 1)
@@ -490,7 +516,8 @@
                            character-map
                            cursor-xy
                            gl
-                           key-chan]
+                           key-chan
+                           gl-lock]
   zat/ATerminal
   (get-size [_]
     [columns rows])
@@ -532,8 +559,8 @@
              (fn [cm] (assoc-in cm [y x :bg-color] bg))))
   (get-key-chan [_]
     key-chan)
-  (apply-font! [this windows-font else-font size smooth]
-    (with-gl-context this
+  (apply-font! [_ windows-font else-font size smooth]
+    (with-gl-context gl-lock
       (reset! normal-font
               (if (= (LWJGLUtil/getPlatform) LWJGLUtil/PLATFORM_WINDOWS)
                 (make-font windows-font Font/PLAIN size)
@@ -554,8 +581,8 @@
       (reset! antialias smooth)))
   (set-cursor! [_ x y]
     (reset! cursor-xy [x y]))
-  (refresh! [this]
-    (with-gl-context this
+  (refresh! [_]
+    (with-gl-context gl-lock
       (let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id]} :buffers
              {:keys [font-texture glyph-texture fg-texture bg-texture]} :textures
              program-id :program-id
@@ -709,17 +736,7 @@
                                       :fx-bg-color nil
                                       :fx-character nil))
                            line))
-                   cm))))
-  (process-messages [this]
-    (with-gl-context this
-    ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
-    ; input on the thread that created the window
-    (Display/processMessages)
-    (when (Display/isCloseRequested)
-      (log/info "Destroying display")
-      (future (Display/destroy))
-      (log/info "Exiting")
-      (System/exit 0)))))
+                   cm)))))
 
 
 (defn make-terminal
@@ -770,6 +787,8 @@
           _                  (reset! normal-font (if is-windows
                                                    (make-font windows-font Font/PLAIN font-size)
                                                    (make-font else-font Font/PLAIN font-size)))
+          ;; false if Display is destoyed
+          gl-lock            (atom true)
           {:keys [screen-width
                   screen-height
                   character-width
@@ -778,9 +797,9 @@
                   font-texture-height
                   font-texture-image]} (get @font-textures (font-key @normal-font))
           _                  (log/info "screen size" screen-width "x" screen-height)
-          _                  (init-display title screen-width screen-height icon-paths)
+          _                  (init-display title screen-width screen-height icon-paths gl-lock)
 
-          font-texture       (texture-id font-texture-image)
+          font-texture       (with-gl-context gl-lock (texture-id font-texture-image))
           _                  (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture font-texture)))
           ;; create texture atlas
           character-map-cleared (vec (repeat rows (vec (repeat columns (make-terminal-character \space default-fg-color default-bg-color #{})))))
@@ -803,28 +822,28 @@
           glyph-image-data (BufferUtils/createByteBuffer (* next-pow-2-columns next-pow-2-rows 4))
           fg-image-data    (BufferUtils/createByteBuffer (* next-pow-2-columns next-pow-2-rows 4))
           bg-image-data    (BufferUtils/createByteBuffer (* next-pow-2-columns next-pow-2-rows 4))
-          glyph-texture    (xy-texture-id next-pow-2-columns next-pow-2-rows glyph-image-data)
-          fg-texture       (texture-id next-pow-2-columns next-pow-2-rows fg-image-data)
-          bg-texture       (texture-id next-pow-2-columns next-pow-2-rows bg-image-data)
+          glyph-texture    (with-gl-context gl-lock (xy-texture-id next-pow-2-columns next-pow-2-rows glyph-image-data))
+          fg-texture       (with-gl-context gl-lock (texture-id next-pow-2-columns next-pow-2-rows fg-image-data))
+          bg-texture       (with-gl-context gl-lock (texture-id next-pow-2-columns next-pow-2-rows bg-image-data))
           ;; init shaders
-          pgm-id ^long (init-shaders)
-          pos-vertex-attribute (GL20/glGetAttribLocation pgm-id "aVertexPosition")
-          texture-coords-vertex-attribute (GL20/glGetAttribLocation pgm-id "aTextureCoord")
+          pgm-id ^long                    (with-gl-context gl-lock (init-shaders))
+          pos-vertex-attribute            (with-gl-context gl-lock (GL20/glGetAttribLocation pgm-id "aVertexPosition"))
+          texture-coords-vertex-attribute (with-gl-context gl-lock (GL20/glGetAttribLocation pgm-id "aTextureCoord"))
 
           ;; We just need one vertex buffer, a texture-mapped quad will suffice for drawing the terminal.
           {:keys [vertices-vbo-id
                   vertices-count
-                  texture-coords-vbo-id]} (init-buffers)
-          u-MVMatrix                (GL20/glGetUniformLocation pgm-id "uMVMatrix")
-          u-PMatrix                 (GL20/glGetUniformLocation pgm-id "uPMatrix")
-          u-font                    (GL20/glGetUniformLocation pgm-id "uFont")
-          u-glyphs                  (GL20/glGetUniformLocation pgm-id "uGlyphs")
-          u-fg                      (GL20/glGetUniformLocation pgm-id "uFg")
-          u-bg                      (GL20/glGetUniformLocation pgm-id "uBg")
-          font-size                 (GL20/glGetUniformLocation pgm-id "fontSize")
-          term-dim                  (GL20/glGetUniformLocation pgm-id "termDimensions")
-          font-tex-dim              (GL20/glGetUniformLocation pgm-id "fontTextureDimensions")
-          glyph-tex-dim             (GL20/glGetUniformLocation pgm-id "glyphTextureDimensions")
+                  texture-coords-vbo-id]} (with-gl-context gl-lock (init-buffers))
+          u-MVMatrix                (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "uMVMatrix"))
+          u-PMatrix                 (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "uPMatrix"))
+          u-font                    (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "uFont"))
+          u-glyphs                  (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "uGlyphs"))
+          u-fg                      (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "uFg"))
+          u-bg                      (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "uBg"))
+          font-size                 (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "fontSize"))
+          term-dim                  (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "termDimensions"))
+          font-tex-dim              (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "fontTextureDimensions"))
+          glyph-tex-dim             (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "glyphTextureDimensions"))
           terminal
           ;; Create and return terminal
           (OpenGlTerminal. columns
@@ -870,7 +889,8 @@
                             :data {:glyph-image-data glyph-image-data
                                    :fg-image-data fg-image-data
                                    :bg-image-data bg-image-data}}
-                           key-chan)]
+                           key-chan
+                           gl-lock)]
       ;; Access to terminal will be multi threaded. Release context so that other threads can access it)))
       (Display/releaseContext)
       ;; Start font file change listener thread
@@ -883,52 +903,25 @@
                                              (make-font filename Font/PLAIN font-size)))
                          :options {:recursive true}}])
       ;; Poll keyboard in background thread and offer input to key-chan
+      ;; If gl-lock is false ie: the window has been closed, put :exit on the key-chan
       (go-loop []
-                (with-gl-context terminal
-                  (try
-                    (loop []
-                      (when (Keyboard/next)
-                        (when (Keyboard/getEventKeyState)
-                          (let [character (Keyboard/getEventCharacter)
-                                key       (Keyboard/getEventKey)]
-                            (convert-key-code character key on-key-fn)))
-                        (recur)))
-                    (catch Exception e
-                      (log/error "Error getting keyboard input" e))))
-                (Thread/sleep 1)
-                (recur))
+         (with-gl-context gl-lock
+           (try
+             (loop []
+               (when (Keyboard/next)
+                 (when (Keyboard/getEventKeyState)
+                   (let [character (Keyboard/getEventCharacter)
+                         key       (Keyboard/getEventKey)]
+                     (convert-key-code character key on-key-fn)))
+                 (recur)))
+             (catch Exception e
+               (log/error "Error getting keyboard input" e))))
+         (if @gl-lock
+           (do
+             (Thread/sleep 1)
+             (recur))
+           (on-key-fn :exit)))
       terminal))
-
-(defn single-thread-main
-  "Show a terminal and echo input."
-  [& _]
-  #_(loop [i 30]
-    (log/info "Starting in " i)
-    (Thread/sleep 1000)
-    (when (pos? i)
-      (recur (dec i))))
-  (let [terminal (make-terminal {:title "glterminal.main" :columns 80 :rows 24})
-        last-key (atom nil)]
-    (go-loop []
-      (reset! last-key (async/<! (zat/get-key-chan terminal)))
-      (log/info "got key" @last-key)
-      (recur))
-
-    (loop []
-      (let [key-in (or @last-key \?)]
-      ;(let [key-in (zat/wait-for-key terminal)]
-        (dosync
-          (zat/clear! terminal)
-          (zutil/put-string terminal 0 0 "Hello world 0 0")
-          (zutil/put-string terminal 0 1 "abcdefghijklmno")
-          (zutil/put-string terminal 60 0 "Hello world 60 0" [128 0 0] [0 0 128])
-          (zutil/put-string terminal 0 19 "Hello world 60 19" [0 128 0] [128 0 0])
-          (zutil/put-string terminal 60 19 "Hello world 0 19" [0 0 128] [0 128 0])
-          (zutil/put-string terminal 5 10 (str key-in))
-          (zat/refresh! terminal))
-        (recur))))
-  (Display/destroy)
-  (System/exit 0))
 
 ;; Draw in main thread
 (defn draw-in-main
@@ -958,17 +951,19 @@
     ;; get key presses in fg thread
     (loop []
       (let [key-in (or @last-key \?)]
-        ;; Message processing must be called in the same thread that creates the terminal.
-        ;; Otherwise Windows will break.
-        (zat/process-messages terminal)
         (dosync
           (zat/clear! terminal)
           (zutil/put-string terminal 0 0 "Hello world")
           (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
             (zutil/put-string terminal 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
           (zutil/put-string terminal 12 0 (str key-in))
-          (zat/refresh! terminal)))
-      (recur))))
+          (zat/refresh! terminal))
+        (if (= key-in :exit)
+          (do
+            (async/close! input-chan)
+            (log/info "Got :exit. Stopping")
+            (System/exit 0))
+          (recur))))))
 
 ;; Handle input in main thread
 (defn handle-input-in-main
@@ -976,17 +971,17 @@
   [& _]
   ;; render in background thread
    (let [terminal   (make-terminal {:title "Zaffre demo"
-                                   :columns 80 :rows 24
-                                   :default-fg-color [250 250 250]
-                                   :default-bg-color [5 5 8]
-                                   :font-size 18
-                                   :antialias true
-                                   :icon-paths ["images/icon-16x16.png"
-                                                "images/icon-32x32.png"
-                                                "images/icon-128x128.png"]})
+                                    :columns 80 :rows 24
+                                    :default-fg-color [250 250 250]
+                                    :default-bg-color [5 5 8]
+                                    :font-size 18
+                                    :antialias true
+                                    :icon-paths ["images/icon-16x16.png"
+                                                 "images/icon-32x32.png"
+                                                 "images/icon-128x128.png"]})
         last-key    (atom nil)
         ;; Every 10ms, set the "Rainbow" text to have a random fg color
-        _           (go-loop []
+        fx-chan     (go-loop []
                       (dosync
                         (doseq [x (range (count "Rainbow"))]
                           (zat/set-fx-fg! terminal (inc x) 1 [128 (rand 255) (rand 255)])))
@@ -1009,24 +1004,22 @@
                         (recur))]
     ;; get key presses in fg thread
     (loop []
-      (let [new-key (first (async/alts!!
-                             [(async/timeout 1)
-                              (zat/get-key-chan terminal)]))]
-        (if new-key
-          (do
-            (reset! last-key new-key)
-            (log/info "got key" (or (str @last-key) "nil")))
-          ;; Message processing must be called in the same thread that creates the terminal.
-          ;; Otherwise Windows will break.
-          (zat/process-messages terminal))
+      (let [new-key (async/<!! (zat/get-key-chan terminal))]
+        (reset! last-key new-key)
+        (log/info "got key" (or (str @last-key) "nil"))
         ;; change font size on s/m/l keypress
-        (case @last-key
+        (case new-key
           \s (zat/apply-font! terminal "Consolas" "Monospaced" 12 true)
           \m (zat/apply-font! terminal "Consolas" "Monospaced" 18 true)
           \l (zat/apply-font! terminal "Consolas" "Monospaced" 24 true)
           nil)
-        (recur)))))
+        (if (= new-key :exit)
+          (do
+            (async/close! fx-chan)
+            (async/close! render-chan)
+            (System/exit 0))
+          (recur))))))
 
 (defn -main [& _]
-  (draw-in-main)
-  #_(handle-input-in-main))
+  #_(draw-in-main)
+  (handle-input-in-main))

@@ -14,8 +14,7 @@
   (set-fx-fg! [this x y fg])
   (set-fx-bg! [this x y bg])
   (set-fx-char! [this x y c])
-  (clear-fx! [this])
-  (process-messages [this]))
+  (clear-fx! [this]))
 
 ;; namespace with only a protocol gets optimized out, causing missing dependencies.
 ;; add a dummp def to prevent this ns from being optimized away.
