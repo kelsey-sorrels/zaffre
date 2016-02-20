@@ -58,7 +58,7 @@ Start a background job that changes text colors:
 
 ```clojure
        ;; Every 10ms, set the "Rainbow" text to have a random fg color
-       _           (go-loop []
+       fx-chan     (go-loop []
                      (dosync
                        (doseq [x (range (count "Rainbow"))]
                          (zat/set-fx-fg! terminal (inc x) 1 [128 (rand 255) (rand 255)])))
@@ -91,23 +91,22 @@ In the main loop, read a key, process messages, and possibly change font-size:
 ```clojure
    ;; get key presses in fg thread
    (loop []
-     (let [new-key (first (async/alts!!
-                            [(async/timeout 1)
-                             (zat/get-key-chan terminal)]))]
-       (if new-key
+     (let [new-key (async/<!! (zat/get-key-chan terminal))]
+       (if (= new-key :exit)
+         (do
+           (async/close! fx-chan)
+           (async/close! render-chan)
+           (System/exit 0))
          (do
            (reset! last-key new-key)
            (log/info "got key" (or (str @last-key) "nil")))
-         ;; Message processing must be called in the same thread that creates the terminal.
-         ;; Otherwise Windows will break.
-         (zat/process-messages terminal))
-       ;; change font size on s/m/l keypress
-       (case @last-key
-         \s (zat/apply-font! terminal "Consolas" "Monospaced" 12 true)
-         \m (zat/apply-font! terminal "Consolas" "Monospaced" 18 true)
-         \l (zat/apply-font! terminal "Consolas" "Monospaced" 24 true)
-         nil)
-       (recur))))
+           ;; change font size on s/m/l keypress
+           (case @last-key
+             \s (zat/apply-font! terminal "Consolas" "Monospaced" 12 true)
+             \m (zat/apply-font! terminal "Consolas" "Monospaced" 18 true)
+             \l (zat/apply-font! terminal "Consolas" "Monospaced" 24 true)
+             nil)
+           (recur))))
 ```
 
 ## `make-terminal` options
