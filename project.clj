@@ -9,7 +9,7 @@
                  [im.bci/pngdecoder "0.13"]
                  [com.taoensso/timbre "4.2.1"]
                  [clojure-watch "0.1.11"]]
-  :lein-release {:deploy-via :clojars
+  :lein-release {:deploy-via :lein-deploy
                  :scm :git
                  :build-uberjar true}
   :main zaffre.glterminal)
