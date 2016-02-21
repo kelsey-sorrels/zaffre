@@ -1018,7 +1018,7 @@
           \s (zat/apply-font! terminal "Consolas" "Monospaced" 12 true)
           \m (zat/apply-font! terminal "Consolas" "Monospaced" 18 true)
           \l (zat/apply-font! terminal "Consolas" "Monospaced" 24 true)
-          \q (dosync (zat/destroy! terminal))
+          \q (zat/destroy! terminal)
           nil)
         (if (= new-key :exit)
           (do
