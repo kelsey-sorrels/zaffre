@@ -359,6 +359,8 @@
                ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
                ; input on the thread that created the window
                (Display/processMessages)
+               ;; Close the display if the close window button has been clicked
+               ;; or the gl-lock has been released programmatically (e.g. by destroy!)
                (or (Display/isCloseRequested) (not @gl-lock)))
            (do
              (log/info "Destroying display")
