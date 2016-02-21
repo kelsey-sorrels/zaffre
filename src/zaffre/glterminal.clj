@@ -359,7 +359,9 @@
                ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
                ; input on the thread that created the window
                (Display/processMessages)
-               (Display/isCloseRequested))
+               ;; Close the display if the close window button has been clicked
+               ;; or the gl-lock has been released programmatically (e.g. by destroy!)
+               (or (Display/isCloseRequested) (not @gl-lock)))
            (do
              (log/info "Destroying display")
              (with-gl-context gl-lock
@@ -740,7 +742,9 @@
                                       :fx-bg-color nil
                                       :fx-character nil))
                            line))
-                   cm)))))
+                   cm))))
+  (destroy! [_]
+    (reset! gl-lock false)))
 
 
 (defn make-terminal
@@ -1014,6 +1018,7 @@
           \s (zat/apply-font! terminal "Consolas" "Monospaced" 12 true)
           \m (zat/apply-font! terminal "Consolas" "Monospaced" 18 true)
           \l (zat/apply-font! terminal "Consolas" "Monospaced" 24 true)
+          \q (zat/destroy! terminal)
           nil)
         (if (= new-key :exit)
           (do
