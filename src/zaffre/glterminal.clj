@@ -365,8 +365,8 @@
            (do
              (log/info "Destroying display")
              (with-gl-context gl-lock
-               (Display/destroy)
-               (reset! gl-lock false))
+               (reset! gl-lock false)
+               (Display/destroy))
              (log/info "Exiting"))
            (do
              (Thread/sleep 1)
