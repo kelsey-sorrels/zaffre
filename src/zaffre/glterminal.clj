@@ -19,7 +19,7 @@
     (java.nio.charset Charset)
     (org.lwjgl.opengl Display ContextAttribs
                       PixelFormat DisplayMode Util
-                      GL11 GL12 GL13 GL15 GL20 GL30)
+                      GL11 GL12 GL13 GL15 GL20 GL30 GL32)
     (org.lwjgl.input Keyboard Mouse)
     (org.lwjgl.util.vector Matrix4f Vector3f)
     (de.matthiasmann.twl.utils PNGDecoder PNGDecoder$Format)
@@ -245,32 +245,6 @@
     (.close channel)
     texture-buffer))
 
-(defn- texture-id
-  ([buffered-image]
-  (let [width (.getWidth buffered-image)
-        height (.getHeight buffered-image)]
-    (texture-id width height (buffered-image-byte-buffer buffered-image))))
-  ([width height]
-   (texture-id width height (BufferUtils/createByteBuffer (* width height 4))))
-  ([^long width ^long height ^ByteBuffer texture-buffer]
-   (let [texture-id (GL11/glGenTextures)]
-     ;;(.order texture-buffer (ByteOrder/nativeOrder))
-     (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
-     (GL11/glPixelStorei GL11/GL_UNPACK_ALIGNMENT 1)
-     (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MIN_FILTER GL11/GL_NEAREST)
-     (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
-     (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGBA width height 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE texture-buffer)
-     texture-id)))
-
-(defn- xy-texture-id [^long width ^long height ^ByteBuffer texture-buffer]
-  (let [texture-id (GL11/glGenTextures)]
-    ;;(.order texture-buffer (ByteOrder/nativeOrder))
-    (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
-    (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MIN_FILTER GL11/GL_NEAREST)
-    (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
-    (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL30/GL_RGBA8UI width height 0 GL30/GL_RGBA_INTEGER GL11/GL_INT texture-buffer)
-    texture-id))
-
 (defn- get-fields [#^Class static-class]
   (. static-class getFields))
 
@@ -292,6 +266,55 @@
     (if (not (zero? error))
       (throw (Exception. error-string)))))
 
+(defn- texture-id
+  ([buffered-image]
+  (let [width (.getWidth buffered-image)
+        height (.getHeight buffered-image)]
+    (texture-id width height (buffered-image-byte-buffer buffered-image))))
+  ([width height]
+   (texture-id width height (BufferUtils/createByteBuffer (* width height 4))))
+  ([^long width ^long height ^ByteBuffer texture-buffer]
+   (let [texture-id (GL11/glGenTextures)]
+     ;;(.order texture-buffer (ByteOrder/nativeOrder))
+     (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
+     (GL11/glPixelStorei GL11/GL_UNPACK_ALIGNMENT 1)
+     (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MIN_FILTER GL11/GL_NEAREST)
+     (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
+     (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGBA width height 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE texture-buffer)
+     (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
+     texture-id)))
+
+(defn- xy-texture-id [^long width ^long height ^ByteBuffer texture-buffer]
+  (let [texture-id (GL11/glGenTextures)]
+    ;;(.order texture-buffer (ByteOrder/nativeOrder))
+    (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
+    (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MIN_FILTER GL11/GL_NEAREST)
+    (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
+    (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL30/GL_RGBA8UI width height 0 GL30/GL_RGBA_INTEGER GL11/GL_INT texture-buffer)
+    (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
+    texture-id))
+
+
+(defn- fbo-texture [width height]
+  (let [id (GL30/glGenFramebuffers)]
+    (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER id)
+    (let [texture-id (GL11/glGenTextures)
+          draw-buffer (BufferUtils/createIntBuffer 1)]
+      (.put draw-buffer GL30/GL_COLOR_ATTACHMENT0)
+      (.flip draw-buffer)
+      ;;(.order texture-buffer (ByteOrder/nativeOrder))
+      (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
+      (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MIN_FILTER GL11/GL_NEAREST)
+      (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
+      (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB width height 0 GL11/GL_RGB GL11/GL_UNSIGNED_BYTE nil)
+      (GL32/glFramebufferTexture GL30/GL_FRAMEBUFFER GL30/GL_COLOR_ATTACHMENT0 texture-id 0)
+      (GL20/glDrawBuffers draw-buffer)
+      (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
+      (except-gl-errors "end of fbo-texture")
+      (when (not= (GL30/glCheckFramebufferStatus GL30/GL_FRAMEBUFFER) GL30/GL_FRAMEBUFFER_COMPLETE)
+        (throw (Exception. "Framebuffer not complete")))
+      [id texture-id])))
+        
 (defn png-bytes [path]
   (let [input-stream (FileInputStream. (str path))
         decoder (PNGDecoder. input-stream)
@@ -323,7 +346,9 @@
 
 (defn- init-display [title screen-width screen-height icon-paths gl-lock destroyed]
   (let [pixel-format       (PixelFormat.)
-        context-attributes (ContextAttribs. 3 0)
+        context-attributes (doto (ContextAttribs. 3 2)
+                             (.withForwardCompatible true)
+                             (.withProfileCore true))
         icon-array         (when icon-paths
                              (condp = (LWJGLUtil/getPlatform)
                                LWJGLUtil/PLATFORM_LINUX (let [icon-array (make-array ByteBuffer 1)]
@@ -466,12 +491,12 @@
 (defn- init-buffers []
   (let [vertices              (float-array [1.0   1.0  0.0,
                                             0.0   1.0  0.0
-                                            0.0,  0.0 0.0
-                                            1.0   0.0 0.0])
+                                            1.0,  0.0 0.0
+                                            0.0   0.0 0.0])
         texture-coords        (float-array [1.0 1.0
                                             0.0 1.0
-                                            0.0 0.0
-                                            1.0 0.0])
+                                            1.0 0.0
+                                            0.0 0.0])
         vertices-buffer       (-> (BufferUtils/createFloatBuffer (count vertices))
                                   (.put vertices)
                                   (.flip))
@@ -480,21 +505,31 @@
                                   (.flip))
         vertices-count        (count vertices)
         texture-coords-count  (count texture-coords)
+        vao-id                (GL30/glGenVertexArrays)
+        _                     (GL30/glBindVertexArray vao-id)
         vertices-vbo-id       (GL15/glGenBuffers)
+        _ (except-gl-errors "glGenBuffers vertices-vbo-id")
         _                     (GL15/glBindBuffer GL15/GL_ARRAY_BUFFER vertices-vbo-id)
+        _ (except-gl-errors "glBindBuffer vertices-vbo-id")
         _                     (GL15/glBufferData GL15/GL_ARRAY_BUFFER ^FloatBuffer vertices-buffer GL15/GL_STATIC_DRAW)
+        _ (except-gl-errors "glBufferData vertices-vbo-id")
         _                     (GL20/glVertexAttribPointer 0 3 GL11/GL_FLOAT false 0 0)
+        _ (except-gl-errors "glVertexAttribPointer vertices-vbo-id")
         _                     (GL15/glBindBuffer GL15/GL_ARRAY_BUFFER 0)
+        _ (except-gl-errors "glBindBuffer0 vertices-vbo-id")
         texture-coords-vbo-id (GL15/glGenBuffers)
+        _ (except-gl-errors "glGenBuffers texture-coords-vbo-id")
         _                     (GL15/glBindBuffer GL15/GL_ARRAY_BUFFER texture-coords-vbo-id)
         _                     (GL15/glBufferData GL15/GL_ARRAY_BUFFER ^FloatBuffer texture-coords-buffer GL15/GL_STATIC_DRAW)
         _                     (GL20/glVertexAttribPointer 1 2 GL11/GL_FLOAT false 0 0)
         _                     (GL15/glBindBuffer GL15/GL_ARRAY_BUFFER 0)]
+    (GL30/glBindVertexArray 0)
     (except-gl-errors "end of init-buffers")
     {:vertices-vbo-id vertices-vbo-id
      :vertices-count vertices-count
      :texture-coords-vbo-id texture-coords-vbo-id
-     :texture-coords-count texture-coords-count}))
+     :texture-coords-count texture-coords-count
+     :vao-id vao-id}))
 
 ;; Normally this would be a record, but until http://dev.clojure.org/jira/browse/CLJ-1224 is fixed
 ;; it is not performant to memoize records because hashCode values are not cached and are recalculated
@@ -590,7 +625,7 @@
     (reset! cursor-xy [x y]))
   (refresh! [_]
     (with-gl-context gl-lock
-      (let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id]} :buffers
+      (let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id vao-id]} :buffers
              {:keys [font-texture glyph-texture fg-texture bg-texture]} :textures
              program-id :program-id
              {:keys [u-MVMatrix u-PMatrix u-font u-glyphs u-fg u-bg font-size term-dim font-tex-dim
@@ -669,6 +704,9 @@
                                                                           [screen-width screen-height 1.0]
                                                                           mv-matrix-buffer))
           (except-gl-errors (str "u-MVMatrix - glUniformMatrix4  " u-MVMatrix))
+          ; Bind VAO
+          (GL30/glBindVertexArray vao-id)
+          (except-gl-errors (str "vao bind - glBindVertexArray " vao-id))
           ; Setup vertex buffer
           ;(GL15/glBindBuffer GL15/GL_ARRAY_BUFFER, vertices-vbo-id)
           (except-gl-errors (str "vbo bind - glBindBuffer " vertices-vbo-id))
@@ -709,10 +747,16 @@
           (except-gl-errors "fg color texture data")
           ; Send updated bg texture to gl
           (GL13/glActiveTexture GL13/GL_TEXTURE3)
+          (except-gl-errors "bg color glActiveTexture")
           (GL11/glBindTexture GL11/GL_TEXTURE_2D bg-texture)
+          (except-gl-errors "bg color glBindTexture")
           (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGBA texture-columns texture-rows 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bg-image-data)
-          (GL11/glDrawArrays GL11/GL_QUADS 0 vertices-count)
-          (except-gl-errors "bg color texture data")
+          (except-gl-errors "bg color glTexImage2D")
+          (GL11/glDrawArrays GL11/GL_TRIANGLE_STRIP 0 vertices-count)
+          (except-gl-errors "bg color glDrawArrays")
+          (GL20/glDisableVertexAttribArray 0)
+          (GL20/glDisableVertexAttribArray 1)
+          (GL30/glBindVertexArray 0)
           (except-gl-errors "end of refresh")
           ;(Display/sync 60)
           (Display/update false)
@@ -831,7 +875,9 @@
           glyph-texture    (with-gl-context gl-lock (xy-texture-id next-pow-2-columns next-pow-2-rows glyph-image-data))
           fg-texture       (with-gl-context gl-lock (texture-id next-pow-2-columns next-pow-2-rows fg-image-data))
           bg-texture       (with-gl-context gl-lock (texture-id next-pow-2-columns next-pow-2-rows bg-image-data))
-          ;; init shaders
+          [fbo-id fbo-texture-id]
+                           (with-gl-context gl-lock (fbo-texture next-pow-2-columns next-pow-2-rows))
+          ; init shaders
           pgm-id ^long                    (with-gl-context gl-lock (init-shaders))
           pos-vertex-attribute            (with-gl-context gl-lock (GL20/glGetAttribLocation pgm-id "aVertexPosition"))
           texture-coords-vertex-attribute (with-gl-context gl-lock (GL20/glGetAttribLocation pgm-id "aTextureCoord"))
@@ -839,7 +885,8 @@
           ;; We just need one vertex buffer, a texture-mapped quad will suffice for drawing the terminal.
           {:keys [vertices-vbo-id
                   vertices-count
-                  texture-coords-vbo-id]} (with-gl-context gl-lock (init-buffers))
+                  texture-coords-vbo-id
+                  vao-id]}          (with-gl-context gl-lock (init-buffers))
           u-MVMatrix                (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "uMVMatrix"))
           u-PMatrix                 (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "uPMatrix"))
           u-font                    (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "uFont"))
@@ -870,7 +917,8 @@
                             :character->col-row (character->col-row (character-idxs character-width (displayable-characters @normal-font)))
                             :buffers {:vertices-vbo-id vertices-vbo-id
                                       :vertices-count vertices-count
-                                      :texture-coords-vbo-id texture-coords-vbo-id}
+                                      :texture-coords-vbo-id texture-coords-vbo-id
+                                      :vao-id vao-id}
                             :textures {:glyph-texture glyph-texture
                                        :font-texture font-texture
                                        :fg-texture fg-texture
