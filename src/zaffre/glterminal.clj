@@ -562,6 +562,7 @@
                            ^int texture-rows
                            font-textures
                            normal-font
+                           fbo-texture
                            antialias
                            character-map-cleared
                            character-map
@@ -627,6 +628,9 @@
         (log/info "screen size" screen-width "x" screen-height)
         (try
           (Display/setDisplayMode (DisplayMode. screen-width screen-height))
+          ;; resize FBO
+          (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
+          (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB screen-width screen-height 0 GL11/GL_RGB GL11/GL_UNSIGNED_BYTE nil)
           (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture (texture-id font-texture-image))))
           (catch Throwable t
             (log/error "Eror changing font" t))))
@@ -862,7 +866,7 @@
                                      char-height                (.getHeight font-metrics)
                                      screen-width               (* columns char-width)
                                      screen-height              (* rows char-height)
-                                     ;; create texture atlas as gl texture
+                                     ;; create texture atlas as Buffered texture
                                      {:keys [font-texture-width
                                              font-texture-height
                                              font-texture-image]} (make-glyph-image char-width char-height new-font)]
@@ -967,6 +971,7 @@
                            next-pow-2-rows
                            font-textures
                            normal-font
+                           fbo-texture
                            antialias
                            character-map-cleared
                            character-map
@@ -1138,9 +1143,9 @@
         (log/info "got key" (or (str @last-key) "nil"))
         ;; change font size on s/m/l keypress
         (case new-key
-          \s (zat/apply-font! terminal "Consolas" "Monospaced" 12 true)
-          \m (zat/apply-font! terminal "Consolas" "Monospaced" 18 true)
-          \l (zat/apply-font! terminal "Consolas" "Monospaced" 24 true)
+          \s (zat/apply-font! terminal "Consolas" "/home/santos/Downloads/cour.ttf" 12 true)
+          \m (zat/apply-font! terminal "Consolas" "/home/santos/Downloads/cour.ttf" 18 true)
+          \l (zat/apply-font! terminal "Consolas" "/home/santos/Downloads/cour.ttf" 24 true)
           \q (zat/destroy! terminal)
           nil)
         (if (= new-key :exit)
