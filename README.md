@@ -124,6 +124,7 @@ In the main loop, read a key, process messages, and possibly change font-size:
   :antialias        ; Render the font with antialiasing?
   :icon-paths       ; Vector of paths to icons. eg: ["icons/16x16.png", "icons/32x32.png", "icons/128x128.png"]
                     ; Three paths for icons of three sizes must be given in this order: 16x16, 32x32, 128x128
+  :fx-shader-name   ; Omit or use "retro.fs"
                     )
 ```
 
