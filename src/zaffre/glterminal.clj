@@ -304,8 +304,8 @@
       (.flip draw-buffer)
       ;;(.order texture-buffer (ByteOrder/nativeOrder))
       (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
-      (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MIN_FILTER GL11/GL_NEAREST)
-      (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
+      (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MIN_FILTER GL11/GL_LINEAR)
+      (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MAG_FILTER GL11/GL_LINEAR)
       (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB width height 0 GL11/GL_RGB GL11/GL_UNSIGNED_BYTE nil)
       (GL32/glFramebufferTexture GL30/GL_FRAMEBUFFER GL30/GL_COLOR_ATTACHMENT0 texture-id 0)
       (GL20/glDrawBuffers draw-buffer)
@@ -447,14 +447,14 @@
     pgm-id))
 
 (defn- init-shaders
-  []
+  [fx-shader-name]
   (let [[ok? vs-id]    (load-shader (-> "shader.vs" clojure.java.io/resource slurp)  GL20/GL_VERTEX_SHADER)
         _              (assert (== ok? GL11/GL_TRUE)) ;; something is really wrong if our vs is bad
         [ok? fs-id]    (load-shader (-> "shader.fs" clojure.java.io/resource slurp) GL20/GL_FRAGMENT_SHADER)
         _              (assert (== ok? GL11/GL_TRUE)) ;; something is really wrong if our fs is bad
         [ok? fx-vs-id] (load-shader (-> "shader.vs" clojure.java.io/resource slurp) GL20/GL_VERTEX_SHADER)
         _              (assert (== ok? GL11/GL_TRUE)) ;; something is really wrong if our fs is bad
-        [ok? fx-fs-id] (load-shader (-> "fx.fs" clojure.java.io/resource slurp) GL20/GL_FRAGMENT_SHADER)
+        [ok? fx-fs-id] (load-shader (-> fx-shader-name clojure.java.io/resource slurp) GL20/GL_FRAGMENT_SHADER)
         _              (assert (== ok? GL11/GL_TRUE)) ;; something is really wrong if our fs is bad
        ]
     (if (== ok? GL11/GL_TRUE)
@@ -835,7 +835,7 @@
 
 
 (defn make-terminal
-  [{:keys [title columns rows default-fg-color default-bg-color on-key-fn windows-font else-font font-size antialias icon-paths]
+  [{:keys [title columns rows default-fg-color default-bg-color on-key-fn windows-font else-font font-size antialias icon-paths fx-shader-name]
     :or {title "Zaffre"
          columns 80
          rows    24
@@ -846,7 +846,8 @@
          else-font        "Monospaced"
          font-size        16
          antialias        true
-         icon-paths       nil}}]
+         icon-paths       nil
+         fx-shader-name   "passthrough.fs"}}]
     (let [is-windows       (>= (.. System (getProperty "os.name" "") (toLowerCase) (indexOf "win")) 0)
           normal-font      (atom nil)
           font-textures    (atom {})
@@ -921,7 +922,7 @@
                            (with-gl-context gl-lock (fbo-texture screen-width screen-height))
           ; init shaders
           [pgm-id
-           fb-pgm-id]      (with-gl-context gl-lock (init-shaders))
+           fb-pgm-id]      (with-gl-context gl-lock (init-shaders fx-shader-name))
           pos-vertex-attribute            (with-gl-context gl-lock (GL20/glGetAttribLocation pgm-id "aVertexPosition"))
           texture-coords-vertex-attribute (with-gl-context gl-lock (GL20/glGetAttribLocation pgm-id "aTextureCoord"))
           fb-pos-vertex-attribute            (with-gl-context gl-lock (GL20/glGetAttribLocation fb-pgm-id "aVertexPosition"))
@@ -1105,7 +1106,8 @@
                                     :antialias true
                                     :icon-paths ["images/icon-16x16.png"
                                                  "images/icon-32x32.png"
-                                                 "images/icon-128x128.png"]})
+                                                 "images/icon-128x128.png"]
+                                    :fx-shader-name "retro.fs"})
         last-key    (atom nil)
         ;; Every 10ms, set the "Rainbow" text to have a random fg color
         fx-chan     (go-loop []
