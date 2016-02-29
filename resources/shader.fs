@@ -1,4 +1,4 @@
-#version 330
+#version 330 core
 
 uniform sampler2D uFont, uFg, uBg;
 uniform usampler2D uGlyphs;
