@@ -3,14 +3,15 @@
 
 (defprotocol ATerminal
   (get-size [this])
-  (put-chars! [this characters])
+  (put-chars! [this layer-id characters])
   (set-fg! [this x y fg])
   (set-bg! [this x y bg])
   (get-key-chan [this])
   (apply-font! [this windows-font else-font size antialias])
   (set-cursor! [this x y])
   (refresh! [this])
-  (clear! [this])
+  (clear! [this]
+          [this layer-id])
   (set-fx-fg! [this x y fg])
   (set-fx-bg! [this x y bg])
   (set-fx-char! [this x y c])

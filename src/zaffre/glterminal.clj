@@ -566,6 +566,7 @@
                            antialias
                            character-map-cleared
                            character-map
+                           layer-order
                            cursor-xy
                            gl
                            key-chan
@@ -575,7 +576,7 @@
   (get-size [_]
     [columns rows])
   ;; characters is a list of {:c \character :x col :y row :fg [r g b] :bg [r g b]}
-  (put-chars! [_ characters]
+  (put-chars! [_ layer-id characters]
     #_(log/info "characters" (str characters))
     (alter character-map
            (fn [cm]
@@ -811,6 +812,8 @@
             (log/error "OpenGL error:" e))))))
   (clear! [_]
     (ref-set character-map character-map-cleared))
+  (clear! [_ layer-id]
+    (ref-set character-map character-map-cleared))
   (set-fx-fg! [_ x y fg]
     {:pre [(vector? fg)
            (= (count fg) 3)]}
@@ -839,7 +842,7 @@
 
 
 (defn make-terminal
-  [{:keys [title columns rows default-fg-color default-bg-color on-key-fn windows-font else-font font-size antialias icon-paths fx-shader-name]
+  [layer-order {:keys [title columns rows default-fg-color default-bg-color on-key-fn windows-font else-font font-size antialias icon-paths fx-shader-name layer-order]
     :or {title "Zaffre"
          columns 80
          rows    24
@@ -975,6 +978,7 @@
                            antialias
                            character-map-cleared
                            character-map
+                           layer-order
                            cursor-xy
                            {:p-matrix-buffer (ortho-matrix-buffer screen-width screen-height)
                             :mv-matrix-buffer (position-matrix-buffer [(- (/ screen-width 2)) (- (/ screen-height 2)) -1.0 0.0]
@@ -1059,7 +1063,8 @@
   "Show a terminal and echo input."
   [& _]
   ;; render in background thread
-  (let [terminal   (make-terminal {:title "Zaffre demo"
+  (let [terminal   (make-terminal [:text]
+                                  {:title "Zaffre demo"
                                    :columns 80 :rows 24
                                    :default-fg-color [250 250 250]
                                    :default-bg-color [5 5 8]
@@ -1084,10 +1089,10 @@
       (let [key-in (or @last-key \?)]
         (dosync
           (zat/clear! terminal)
-          (zutil/put-string terminal 0 0 "Hello world")
+          (zutil/put-string terminal :text 0 0 "Hello world")
           (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
-            (zutil/put-string terminal 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
-          (zutil/put-string terminal 12 0 (str key-in))
+            (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
+          (zutil/put-string terminal :text 12 0 (str key-in))
           (zat/refresh! terminal))
         (if (= key-in :exit)
           (do
@@ -1101,7 +1106,8 @@
   "Show a terminal and echo input."
   [& _]
   ;; render in background thread
-   (let [terminal   (make-terminal {:title "Zaffre demo"
+   (let [terminal   (make-terminal [:text]
+                                   {:title "Zaffre demo"
                                     :columns 80 :rows 24
                                     :default-fg-color [250 250 250]
                                     :default-bg-color [5 5 8]
@@ -1127,11 +1133,11 @@
                       (dosync
                         (let [key-in (or @last-key \?)]
                           (zat/clear! terminal)
-                          (zutil/put-string terminal 0 0 "Hello world")
+                          (zutil/put-string terminal :text 0 0 "Hello world")
                           (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
-                            (zutil/put-string terminal 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
-                          (zutil/put-string terminal 12 0 (str key-in))
-                          (zutil/put-string terminal 1 1 "Rainbow")
+                            (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
+                          (zutil/put-string terminal :text 12 0 (str key-in))
+                          (zutil/put-string terminal :text 1 1 "Rainbow")
                           (zat/refresh! terminal)))
                           ;; ~30fps
                         (Thread/sleep 33)
