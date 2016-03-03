@@ -565,7 +565,7 @@
                            fbo-texture
                            antialias
                            character-map-cleared
-                           character-map
+                           layers-character-map
                            layer-order
                            cursor-xy
                            gl
@@ -577,8 +577,10 @@
     [columns rows])
   ;; characters is a list of {:c \character :x col :y row :fg [r g b] :bg [r g b]}
   (put-chars! [_ layer-id characters]
+    {:pre [(contains? (set layer-order) layer-id)
+           (get layers-character-map layer-id)]}
     #_(log/info "characters" (str characters))
-    (alter character-map
+    (alter (get layers-character-map layer-id)
            (fn [cm]
              (reduce (fn [cm [row row-characters]]
                        (if (< -1 row rows)
@@ -601,15 +603,15 @@
                      cm
                      (group-by :y characters))))
     #_(log/info "character-map" (str @character-map)))
-  (set-fg! [_ x y fg]
+  (set-fg! [_ layer-id x y fg]
     {:pre [(vector? fg)
            (= (count fg) 3)]}
-      (alter character-map
+      (alter (get layers-character-map layer-id)
              (fn [cm] (assoc-in cm [y x :fg-color] fg))))
-  (set-bg! [_ x y bg]
+  (set-bg! [_ layer-id x y bg]
     {:pre [(vector? bg)
            (= (count bg) 3)]}
-      (alter character-map
+      (alter (get layers-character-map)
              (fn [cm] (assoc-in cm [y x :bg-color] bg))))
   (get-key-chan [_]
     key-chan)
@@ -660,7 +662,8 @@
                     character-height
                     font-texture-width
                     font-texture-height
-                    font-texture]} (get @font-textures (font-key @normal-font))]
+                    font-texture]} (get @font-textures (font-key @normal-font))
+            base-layer-id (first layer-order)]
         (assert (not (nil? font-texture-width)) "font-texture-width nil")
         (assert (not (nil? font-texture-height)) "font-texture-height")
         (assert (not (nil? font-texture)) "font-texture nil")
@@ -668,39 +671,51 @@
         (.clear glyph-image-data)
         (.clear fg-image-data)
         (.clear bg-image-data)
-        (doseq [[row line] (map-indexed vector (reverse @character-map))
-                [col c]    (map-indexed vector line)]
-          ;;(log/info "row" row "col" col "c" c)
-          (let [chr        (or (get c :fx-character) (get c :character))
-                highlight  (= @cursor-xy [col (- rows row 1)])
-                [fg-r fg-g fg-b] (if highlight
-                                   (or (get c :fx-bg-color)  (get c :bg-color))
-                                   (or (get c :fx-fg-color)  (get c :fg-color)))
-                [bg-r bg-g bg-b] (if highlight
-                                   (or (get c :fx-fg-color)  (get c :fg-color))
-                                   (or (get c :fx-bg-color)  (get c :bg-color)))
-                ;s         (str (get c :character))
-                style     (get c :style)
-                i         (* 4 (+ (* texture-columns row) col))
-                [x y]     (get character->col-row [chr (contains? style :underline)])]
-            ;(log/info "Drawing at col row" col row "character from atlas col row" x y c "(index=" i ")")
-            (when (zero? col)
-              (.position glyph-image-data i)
-              (.position fg-image-data i)
-              (.position bg-image-data i))
-            (assert (or (not (nil? x)) (not (nil? y))) (format "X/Y nil - glyph not found for character %s %s" (or (str chr) "nil") (or (format "%x" (int chr)) "nil")))
-            (.put glyph-image-data (unchecked-byte x))
-            (.put glyph-image-data (unchecked-byte y))
-            (.put glyph-image-data (unchecked-byte 0))
-            (.put glyph-image-data (unchecked-byte 0))
-            (.put fg-image-data    (unchecked-byte fg-r))
-            (.put fg-image-data    (unchecked-byte fg-g))
-            (.put fg-image-data    (unchecked-byte fg-b))
-            (.put fg-image-data    (unchecked-byte 0))
-            (.put bg-image-data    (unchecked-byte bg-r))
-            (.put bg-image-data    (unchecked-byte bg-g))
-            (.put bg-image-data    (unchecked-byte bg-b))
-            (.put bg-image-data    (unchecked-byte 0))))
+        (doseq [[layer-id character-map] layers-character-map]
+          (doseq [[row line] (map-indexed vector (reverse @character-map))
+                  [col c]    (map-indexed vector line)]
+            ;;(log/info "row" row "col" col "c" c)
+            (let [chr        (or (get c :fx-character) (get c :character))
+                  highlight  (= @cursor-xy [col (- rows row 1)])
+                  [fg-r fg-g fg-b] (if highlight
+                                     (or (get c :fx-bg-color)  (get c :bg-color))
+                                     (or (get c :fx-fg-color)  (get c :fg-color)))
+                  [bg-r bg-g bg-b] (if highlight
+                                     (or (get c :fx-fg-color)  (get c :fg-color))
+                                     (or (get c :fx-bg-color)  (get c :bg-color)))
+                  ;s         (str (get c :character))
+                  style     (get c :style)
+                  i         (* 4 (+ (* texture-columns row) col))
+                  [x y]     (get character->col-row [chr (contains? style :underline)])]
+              ;(log/info "Drawing at col row" col row "character from atlas col row" x y c "(index=" i ")")
+              (when (zero? col)
+                (.position glyph-image-data i)
+                (.position fg-image-data i)
+                (.position bg-image-data i))
+              (assert (or (not (nil? x)) (not (nil? y))) (format "X/Y nil - glyph not found for character %s %s" (or (str chr) "nil") (or (format "%x" (int chr)) "nil")))
+              (if (or (= layer-id base-layer-id)
+                      (not= chr \space))
+                (do
+                  (.put glyph-image-data (unchecked-byte x))
+                  (.put glyph-image-data (unchecked-byte y))
+                  (.put glyph-image-data (unchecked-byte 0))
+                  (.put glyph-image-data (unchecked-byte 0))
+                  (.put fg-image-data    (unchecked-byte fg-r))
+                  (.put fg-image-data    (unchecked-byte fg-g))
+                  (.put fg-image-data    (unchecked-byte fg-b))
+                  (.put fg-image-data    (unchecked-byte 0))
+                  (.put bg-image-data    (unchecked-byte bg-r))
+                  (.put bg-image-data    (unchecked-byte bg-g))
+                  (.put bg-image-data    (unchecked-byte bg-b))
+                  (.put bg-image-data    (unchecked-byte 0)))
+                ;; not base layer and space ie empty, skip forward
+                (do
+                  (.position glyph-image-data (+ 4 (.position glyph-image-data)))
+                  (.position fg-image-data (+ 4 (.position fg-image-data)))
+                  (.position bg-image-data (+ 4 (.position bg-image-data)))))))
+          (.rewind glyph-image-data)
+          (.rewind fg-image-data)
+          (.rewind bg-image-data))
         (.position glyph-image-data (.limit glyph-image-data))
         (.position fg-image-data (.limit fg-image-data))
         (.position bg-image-data (.limit bg-image-data))
@@ -811,24 +826,30 @@
           (catch Error e
             (log/error "OpenGL error:" e))))))
   (clear! [_]
-    (ref-set character-map character-map-cleared))
+    (doseq [[_ character-map] layers-character-map]
+      (ref-set character-map character-map-cleared)))
   (clear! [_ layer-id]
-    (ref-set character-map character-map-cleared))
-  (set-fx-fg! [_ x y fg]
+    {:pre [(contains? (set layer-order) layer-id)]}
+    (ref-set (get layers-character-map layer-id) character-map-cleared))
+  (set-fx-fg! [_ layer-id x y fg]
     {:pre [(vector? fg)
-           (= (count fg) 3)]}
-      (alter character-map
+           (= (count fg) 3)
+           (contains? (set layer-order) layer-id)]}
+      (alter (get layers-character-map layer-id)
              (fn [cm] (assoc-in cm [y x :fx-fg-color] fg))))
-  (set-fx-bg! [_ x y bg]
+  (set-fx-bg! [_ layer-id x y bg]
     {:pre [(vector? bg)
-           (= (count bg) 3)]}
-      (alter character-map
+           (= (count bg) 3)
+           (contains? (set layer-order) layer-id)]}
+      (alter (get layers-character-map layer-id)
              (fn [cm] (assoc-in cm [y x :fx-bg-color] bg))))
-  (set-fx-char! [_ x y c]
-    (alter character-map
+  (set-fx-char! [_ layer-id x y c]
+    {:pre [(contains? (set layer-order) layer-id)]}
+    (alter (get layers-character-map layer-id)
            (fn [cm] (assoc-in cm [y x :fx-character] c))))
-  (clear-fx! [_]
-    (alter character-map
+  (clear-fx! [_ layer-id]
+    {:pre [(contains? (set layer-order) layer-id)]}
+    (alter (get layers-character-map layer-id)
            (fn [cm]
              (mapv (fn [line]
                      (mapv (fn [c]
@@ -837,12 +858,23 @@
                                       :fx-character nil))
                            line))
                    cm))))
+  (clear-fx! [_]
+    (doseq [[_ character-map] layers-character-map]
+      (alter character-map
+             (fn [cm]
+               (mapv (fn [line]
+                       (mapv (fn [c]
+                               (assoc c :fx-fg-color nil
+                                        :fx-bg-color nil
+                                        :fx-character nil))
+                             line))
+                     cm)))))
   (destroy! [_]
     (reset! destroyed true)))
 
 
 (defn make-terminal
-  [layer-order {:keys [title columns rows default-fg-color default-bg-color on-key-fn windows-font else-font font-size antialias icon-paths fx-shader-name layer-order]
+  [layer-order {:keys [title columns rows default-fg-color default-bg-color on-key-fn windows-font else-font font-size antialias icon-paths fx-shader-name]
     :or {title "Zaffre"
          columns 80
          rows    24
@@ -903,7 +935,8 @@
           _                  (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture font-texture)))
           ;; create texture atlas
           character-map-cleared (vec (repeat rows (vec (repeat columns (make-terminal-character \space default-fg-color default-bg-color #{})))))
-          character-map         (ref character-map-cleared)
+          _                     (log/info "layer-order" layer-order)
+          layers-character-map  (zipmap layer-order (repeatedly #(ref character-map-cleared)))
           cursor-xy             (atom nil)
 
           key-chan         (async/chan)
@@ -977,7 +1010,7 @@
                            fbo-texture
                            antialias
                            character-map-cleared
-                           character-map
+                           layers-character-map
                            layer-order
                            cursor-xy
                            {:p-matrix-buffer (ortho-matrix-buffer screen-width screen-height)
@@ -1124,7 +1157,7 @@
         fx-chan     (go-loop []
                       (dosync
                         (doseq [x (range (count "Rainbow"))]
-                          (zat/set-fx-fg! terminal (inc x) 1 [128 (rand 255) (rand 255)])))
+                          (zat/set-fx-fg! terminal :text (inc x) 1 [128 (rand 255) (rand 255)])))
                         (zat/refresh! terminal)
                       (Thread/sleep 10)
                       (recur))
