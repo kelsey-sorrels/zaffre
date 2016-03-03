@@ -1139,7 +1139,7 @@
   "Show a terminal and echo input."
   [& _]
   ;; render in background thread
-   (let [terminal   (make-terminal [:text]
+   (let [terminal   (make-terminal [:text :rainbow]
                                    {:title "Zaffre demo"
                                     :columns 80 :rows 24
                                     :default-fg-color [250 250 250]
@@ -1157,7 +1157,7 @@
         fx-chan     (go-loop []
                       (dosync
                         (doseq [x (range (count "Rainbow"))]
-                          (zat/set-fx-fg! terminal :text (inc x) 1 [128 (rand 255) (rand 255)])))
+                          (zat/set-fx-fg! terminal :rainbow (inc x) 1 [128 (rand 255) (rand 255)])))
                         (zat/refresh! terminal)
                       (Thread/sleep 10)
                       (recur))
@@ -1170,7 +1170,7 @@
                           (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
                             (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
                           (zutil/put-string terminal :text 12 0 (str key-in))
-                          (zutil/put-string terminal :text 1 1 "Rainbow")
+                          (zutil/put-string terminal :rainbow 1 1 "Rainbow")
                           (zat/refresh! terminal)))
                           ;; ~30fps
                         (Thread/sleep 33)
