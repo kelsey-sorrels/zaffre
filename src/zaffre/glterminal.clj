@@ -391,6 +391,15 @@
              (log/info "Destroying display")
              (with-gl-context gl-lock
                (reset! gl-lock false)
+               ;; TODO: Clean up textures and programs
+               #_(let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id vao-id fbo-id]} :buffers
+                      {:keys [font-texture glyph-texture fg-texture bg-texture fbo-texture]} :textures
+                      program-id :program-id
+                      fb-program-id :fb-program-id} gl]
+                 (doseq [id [program-id fb-program-id]]
+                   (GL20/glDeleteProgram id))
+                 (doseq [id [font-texture glyph-texture fg-texture bg-texture fbo-texture]]
+                   (GL11/glDeleteTexture id)))
                (Display/destroy))
              (log/info "Exiting"))
            (do
@@ -446,6 +455,10 @@
       (GL20/glBindAttribLocation pgm-id i attribute-name))
     pgm-id))
 
+(defn fx-shader-content [fx-shader-name]
+  (slurp (or (clojure.java.io/resource fx-shader-name)
+             fx-shader-name)))
+
 (defn- init-shaders
   [fx-shader-name]
   (let [[ok? vs-id]    (load-shader (-> "shader.vs" clojure.java.io/resource slurp)  GL20/GL_VERTEX_SHADER)
@@ -454,7 +467,7 @@
         _              (assert (== ok? GL11/GL_TRUE)) ;; something is really wrong if our fs is bad
         [ok? fx-vs-id] (load-shader (-> "shader.vs" clojure.java.io/resource slurp) GL20/GL_VERTEX_SHADER)
         _              (assert (== ok? GL11/GL_TRUE)) ;; something is really wrong if our fs is bad
-        [ok? fx-fs-id] (load-shader (-> fx-shader-name clojure.java.io/resource slurp) GL20/GL_FRAGMENT_SHADER)
+        [ok? fx-fs-id] (load-shader (fx-shader-content fx-shader-name) GL20/GL_FRAGMENT_SHADER)
         _              (assert (== ok? GL11/GL_TRUE)) ;; something is really wrong if our fs is bad
        ]
     (if (== ok? GL11/GL_TRUE)
@@ -568,6 +581,7 @@
                            layers-character-map
                            layer-order
                            cursor-xy
+                           fx-uniforms
                            gl
                            key-chan
                            gl-lock
@@ -613,6 +627,8 @@
            (= (count bg) 3)]}
       (alter (get layers-character-map)
              (fn [cm] (assoc-in cm [y x :bg-color] bg))))
+  (assoc-fx-uniform! [_ k v]
+    (-> fx-uniforms (get k) first (reset! v)))
   (get-key-chan [_]
     key-chan)
   (apply-font! [_ windows-font else-font size smooth]
@@ -791,6 +807,7 @@
           (except-gl-errors "bg color glDrawArrays")
           (GL20/glDisableVertexAttribArray 0)
           (GL20/glDisableVertexAttribArray 1)
+          (GL20/glUseProgram 0)
 
 
           ;; Draw fbo to screen
@@ -814,10 +831,17 @@
           (GL13/glActiveTexture GL13/GL_TEXTURE0)
           (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
           (GL20/glUniform1i u-fb 0)
+          ;;; Set fx uniforms
+          ;(log/info "fx-uniforms" (vec fx-uniforms))
+          (doseq [[uniform-name [value-atom location]] fx-uniforms]
+            (when (not (neg? location))
+              (GL20/glUniform1f location (-> value-atom deref float))))
+          ;; Draw fx shaded terminal
           (GL11/glDrawArrays GL11/GL_TRIANGLE_STRIP 0 vertices-count)
           ;;;; clean up
           (GL20/glDisableVertexAttribArray 0)
           (GL20/glDisableVertexAttribArray 1)
+          (GL20/glUseProgram 0)
           (GL30/glBindVertexArray 0)
           (except-gl-errors "end of refresh")
           ;(Display/sync 60)
@@ -874,7 +898,7 @@
 
 
 (defn make-terminal
-  [layer-order {:keys [title columns rows default-fg-color default-bg-color on-key-fn windows-font else-font font-size antialias icon-paths fx-shader-name]
+  [layer-order {:keys [title columns rows default-fg-color default-bg-color on-key-fn windows-font else-font font-size antialias icon-paths fx-shader]
     :or {title "Zaffre"
          columns 80
          rows    24
@@ -886,7 +910,7 @@
          font-size        16
          antialias        true
          icon-paths       nil
-         fx-shader-name   "passthrough.fs"}}]
+         fx-shader        {:name "passthrough.fs"}}}]
     (let [is-windows       (>= (.. System (getProperty "os.name" "") (toLowerCase) (indexOf "win")) 0)
           normal-font      (atom nil)
           font-textures    (atom {})
@@ -962,7 +986,7 @@
                            (with-gl-context gl-lock (fbo-texture screen-width screen-height))
           ; init shaders
           [pgm-id
-           fb-pgm-id]      (with-gl-context gl-lock (init-shaders fx-shader-name))
+           fb-pgm-id]      (with-gl-context gl-lock (init-shaders (get fx-shader :name)))
           pos-vertex-attribute            (with-gl-context gl-lock (GL20/glGetAttribLocation pgm-id "aVertexPosition"))
           texture-coords-vertex-attribute (with-gl-context gl-lock (GL20/glGetAttribLocation pgm-id "aTextureCoord"))
           fb-pos-vertex-attribute            (with-gl-context gl-lock (GL20/glGetAttribLocation fb-pgm-id "aVertexPosition"))
@@ -993,12 +1017,28 @@
                                                           "fontSize"
                                                           "termDimensions"
                                                           "fontTextureDimensions"]))
-           [u-fb
-            u-fb-MVMatrix
-            u-fb-PMatrix] (with-gl-context gl-lock (mapv #(GL20/glGetUniformLocation fb-pgm-id %)
-                                                         ["uFb"
-                                                          "uMVMatrix"
-                                                          "uPMatrix"]))
+          [u-fb
+           u-fb-MVMatrix
+           u-fb-PMatrix] (with-gl-context gl-lock (mapv #(GL20/glGetUniformLocation fb-pgm-id %)
+                                                        ["uFb"
+                                                         "uMVMatrix"
+                                                         "uPMatrix"]))
+          ;; map from uniform name (string) to [value atom, uniform location]
+          fx-uniforms    (reduce (fn [uniforms [uniform-name value]]
+                                   (assoc uniforms
+                                          uniform-name
+                                          [(atom value)
+                                           (with-gl-context gl-lock
+                                             (log/info "getting location of uniform" uniform-name)
+                                             (let [location (GL20/glGetUniformLocation fb-pgm-id uniform-name)]
+                                               #_(assert (not (neg? jocation)) (str "Could not find location for uniform " uniform-name location))
+                                               (log/info "got location of uniform" uniform-name location)
+                                               location))]))
+                                 {}
+                                 (get fx-shader :uniforms))
+          _ (with-gl-context gl-lock
+              (doseq [idx (range (GL20/glGetProgrami fb-pgm-id GL20/GL_ACTIVE_UNIFORMS))]
+                (log/info "Found uniform" (GL20/glGetActiveUniform fb-pgm-id idx 100))))
           terminal
           ;; Create and return terminal
           (OpenGlTerminal. columns
@@ -1013,6 +1053,7 @@
                            layers-character-map
                            layer-order
                            cursor-xy
+                           fx-uniforms
                            {:p-matrix-buffer (ortho-matrix-buffer screen-width screen-height)
                             :mv-matrix-buffer (position-matrix-buffer [(- (/ screen-width 2)) (- (/ screen-height 2)) -1.0 0.0]
                                                                       [screen-width screen-height 1.0])
@@ -1139,7 +1180,13 @@
   "Show a terminal and echo input."
   [& _]
   ;; render in background thread
-   (let [terminal   (make-terminal [:text :rainbow]
+   (let [colorShift    (atom 0.0)
+         brightness    (atom 0.68)
+         contrast      (atom 2.46)
+         scanlineDepth (atom 0.6)
+         time          (atom 0.0)
+         noise         (atom 0.0)
+         terminal   (make-terminal [:text :rainbow]
                                    {:title "Zaffre demo"
                                     :columns 80 :rows 24
                                     :default-fg-color [250 250 250]
@@ -1151,13 +1198,20 @@
                                     :icon-paths ["images/icon-16x16.png"
                                                  "images/icon-32x32.png"
                                                  "images/icon-128x128.png"]
-                                    :fx-shader-name "retro.fs"})
+                                    :fx-shader {:name     "retro.fs"
+                                                :uniforms [["time" @time]
+                                                           ["noise" @noise]
+                                                           ["colorShift" @colorShift]
+                                                           ["scanlineDepth" @scanlineDepth]
+                                                           ["brightness" @brightness]
+                                                           ["contrast" @contrast]]}})
         last-key    (atom nil)
         ;; Every 10ms, set the "Rainbow" text to have a random fg color
         fx-chan     (go-loop []
                       (dosync
                         (doseq [x (range (count "Rainbow"))]
                           (zat/set-fx-fg! terminal :rainbow (inc x) 1 [128 (rand 255) (rand 255)])))
+                        (zat/assoc-fx-uniform! terminal "time" (swap! time inc))
                         (zat/refresh! terminal)
                       (Thread/sleep 10)
                       (recur))
@@ -1185,6 +1239,24 @@
           \s (zat/apply-font! terminal "Consolas" "/home/santos/Downloads/cour.ttf" 12 true)
           \m (zat/apply-font! terminal "Consolas" "/home/santos/Downloads/cour.ttf" 18 true)
           \l (zat/apply-font! terminal "Consolas" "/home/santos/Downloads/cour.ttf" 24 true)
+          \0 (zat/assoc-fx-uniform! terminal "brightness" (swap! brightness #(- % 0.02)))
+          \1 (zat/assoc-fx-uniform! terminal "brightness" (swap! brightness #(+ % 0.02)))
+          \2 (do (swap! contrast #(- % 0.02))
+                 (log/info "contrast" @contrast)
+                 (zat/assoc-fx-uniform! terminal "contrast" @contrast))
+          \3 (zat/assoc-fx-uniform! terminal "contrast" (swap! contrast #(+ % 0.02)))
+          \4 (zat/assoc-fx-uniform! terminal "scanlineDepth" (swap! scanlineDepth #(- % 0.02)))
+          \5 (zat/assoc-fx-uniform! terminal "scanlineDepth" (swap! scanlineDepth #(+ % 0.02)))
+          \6 (zat/assoc-fx-uniform! terminal "colorShift" (swap! colorShift #(- % 0.0001)))
+          \7 (zat/assoc-fx-uniform! terminal "colorShift" (swap! colorShift #(+ % 0.0001)))
+          \8 (zat/assoc-fx-uniform! terminal "noise" (swap! noise #(- % 0.001)))
+          \9 (zat/assoc-fx-uniform! terminal "noise" (swap! noise #(+ % 0.001)))
+          \p (log/info "brightness" @brightness
+                       "contrast" @contrast
+                       "scanlineDepth" @scanlineDepth
+                       "colorShift" @colorShift
+                       "noise" @noise
+                       "time" @time)
           \q (zat/destroy! terminal)
           nil)
         (if (= new-key :exit)
