@@ -1185,7 +1185,7 @@
          contrast      (atom 2.46)
          scanlineDepth (atom 0.94)
          time          (atom 0.0)
-         noise         (atom 0.002)
+         noise         (atom 0.0016)
          terminal   (make-terminal [:text :rainbow]
                                    {:title "Zaffre demo"
                                     :columns 80 :rows 24
