@@ -691,7 +691,7 @@
           (doseq [[row line] (map-indexed vector (reverse @character-map))
                   [col c]    (map-indexed vector line)]
             ;;(log/info "row" row "col" col "c" c)
-            (let [chr        (or (get c :fx-character) (get c :character))
+            (let [chr        (char (or (get c :fx-character) (get c :character)))
                   chr        (if (and (= layer-id base-layer-id)
                                       (= chr (char 0)))
                                  \space
@@ -989,8 +989,8 @@
           [fbo-id fbo-texture]
                            (with-gl-context gl-lock (fbo-texture screen-width screen-height))
           ; init shaders
-          [pgm-id
-           fb-pgm-id]      (with-gl-context gl-lock (init-shaders (get fx-shader :name)))
+          [^int pgm-id
+           ^int fb-pgm-id]      (with-gl-context gl-lock (init-shaders (get fx-shader :name)))
           pos-vertex-attribute            (with-gl-context gl-lock (GL20/glGetAttribLocation pgm-id "aVertexPosition"))
           texture-coords-vertex-attribute (with-gl-context gl-lock (GL20/glGetAttribLocation pgm-id "aTextureCoord"))
           fb-pos-vertex-attribute            (with-gl-context gl-lock (GL20/glGetAttribLocation fb-pgm-id "aVertexPosition"))
@@ -1010,7 +1010,7 @@
            u-bg
            font-size
            term-dim
-           font-tex-dim]  (with-gl-context gl-lock (mapv #(GL20/glGetUniformLocation pgm-id %)
+           font-tex-dim]  (with-gl-context gl-lock (mapv #(GL20/glGetUniformLocation pgm-id (str %))
                                                          ["glyphTextureDimensions"
                                                           "uMVMatrix"
                                                           "uPMatrix"
@@ -1023,7 +1023,7 @@
                                                           "fontTextureDimensions"]))
           [u-fb
            u-fb-MVMatrix
-           u-fb-PMatrix] (with-gl-context gl-lock (mapv #(GL20/glGetUniformLocation fb-pgm-id %)
+           u-fb-PMatrix] (with-gl-context gl-lock (mapv #(GL20/glGetUniformLocation fb-pgm-id (str %))
                                                         ["uFb"
                                                          "uMVMatrix"
                                                          "uPMatrix"]))
@@ -1034,7 +1034,7 @@
                                           [(atom value)
                                            (with-gl-context gl-lock
                                              (log/info "getting location of uniform" uniform-name)
-                                             (let [location (GL20/glGetUniformLocation fb-pgm-id uniform-name)]
+                                             (let [location (GL20/glGetUniformLocation fb-pgm-id (str uniform-name))]
                                                #_(assert (not (neg? jocation)) (str "Could not find location for uniform " uniform-name location))
                                                (log/info "got location of uniform" uniform-name location)
                                                location))]))
