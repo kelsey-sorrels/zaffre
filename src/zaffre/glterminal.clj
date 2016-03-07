@@ -692,6 +692,10 @@
                   [col c]    (map-indexed vector line)]
             ;;(log/info "row" row "col" col "c" c)
             (let [chr        (or (get c :fx-character) (get c :character))
+                  chr        (if (and (= layer-id base-layer-id)
+                                      (= chr (char 0)))
+                                 \space
+                                 chr)
                   highlight  (= @cursor-xy [col (- rows row 1)])
                   [fg-r fg-g fg-b] (if highlight
                                      (or (get c :fx-bg-color)  (get c :bg-color))
@@ -708,10 +712,10 @@
                 (.position glyph-image-data i)
                 (.position fg-image-data i)
                 (.position bg-image-data i))
-              (assert (or (not (nil? x)) (not (nil? y))) (format "X/Y nil - glyph not found for character %s %s" (or (str chr) "nil") (or (format "%x" (int chr)) "nil")))
               (if (or (= layer-id base-layer-id)
-                      (not= chr \space))
+                      (not= chr (char 0)))
                 (do
+                  (assert (or (not (nil? x)) (not (nil? y))) (format "X/Y nil - glyph not found for character %s %s" (or (str chr) "nil") (or (format "%x" (int chr)) "nil")))
                   (.put glyph-image-data (unchecked-byte x))
                   (.put glyph-image-data (unchecked-byte y))
                   (.put glyph-image-data (unchecked-byte 0))
@@ -958,7 +962,7 @@
           font-texture       (with-gl-context gl-lock (texture-id font-texture-image))
           _                  (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture font-texture)))
           ;; create texture atlas
-          character-map-cleared (vec (repeat rows (vec (repeat columns (make-terminal-character \space default-fg-color default-bg-color #{})))))
+          character-map-cleared (vec (repeat rows (vec (repeat columns (make-terminal-character (char 0) default-fg-color default-bg-color #{})))))
           _                     (log/info "layer-order" layer-order)
           layers-character-map  (zipmap layer-order (repeatedly #(ref character-map-cleared)))
           cursor-xy             (atom nil)
