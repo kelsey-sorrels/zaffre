@@ -403,7 +403,7 @@
                (Display/destroy))
              (log/info "Exiting"))
            (do
-             (Thread/sleep 1)
+             (Thread/sleep 5)
              (recur)))))
      ;; Wait for Display to be created
      (.await latch)))
@@ -451,7 +451,7 @@
                                 (println (GL20/glGetProgramInfoLog pgm-id 10000)))
         _ (except-gl-errors "@ let before GetUniformLocation")
         ]
-    (doseq [[i attribute-name] (map-indexed vector attribute-names)]
+    (doseq [[^int i ^String attribute-name] (map-indexed vector attribute-names)]
       (GL20/glBindAttribLocation pgm-id i attribute-name))
     pgm-id))
 
@@ -479,7 +479,7 @@
 (defn ortho-matrix-buffer
   ([viewport-width viewport-height]
     (ortho-matrix-buffer viewport-width viewport-height (BufferUtils/createFloatBuffer 16)))
-  ([viewport-width viewport-height matrix-buffer]
+  ([viewport-width viewport-height ^FloatBuffer matrix-buffer]
     (let [ortho-matrix (doto (Matrix4f.)
                          (.setIdentity))
           matrix-buffer matrix-buffer
@@ -502,7 +502,7 @@
 (defn position-matrix-buffer
   ([v s]
    (position-matrix-buffer v s (BufferUtils/createFloatBuffer 16)))
-  ([v s matrix-buffer]
+  ([v s ^FloatBuffer matrix-buffer]
     (let [matrix (doto (Matrix4f.)
                          (.setIdentity))]
       (.translate matrix (Vector3f. (get v 0) (get v 1) (get v 2)))
@@ -643,13 +643,15 @@
                     character-height
                     font-texture-width
                     font-texture-height
-                    font-texture-image]} (get @font-textures (font-key @normal-font))]
+                    font-texture-image]} (get @font-textures (font-key @normal-font))
+            ;; type nil as ByteBuffer to avoid reflection on glTexImage2D
+            ^ByteBuffer bbnil nil]
         (log/info "screen size" screen-width "x" screen-height)
         (try
           (Display/setDisplayMode (DisplayMode. screen-width screen-height))
           ;; resize FBO
           (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
-          (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB screen-width screen-height 0 GL11/GL_RGB GL11/GL_UNSIGNED_BYTE nil)
+          (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB (int screen-width) (int screen-height) 0 GL11/GL_RGB GL11/GL_UNSIGNED_BYTE bbnil)
           (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture (texture-id font-texture-image))))
           (catch Throwable t
             (log/error "Eror changing font" t))))
@@ -1131,7 +1133,7 @@
                (log/error "Error getting keyboard input" e))))
          (if @gl-lock
            (do
-             (Thread/sleep 1)
+             (Thread/sleep 5)
              (recur))
            (on-key-fn :exit)))
       terminal))
