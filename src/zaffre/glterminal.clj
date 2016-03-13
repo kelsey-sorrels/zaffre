@@ -13,6 +13,7 @@
               Font
               FontMetrics
               Graphics
+              Graphics2D
               RenderingHints)
     (org.lwjgl BufferUtils LWJGLUtil)
     (java.nio FloatBuffer ByteBuffer)
@@ -92,7 +93,7 @@
     (log/info "key" key)
     (on-key-fn key)))
 
-(defn font-key [font] [(.getName font) (.getSize font)])
+(defn font-key [^Font font] [(.getName font) (.getSize font)])
 
 (defn make-font
   [name-or-path style size]
@@ -120,7 +121,7 @@
 
 
 ;; A sequence of [character underline?]
-(defn displayable-characters [font]
+(defn displayable-characters [^Font font]
   (let [chars (map char (filter (fn [c] (and (.canDisplay font (char c))
                                              (not (contains? cjk-blocks c))))
                                 (range 0x0000 0xFFFF)))]
@@ -169,7 +170,7 @@
     ;(log/info "characters" (vec characters))
     ;(log/info "character-idxs" (vec (character-idxs characters)))
     (let [texture-image    (BufferedImage. width height BufferedImage/TYPE_4BYTE_ABGR)
-          texture-graphics ^Graphics (.getGraphics texture-image)
+          texture-graphics ^Graphics2D (.getGraphics texture-image)
           white            (Color. 255 255 255 255)]
       ;; Create and clear graphics
       (doto texture-graphics
@@ -209,15 +210,16 @@
        :font-texture-image texture-image})))
 
 
-(defn- buffered-image-byte-buffer [buffered-image]
+(defn- buffered-image-byte-buffer [^BufferedImage buffered-image]
   (let [width          (.getWidth buffered-image)
         height         (.getHeight buffered-image)
         texture-buffer (BufferUtils/createByteBuffer (* width height 4))
-        data (-> buffered-image
+        data ^bytes (-> buffered-image
                  (.getRaster)
                  (.getDataBuffer)
-                 (as-> db (cast DataBufferByte db))
-                 (.getData))]
+                 (as-> db
+                   (let [dbb ^DataBufferByte db]
+                     (.getData dbb))))]
     (.put texture-buffer data 0 (alength data))
     (.flip texture-buffer)
     texture-buffer))
@@ -267,7 +269,7 @@
       (throw (Exception. error-string)))))
 
 (defn- texture-id
-  ([buffered-image]
+  ([^BufferedImage buffered-image]
   (let [width (.getWidth buffered-image)
         height (.getHeight buffered-image)]
     (texture-id width height (buffered-image-byte-buffer buffered-image))))
@@ -295,18 +297,20 @@
     texture-id))
 
 
-(defn- fbo-texture [width height]
+(defn- fbo-texture [^long width ^long height]
   (let [id (GL30/glGenFramebuffers)]
     (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER id)
     (let [texture-id (GL11/glGenTextures)
-          draw-buffer (BufferUtils/createIntBuffer 1)]
+          draw-buffer (BufferUtils/createIntBuffer 1)
+          ;; type nil as ByteBuffer to avoid reflection on glTexImage2D
+          ^ByteBuffer bbnil nil]
       (.put draw-buffer GL30/GL_COLOR_ATTACHMENT0)
       (.flip draw-buffer)
       ;;(.order texture-buffer (ByteOrder/nativeOrder))
       (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
       (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MIN_FILTER GL11/GL_LINEAR)
       (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MAG_FILTER GL11/GL_LINEAR)
-      (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB width height 0 GL11/GL_RGB GL11/GL_UNSIGNED_BYTE nil)
+      (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB width height 0 GL11/GL_RGB GL11/GL_UNSIGNED_BYTE bbnil)
       (GL32/glFramebufferTexture GL30/GL_FRAMEBUFFER GL30/GL_COLOR_ATTACHMENT0 texture-id 0)
       (GL20/glDrawBuffers draw-buffer)
       (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
@@ -351,15 +355,19 @@
                              (.withProfileCore true))
         icon-array         (when icon-paths
                              (condp = (LWJGLUtil/getPlatform)
-                               LWJGLUtil/PLATFORM_LINUX (let [icon-array (make-array ByteBuffer 1)]
-                                                          (aset icon-array 0 (png-bytes (get icon-paths 1)))
+                               LWJGLUtil/PLATFORM_LINUX (let [icon-array ^"[Ljava.nio.ByteBuffer;" (make-array ByteBuffer 1)
+                                                              data ^bytes (png-bytes (get icon-paths 1))]
+                                                          (aset icon-array 0 data)
                                                           icon-array)
-                               LWJGLUtil/PLATFORM_MACOSX  (let [icon-array (make-array ByteBuffer 1)]
-                                                            (aset icon-array 0 (png-bytes (get icon-paths 2))
-                                                            icon-array))
-                               LWJGLUtil/PLATFORM_WINDOWS (let [icon-array (make-array ByteBuffer 2)]
-                                                            (aset icon-array 0 (png-bytes (get icon-paths 0)))
-                                                            (aset icon-array 1 (png-bytes (get icon-paths 1)))
+                               LWJGLUtil/PLATFORM_MACOSX  (let [icon-array ^"[Ljava.nio.ByteBuffer;" (make-array ByteBuffer 1)
+                                                                data ^bytes (png-bytes (get icon-paths 2))]
+                                                            (aset icon-array 0 data)
+                                                            icon-array)
+                               LWJGLUtil/PLATFORM_WINDOWS (let [icon-array ^"[Ljava.nio.ByteBuffer;" (make-array ByteBuffer 2)
+                                                                data0 ^bytes (png-bytes (get icon-paths 0))
+                                                                data1 ^bytes (png-bytes (get icon-paths 1))]
+                                                            (aset icon-array 0 data0)
+                                                            (aset icon-array 1 data1)
                                                             icon-array)))
         latch              (java.util.concurrent.CountDownLatch. 1)]
      ;; init-natives must be called before the Display is created
