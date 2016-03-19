@@ -36,6 +36,9 @@ or
 
 etc.
 
+
+## Quickstart
+
 Setup your namespace imports:
 
 ```clojure
