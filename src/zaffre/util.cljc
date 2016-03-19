@@ -3,6 +3,9 @@
             clojure.set)
   (:import (zaffre.aterminal ATerminal)))
 
+(defn next-pow-2 [v]
+  (int (Math/pow 2 (Math/ceil (/ (Math/log v) (Math/log 2))))))
+
 (defn put-string
   ([^ATerminal screen layer-id x y string]
    (put-string screen layer-id (int (Math/ceil x)) (int (Math/ceil y)) string [255 255 255] [0 0 0] #{}))
