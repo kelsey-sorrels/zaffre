@@ -74,6 +74,19 @@
             ~@body
             (recur (next coll#) (inc ~idx-name)))))))
 
+(defn hsv->rgb [h s v]
+  (let [c (* v s)
+        x (* c (- 1.0 (Math/abs (double (dec (mod (/ h 60.0) 2.0))))))]
+    (mapv (comp int (partial * 255))
+      (cond
+        (< h  60) [c x 0]
+        (< h 120) [x c 0]
+        (< h 180) [0 c x]
+        (< h 240) [0 x c]
+        (< h 300) [x 0 c]
+        (< h 360) [c 0 x]))))
+  
+
 (defn convert-key-code [event-char event-key on-key-fn]
   ;; Cond instead of case. For an unknown reason, case does not match event-key to Keyboard/* constants.
   ;; Instead it always drops to the default case
@@ -1365,8 +1378,9 @@
         ;; Every 10ms, set the "Rainbow" text to have a random fg color
         fx-chan     (go-loop []
                       (dosync
-                        (doseq [x (range (count "Rainbow"))]
-                          (zat/set-fx-fg! terminal :rainbow (inc x) 1 [128 (rand 255) (rand 255)])))
+                        (doseq [x (range (count "Rainbow"))
+                                :let [rgb (hsv->rgb (double (rand 360)) 1.0 1.0)]]
+                            (zat/set-fx-fg! terminal :rainbow (inc x) 1 rgb)))
                         (zat/assoc-fx-uniform! terminal "time" (swap! time inc))
                         (zat/refresh! terminal)
                       (Thread/sleep 10)
