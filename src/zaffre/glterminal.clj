@@ -997,9 +997,8 @@
          default fg-color [255 255 255]
          default bg-color [0 0 0]
          on-key-fn        nil
-         windows-font     "Courier New"
-         else-font        "Monospaced"
-         font-size        16
+         windows-font     (TTFFont. "Courier New" 16)
+         else-font        (TTFFONT. "Monospaced" 16)
          antialias        true
          icon-paths       nil
          fx-shader        {:name "passthrough.fs"}}}]
