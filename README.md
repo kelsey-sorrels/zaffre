@@ -7,20 +7,21 @@ Zaffre is fast console library for drawing characters to a screen.
 ## Features
   * It's fast. Zaffre uses LWJGL and OpenGL to render characters as fast as possible.
   * Unicode support (minus CJK code points)
+  * CP437 tileset support (eg: loading [Dwarf Fortress Wiki: Tileset repository](http://dwarffortresswiki.org/index.php/Tileset_repository))
   * Cross-platform codebase
   * Thread safe
 
 ## Not Features
   * Multiple fonts
   * Glyph stacking
-  * Font sheets
+  * Non-character tiles
 
 ## Usage
 
 Add the dependency to your project:
 
 ```clojure
-[zaffre "0.3.0"]
+[zaffre "0.4.0"]
 ```
 
 Setup your namespace imports:
@@ -30,19 +31,29 @@ Setup your namespace imports:
   (:require
     [zaffre.aterminal :as zat]
     [zaffre.glterminal]
-    [clojure.core.async :as async :refer [go-loop]]))
+    [clojure.core.async :as async :refer [go-loop]])
+  (:import
+    (zaffre.font CP437Font TTFFont)))
 ```
 
 Create a terminal:
 
 ```clojure
   ;; render in background thread
-  (let [terminal   (zaffre.glterminal/make-terminal {:title "Zaffre demo"
+  (let [terminal   (zaffre.glterminal/make-terminal [:text :rainbow]
+                                                    {:title "Zaffre demo"
                                                      :columns 80 :rows 24
                                                      :default-fg-color [250 250 250]
                                                      :default-bg-color [5 5 8]
-                                                     :font-size 18
-                                                     :antialias true
+                                                     ;; Specify font to use for windows platform
+                                                     ;; In this case let's pull a font from the dwarf fortress tileset repository
+                                                     ;; Use the :green channel and a scale of 1. (2 would, for example, be twice as large)
+                                                     :windows-font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1)
+                                                     ;; Specify font to use for non-windows platforms
+                                                     ;; Here we'll load a ttf font by font-family. A font name or even a filesystem path can be used too
+                                                     :else-font (TTFFont. "Monospaced" 16)
+                                                     ;; Use fullscreen for fun
+                                                     :fullscreen true
                                                      :icon-paths ["images/icon-16x16.png"
                                                                   "images/icon-32x32.png"
                                                                   "images/icon-128x128.png"]})
@@ -61,7 +72,7 @@ Start a background job that changes text colors:
        fx-chan     (go-loop []
                      (dosync
                        (doseq [x (range (count "Rainbow"))]
-                         (zat/set-fx-fg! terminal (inc x) 1 [128 (rand 255) (rand 255)])))
+                         (zat/set-fx-fg! terminal :rainbow (inc x) 1 [128 (rand 255) (rand 255)])))
                        (zat/refresh! terminal)
                      (Thread/sleep 10)
                      (recur))
@@ -75,11 +86,11 @@ Start a background job to render at 30fps:
                      (dosync
                        (let [key-in (or @last-key \?)]
                          (zat/clear! terminal)
-                         (put-string terminal 0 0 "Hello world")
+                         (put-string terminal :text0 0 "Hello world")
                          (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
-                           (put-string terminal 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
-                         (put-string terminal 12 0 (str key-in))
-                         (put-string terminal 1 1 "Rainbow")
+                           (put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
+                         (put-string terminal :text 12 0 (str key-in))
+                         (put-string terminal :rainbow 1 1 "Rainbow")
                          (zat/refresh! terminal)))
                          ;; ~30fps
                        (Thread/sleep 33)
@@ -102,14 +113,21 @@ In the main loop, read a key, process messages, and possibly change font-size:
            (log/info "got key" (or (str @last-key) "nil")))
            ;; change font size on s/m/l keypress
            (case @last-key
-             \s (zat/apply-font! terminal "Consolas" "Monospaced" 12 true)
-             \m (zat/apply-font! terminal "Consolas" "Monospaced" 18 true)
-             \l (zat/apply-font! terminal "Consolas" "Monospaced" 24 true)
+             \s (zat/apply-font! terminal (TTFFont. "Consolas" 12) (TTFFont. "Monospaced" 12))
+             \m (zat/apply-font! terminal (TTFFont. "Consolas" 18) (TTFFont. "Monospaced" 18))
+             \l (zat/apply-font! terminal (TTFFont. "Consolas" 24) (TTFFont. "Monospaced" 24))
              nil)
            (recur))))
 ```
 
-## `make-terminal` options
+## `make-terminal` parameters
+
+# Required
+
+`layer-order` a vector of layer identifiers. The order specifies the ordering of layers from bottommost to topmost.
+Most often this will be a series of keywords like [:base :text :fx :ui].
+
+`opts` optional parameters
 
 ```clojure
 (def example-options
@@ -118,13 +136,19 @@ In the main loop, read a key, process messages, and possibly change font-size:
   :rows             ; Terminal height in characters
   :default-fg-color ; [red green blue] color to use as default foreground color. (0-255)
   :default-bg-color ; [red green blue] color to use as default background color. (0-255)
-  :windows-font     ; Font family, name, or path to use on Windows platform. eg: "Courier New", "./fonts/my-font.ttf"
-  :else-font        ; Font family, name, or path to use on Linux and OS X platforms. eg: "Monospaced", "./fonts/my-font.ttf"
-  :font-size        ; The point size of the font
-  :antialias        ; Render the font with antialiasing?
+  :windows-font     ; TTFFont or CP437Font to use on Windows platform. 
+  :else-font        ; TTFFont or CP437Font to use on Linux and OS X platforms. 
   :icon-paths       ; Vector of paths to icons. eg: ["icons/16x16.png", "icons/32x32.png", "icons/128x128.png"]
                     ; Three paths for icons of three sizes must be given in this order: 16x16, 32x32, 128x128
-  :fx-shader-name   ; Omit or use "retro.fs"
+  :fx-shader        ; Omit or specify a map wih
+                    ; {:name ;"retro.fs" or path to GLSL fragment shader
+                    ;  :uniforms ; a vector of vectors. Each element contains a ["name", value] pair like so
+                    ;             [["time" 0]
+                    ;              ["noise" 0.0016]
+                    ;              ["colorShift" 0.0001]
+                    ;              ["scanlineDepth" 0.94]
+                    ;              ["brightness" 0.68]
+                    ;              ["contrast" 2.46]]
                     )
 ```
 
@@ -138,6 +162,7 @@ All options are optional. If none are specified an empty map {} may passed to `m
   ; Return [rows columns] terminal size in characters
   (get-size [this])
   ; Add characters to the back buffer
+  ; Layer id  must match one of the layers specified in the `make-terminal` `layer-order` parameter
   ; Characters is a vector of maps each with these keys
   ; {:c \a             ; The character to place
   ;  :fg [255 255 255] ; [red green blue] foreground color. (0-255)
@@ -152,30 +177,35 @@ All options are optional. If none are specified an empty map {} may passed to `m
   ;  |               |
   ;  +---------------+
   ; (0, rows)          (cols, rows)
-  (put-chars! [this characters])
+  (put-chars! [this layer-id characters])
   ; Change the foreground color at (x, y) where fg is [red green blue] (0-255)
-  (set-fg! [this x y fg])
+  (set-fg! [this layer-id x y fg])
   ; Change the background color at (x, y) where bg is [red green blue] (0-255)
-  (set-bg! [this x y bg])
+  (set-bg! [this layer-id x y bg])
   ; Returns a core.async chan that holds keyboard key presses
   (get-key-chan [this])
-  ; Changes the terminal's font. Keys have the same meaning as those used in make-terminal options
-  (apply-font! [this windows-font else-font size antialias])
+  ; Changes the terminal's font.
+  ; Any combination of TTFFont or CP437Font records may be used.
+  (apply-font! [this windows-font else-font])
   ; Set the terminal's cursor to x y.
   ; The character under the cursor will have their fg and bg colors swapped.
   (set-cursor! [this x y])
   ; Display the characters in the back buffer
   (refresh! [this])
   ; Clears the terminal's back buffer
-  (clear! [this])
+  (clear! [this]
+  ; Clear a specific layer
+          [this layer-id])
   ; Override the foreground color of the character at x y in the back buffer
-  (set-fx-fg! [this x y fg])
+  (set-fx-fg! [this layer-id x y fg])
   ; Override the background color of the character at x y in the back buffer
-  (set-fx-bg! [this x y bg])
+  (set-fx-bg! [this layer-id x y bg])
   ; Override the character at x y where c is a character in the back buffer
-  (set-fx-char! [this x y c])
+  (set-fx-char! [this layer-id x y c])
   ; Clear all of the fx overrides in the back buffer
-  (clear-fx! [this])
+  (clear-fx! [this]
+  ; Clear the fx of a specific layer
+             [this layer-id])
   ; Destroy terminal and end processing.
   (destroy! [this]))
 
