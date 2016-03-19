@@ -13,6 +13,8 @@
   (refresh! [this])
   (clear! [this]
           [this layer-id])
+  (fullscreen! [this v])
+  (fullscreen-sizes [this])
   (set-fx-fg! [this layer-id x y fg])
   (set-fx-bg! [this layer-id x y bg])
   (set-fx-char! [this layer-id x y c])
