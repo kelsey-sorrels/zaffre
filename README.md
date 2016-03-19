@@ -88,7 +88,7 @@ Start a background job to render at 30fps:
                      (dosync
                        (let [key-in (or @last-key \?)]
                          (zat/clear! terminal)
-                         (put-string terminal :text0 0 "Hello world")
+                         (put-string terminal :text 0 0 "Hello world")
                          (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
                            (put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
                          (put-string terminal :text 12 0 (str key-in))
@@ -124,12 +124,12 @@ In the main loop, read a key, process messages, and possibly change font-size:
 
 ## `make-terminal` parameters
 
-# Required
+### Required
 
 `layer-order` a vector of layer identifiers. The order specifies the ordering of layers from bottommost to topmost.
 Most often this will be a series of keywords like [:base :text :fx :ui].
 
-`opts` optional parameters
+### `opts` optional parameters
 
 ```clojure
 (def example-options
