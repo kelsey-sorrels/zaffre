@@ -86,7 +86,7 @@
 
 
 (defn- ^BufferedImage convert-type [^BufferedImage buffered-image image-type]
-  (let [converted-image (BufferedImage. (.getWidth buffered-image) (.getHeight buffered-image) image-type)
+  (let [converted-image    (BufferedImage. (.getWidth buffered-image) (.getHeight buffered-image) image-type)
         converted-graphics (.createGraphics converted-image)]
     (doto converted-graphics
       (.drawImage buffered-image 0 0 nil)
@@ -126,6 +126,9 @@
 
 (defrecord TTFFont [name-or-path size])
 
+(defrecord CompositeFont [fonts])
+
+(defrecord TileSet [path-or-url alpha tile-width tile-height tile-id->col-row])
 
 (defmulti glyph-graphics class)
 (defmethod glyph-graphics CP437Font [font]
@@ -217,4 +220,77 @@
        :character-width char-width
        :character-height char-height
        :character->col-row (character->col-row char-idxs)})))
+
+
+(defmethod glyph-graphics CompositeFont [font]
+  (let [glyphs (mapv glyph-graphics (get font :fonts))]
+    (assert (reduce = (map :character-width glyphs)) (str "Not all character widths equal " (vec (mapv :character-width glyphs))))
+    (assert (reduce = (map :character-height glyphs)) (str "Not all character heights equal " (vec (mapv :character-height glyphs))))
+    (log/info "Using unified character-width" (-> glyphs first :character-width))
+    (log/info "Using unified character-height" (-> glyphs first :character-height))
+    ;; Lay fonts out like this
+    ;;  +----------+----+
+    ;;  |  font 1  |    |
+    ;;  |          |    |
+    ;;  +----------+----+
+    ;;  |  font 2       |
+    ;;  |               |
+    ;;  |               |
+    ;;  +-----+---------+
+    ;;  |font3|         |
+    ;;  |     |         |
+    ;;  +-----+---------+
+    ;;
+    (let [width              (zutil/next-pow-2 (reduce max 0 (map :font-texture-width glyphs)))
+          height             (zutil/next-pow-2 (reduce + 0 (map :font-texture-height glyphs)))
+          composite-image    (BufferedImage. width height BufferedImage/TYPE_4BYTE_ABGR)
+          composite-graphics (.createGraphics composite-image)
+          character-width    (-> glyphs first :character-width)
+          character-height   (-> glyphs first :character-height)]
+      (loop [y 0
+             character->col-row {}
+             glyphs glyphs]
+        (if-let [glyph (first glyphs)]
+          (let [image ^BufferedImage (get glyph :font-texture-image)]
+            (.drawImage composite-graphics image 0 y nil)
+            (recur
+              (+ y (int (get glyph :font-texture-height)))
+              (reduce-kv (fn [m k [col row]]
+                           (assoc m k [col (+ row (/ y character-height))]))
+                         character->col-row
+                         (get glyph :character->col-row))
+              (rest glyphs)))
+          (do
+            (.dispose composite-graphics)
+            (ImageIO/write composite-image "png", (File. "composite-texture.png"))
+            {:font-texture-width width
+             :font-texture-height height
+             :font-texture-image composite-image
+             :character-width character-width
+             :character-height character-height
+             :character->col-row character->col-row}))))))
+
+(defmethod glyph-graphics TileSet [font]
+  (with-open [image-stream (jio/input-stream (get font :path-or-url))]
+    (let [font-image    (->
+                          (ImageIO/read image-stream)
+                          (convert-type BufferedImage/TYPE_4BYTE_ABGR)
+                          (copy-channels! (get font :alpha)))
+          width         (zutil/next-pow-2 (.getWidth font-image))
+          height        (zutil/next-pow-2 (.getHeight font-image))
+          texture-image (BufferedImage. width height BufferedImage/TYPE_4BYTE_ABGR)
+          texture-graphics (.createGraphics texture-image)]
+      (doto texture-graphics
+        (.setColor (Color. 0 0 0 0))
+        (.fillRect 0 0 width height))
+      (while (not (.drawImage texture-graphics font-image 0 0 nil))
+        (Thread/sleep(100)))
+      (.dispose texture-graphics)
+      (ImageIO/write font-image "png", (File. "tileset-texture.png"))
+      {:font-texture-width width
+       :font-texture-height height
+       :font-texture-image texture-image
+       :character-width (get font :tile-width)
+       :character-height (get font :tile-height)
+       :character->col-row (get font :tile-id->col-row)})))
 
