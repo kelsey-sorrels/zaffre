@@ -210,15 +210,14 @@
       [id texture-id])))
         
 (defn png-bytes [path]
-  (let [input-stream (FileInputStream. (str path))
-        decoder (PNGDecoder. input-stream)
-        width (.getWidth decoder)
-        height (.getHeight decoder)
-        bytebuf (ByteBuffer/allocateDirect (* width height 4))]
-    (.decode decoder bytebuf (* width 4) PNGDecoder$Format/RGBA)
-    (.flip bytebuf)
-    (.close input-stream)
-    bytebuf))
+  (with-open [input-stream (jio/input-stream path)]
+    (let [decoder (PNGDecoder. input-stream)
+          width (.getWidth decoder)
+          height (.getHeight decoder)
+          bytebuf (ByteBuffer/allocateDirect (* width height 4))]
+      (.decode decoder bytebuf (* width 4) PNGDecoder$Format/RGBA)
+      (.flip bytebuf)
+      bytebuf)))
 
 ;; Extract native libs and setup system properties
 (defn init-natives []
@@ -245,20 +244,11 @@
                              (.withProfileCore true))
         icon-array         (when icon-paths
                              (condp = (LWJGLUtil/getPlatform)
-                               LWJGLUtil/PLATFORM_LINUX (let [icon-array ^"[Ljava.nio.ByteBuffer;" (make-array ByteBuffer 1)
-                                                              data ^bytes (png-bytes (get icon-paths 1))]
-                                                          (aset icon-array 0 data)
-                                                          icon-array)
-                               LWJGLUtil/PLATFORM_MACOSX  (let [icon-array ^"[Ljava.nio.ByteBuffer;" (make-array ByteBuffer 1)
-                                                                data ^bytes (png-bytes (get icon-paths 2))]
-                                                            (aset icon-array 0 data)
-                                                            icon-array)
-                               LWJGLUtil/PLATFORM_WINDOWS (let [icon-array ^"[Ljava.nio.ByteBuffer;" (make-array ByteBuffer 2)
-                                                                data0 ^bytes (png-bytes (get icon-paths 0))
-                                                                data1 ^bytes (png-bytes (get icon-paths 1))]
-                                                            (aset icon-array 0 data0)
-                                                            (aset icon-array 1 data1)
-                                                            icon-array)))
+
+                               LWJGLUtil/PLATFORM_LINUX (into-array ByteBuffer [(png-bytes (get icon-paths 1))])
+                               LWJGLUtil/PLATFORM_MACOSX  (into-array ByteBuffer [(png-bytes (get icon-paths 2))])
+                               LWJGLUtil/PLATFORM_WINDOWS (into-array ByteBuffer [(png-bytes (get icon-paths 0))
+                                                                                  (png-bytes (get icon-paths 1))])))
         latch              (java.util.concurrent.CountDownLatch. 1)]
      ;; init-natives must be called before the Display is created
      (init-natives)
@@ -266,7 +256,9 @@
        (Display/setDisplayMode (DisplayMode. screen-width screen-height))
        (Display/setTitle title)
        (when icon-array
-         (Display/setIcon icon-array))
+         (log/info "Setting icons")
+         (Display/setIcon icon-array)
+         (Thread/sleep 100))
        (Display/create pixel-format context-attributes)
        (Keyboard/create)
        (Mouse/create)
@@ -587,7 +579,8 @@
           (loop-with-index col [c line]
             (let [chr        (or (get c :fx-character) (get c :character))
                   chr        (if (and (= layer-id base-layer-id)
-                                      (= chr (char 0)))
+                                      (char? chr)
+                                      (= (char chr) (char 0)))
                                  \space
                                  chr)
                   highlight  (= @cursor-xy [col (- rows row 1)])
