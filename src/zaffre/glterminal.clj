@@ -163,7 +163,7 @@
   (let [width          (.getWidth buffered-image)
         height         (.getHeight buffered-image)
         texture-id     (GL11/glGenTextures)
-        texture-buffer (buffered-image-byte-buffer buffered-image)]
+        texture-buffer ^ByteBuffer (buffered-image-byte-buffer buffered-image)]
      ;;(.order texture-buffer (ByteOrder/nativeOrder))
      (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
      (GL11/glPixelStorei GL11/GL_UNPACK_ALIGNMENT 1)
@@ -171,6 +171,7 @@
      (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
      (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGBA width height 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE texture-buffer)
      (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
+     (except-gl-errors "end of texture-id-2d")
      texture-id)))
 
 (defn- texture-id
@@ -189,6 +190,7 @@
      (GL11/glTexParameteri GL30/GL_TEXTURE_2D_ARRAY GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
      (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL11/GL_RGBA width height layers 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE texture-buffer)
      (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY 0)
+     (except-gl-errors "end of texture-id")
      texture-id)))
 
 (defn- xy-texture-id [^long width ^long height ^long layers ^ByteBuffer texture-buffer]
@@ -199,6 +201,7 @@
     (GL11/glTexParameteri GL30/GL_TEXTURE_2D_ARRAY GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
     (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL30/GL_RGBA8UI width height layers 0 GL30/GL_RGBA_INTEGER GL11/GL_INT texture-buffer)
     (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY 0)
+    (except-gl-errors "end of xy-texture-id")
     texture-id))
 
 
@@ -254,7 +257,7 @@
 
 (defn- init-display [title screen-width screen-height icon-paths gl-lock destroyed]
   (let [pixel-format       (PixelFormat.)
-        context-attributes (doto (ContextAttribs. 4 4)
+        context-attributes (doto (ContextAttribs. 3 2)
                              (.withForwardCompatible true)
                              (.withProfileCore true))
         icon-array         (when icon-paths
@@ -549,7 +552,7 @@
           (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB (int screen-width) (int screen-height) 0 GL11/GL_RGB GL11/GL_UNSIGNED_BYTE bbnil)
           (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture (texture-id-2d font-texture-image))))
           (catch Throwable t
-            (log/error "Eror changing font" t))))))
+            (log/error "Error changing font" t))))))
   (set-cursor! [_ x y]
     (reset! cursor-xy [x y]))
   (refresh! [_]
