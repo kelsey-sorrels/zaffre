@@ -122,16 +122,29 @@
       (.dispose))
     scaled-image))
 
-(defrecord CP437Font [path-or-url alpha scale])
+(defrecord CP437Font [path-or-url alpha scale transparent])
 
-(defrecord TTFFont [name-or-path size])
+(defrecord TTFFont [name-or-path size transparent])
 
 (defrecord CompositeFont [fonts])
 
-(defrecord TileSet [path-or-url alpha tile-width tile-height tile-id->col-row])
+(defrecord TileSet [path-or-url alpha tile-width tile-height tile-id->col-row tile-id->transparent])
 
 (defmulti glyph-graphics class)
+
+(defn glyph-graphics? [m]
+  (every?
+      #{:font-texture-width
+       :font-texture-height
+       :font-texture-image
+       :character-width
+       :character-height
+       :character->col-row
+       :character->transparent}
+      (keys m)))
+
 (defmethod glyph-graphics CP437Font [font]
+  {:post [(glyph-graphics? %)]}
   (with-open [image-stream (jio/input-stream (get font :path-or-url))]
     (let [characters    (map char cp437-unicode)
           font-image    (->
@@ -144,7 +157,12 @@
           cwidth        (/ (.getWidth font-image) 16)
           cheight       (/ (.getHeight font-image) 16)
           texture-image (BufferedImage. width height BufferedImage/TYPE_4BYTE_ABGR)
-          texture-graphics (.createGraphics texture-image)]
+          texture-graphics (.createGraphics texture-image)
+          character->col-row (zipmap
+                             characters
+                             (for [row (range 16)
+                                   col (range 16)]
+                               [col row]))]
 
       (log/info "Using cp437 font image" (.getType font-image))
       (doto texture-graphics
@@ -159,13 +177,11 @@
        :font-texture-image texture-image
        :character-width cwidth
        :character-height cheight
-       :character->col-row (zipmap
-                             characters
-                             (for [row (range 16)
-                                   col (range 16)]
-                               [col row]))})))
+       :character->col-row character->col-row
+       :character->transparent (zipmap characters (repeat (get font :transparent)))})))
 
 (defmethod glyph-graphics TTFFont [font]
+  {:post [(glyph-graphics? %)]}
   ;; Adjust canvas to fit character atlas size
   (let [j-font                     (make-font (get font :name-or-path) Font/PLAIN (get font :size))
         characters                 (displayable-characters j-font)
@@ -219,10 +235,12 @@
        :font-texture-image texture-image
        :character-width char-width
        :character-height char-height
-       :character->col-row (character->col-row char-idxs)})))
+       :character->col-row (character->col-row char-idxs)
+       :character->transparent (zipmap characters (repeat (get font :transparent)))})))
 
 
 (defmethod glyph-graphics CompositeFont [font]
+  {:post [(glyph-graphics? %)]}
   (let [glyphs (mapv glyph-graphics (get font :fonts))]
     (assert (reduce = (map :character-width glyphs)) (str "Not all character widths equal " (vec (mapv :character-width glyphs))))
     (assert (reduce = (map :character-height glyphs)) (str "Not all character heights equal " (vec (mapv :character-height glyphs))))
@@ -249,6 +267,7 @@
           character-height   (-> glyphs first :character-height)]
       (loop [y 0
              character->col-row {}
+             character->transparent {}
              glyphs glyphs]
         (if-let [glyph (first glyphs)]
           (let [image ^BufferedImage (get glyph :font-texture-image)]
@@ -259,18 +278,22 @@
                            (assoc m k [col (+ row (/ y character-height))]))
                          character->col-row
                          (get glyph :character->col-row))
+              (merge character->transparent
+                     (get glyph :characters->transparent))
               (rest glyphs)))
           (do
             (.dispose composite-graphics)
-            (ImageIO/write composite-image "png", (File. "composite-texture.png"))
+            ;(ImageIO/write composite-image "png", (File. "composite-texture.png"))
             {:font-texture-width width
              :font-texture-height height
              :font-texture-image composite-image
              :character-width character-width
              :character-height character-height
-             :character->col-row character->col-row}))))))
+             :character->col-row character->col-row
+             :character->transparent character->transparent}))))))
 
 (defmethod glyph-graphics TileSet [font]
+  {:post [(glyph-graphics? %)]}
   (with-open [image-stream (jio/input-stream (get font :path-or-url))]
     (let [font-image    (->
                           (ImageIO/read image-stream)
@@ -292,5 +315,6 @@
        :font-texture-image texture-image
        :character-width (get font :tile-width)
        :character-height (get font :tile-height)
-       :character->col-row (get font :tile-id->col-row)})))
+       :character->col-row (get font :tile-id->col-row)
+       :character->transparent (get font :tile-id->transparent)})))
 
