@@ -3,6 +3,7 @@
   (:require [zaffre.aterminal :as zat]
             [zaffre.font :as zfont]
             [zaffre.util :as zutil]
+            [nio.core :as nio]
             [taoensso.timbre :as log]
             [clojure.core.async :as async :refer [go go-loop]]
             [clojure-watch.core :as cwc]
@@ -590,15 +591,17 @@
         (.clear glyph-image-data)
         (.clear fg-image-data)
         (.clear bg-image-data)
+        ;(log/info "rendering layers")
         (loop-with-index layer [[layer-id character-map] layers-character-map]
         ;;(doseq [[layer-id character-map] layers-character-map]
         ;;  (doseq [[row line] (map-indexed vector (reverse @character-map))
         ;;          [col c]    (map-indexed vector line)]
             ;;(log/info "row" row "col" col "c" c)
-        (loop-with-index row [line @character-map]
+        ;(log/info layer-id)
+        (loop-with-index row [line (reverse @character-map)]
           (loop-with-index col [c line]
             (let [chr        (or (get c :fx-character) (get c :character))
-                  chr        (if (and (= layer-id base-layer-id)
+                  #_#_chr        (if (and (= layer-id base-layer-id)
                                       (char? chr)
                                       (= (char chr) (char 0)))
                                  \space
@@ -612,22 +615,25 @@
                                      (or (get c :fx-bg-color)  (get c :bg-color)))
                   ;s         (str (get c :character))
                   style     (get c :style)
-                  i         (* 4 (+ (* texture-columns row) col) layer)
+                  i         (+ (* 4 (+ (* glyph-texture-width row) col)) (* 4 glyph-texture-width glyph-texture-height layer))
                   [x y]     (get character->col-row chr)
                   transparent (get character->transparent chr)]
               ;(log/info "Drawing at col row" col row "character from atlas col row" x y c "(index=" i ")")
               (when (zero? col)
+                ;(log/info "glyph texture" glyph-texture-width glyph-texture-height)
+                ;(log/info "resetting position to start of line" layer row col i)
                 (.position glyph-image-data i)
                 (.position fg-image-data i)
                 (.position bg-image-data i))
-              (if (or (= layer-id base-layer-id)
-                      (not= chr (char 0)))
+              (if (not= chr (char 0))
                 (do
                   (assert (or (not (nil? x)) (not (nil? y))) (format "X/Y nil - glyph not found for character %s %s" (or (str chr) "nil") (or (format "%x" (int chr)) "nil")))
                   (.put glyph-image-data (unchecked-byte x))
                   (.put glyph-image-data (unchecked-byte y))
                   ;; TODO fill with appropriate type
-                  (.put glyph-image-data (unchecked-byte (if transparent 2 1)))
+                  (.put glyph-image-data (unchecked-byte (cond
+                                                           transparent 2
+                                                           :else 1)))
                   (.put glyph-image-data (unchecked-byte 0))
                   (.put fg-image-data    (unchecked-byte fg-r))
                   (.put fg-image-data    (unchecked-byte fg-g))
@@ -639,18 +645,22 @@
                   (.put bg-image-data    (unchecked-byte 0)))
                 ;; not base layer and space ie empty, skip forward
                 (do
-                  (.position glyph-image-data (+ 4 (.position glyph-image-data)))
-                  (.position fg-image-data (+ 4 (.position fg-image-data)))
-                  (.position bg-image-data (+ 4 (.position bg-image-data)))))))
-          #_(.rewind glyph-image-data)
-          #_(.rewind fg-image-data)
-          #_(.rewind bg-image-data)))
-        (.position glyph-image-data (.limit glyph-image-data))
-        (.position fg-image-data (.limit fg-image-data))
-        (.position bg-image-data (.limit bg-image-data))
+                  (.put glyph-image-data (byte-array 4))
+                  (.put fg-image-data (byte-array 4))
+                  (.put bg-image-data (byte-array 4)))))))
+          #_(log/info "At pos" (.position glyph-image-data))
+          #_(log/info "Setting layer" layer "new pos" (* glyph-texture-width glyph-texture-height 4 (inc layer)))
+          (.position glyph-image-data (* glyph-texture-width glyph-texture-height 4 (inc layer)))
+          (.position fg-image-data    (* glyph-texture-width glyph-texture-height 4 (inc layer)))
+          (.position bg-image-data    (* glyph-texture-width glyph-texture-height 4 (inc layer))))
+        #_(.position glyph-image-data (.limit glyph-image-data))
+        #_(.position fg-image-data (.limit fg-image-data))
+        #_(.position bg-image-data (.limit bg-image-data))
         (.flip glyph-image-data)
         (.flip fg-image-data)
         (.flip bg-image-data)
+        #_(doseq [line (partition (* 4 glyph-texture-width) (vec (nio/buffer-seq glyph-image-data)))]
+          (log/info (vec line)))
         (try
           (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER, fbo-id)
           (GL11/glViewport 0 0 screen-width screen-height)
