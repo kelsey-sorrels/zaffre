@@ -583,7 +583,8 @@
                     font-texture]} (get @font-textures (font-key @normal-font))
             [display-width display-height] (let [mode (Display/getDisplayMode)]
                                              [(.getWidth mode) (.getHeight mode)])
-            base-layer-id (first layer-order)]
+            base-layer-id (first layer-order)
+            layer-size    (* 4 glyph-texture-width glyph-texture-height)]
         (assert (not (nil? font-texture-width)) "font-texture-width nil")
         (assert (not (nil? font-texture-height)) "font-texture-height")
         (assert (not (nil? font-texture)) "font-texture nil")
@@ -591,7 +592,9 @@
         (.clear glyph-image-data)
         (.clear fg-image-data)
         (.clear bg-image-data)
+        
         ;(log/info "rendering layers")
+        ;(log/info character->transparent)
         (loop-with-index layer [[layer-id character-map] layers-character-map]
         ;;(doseq [[layer-id character-map] layers-character-map]
         ;;  (doseq [[row line] (map-indexed vector (reverse @character-map))
@@ -615,7 +618,7 @@
                                      (or (get c :fx-bg-color)  (get c :bg-color)))
                   ;s         (str (get c :character))
                   style     (get c :style)
-                  i         (+ (* 4 (+ (* glyph-texture-width row) col)) (* 4 glyph-texture-width glyph-texture-height layer))
+                  i         (+ (* 4 (+ (* glyph-texture-width row) col)) (* layer-size layer))
                   [x y]     (get character->col-row chr)
                   transparent (get character->transparent chr)]
               ;(log/info "Drawing at col row" col row "character from atlas col row" x y c "(index=" i ")")
@@ -659,8 +662,10 @@
         (.flip glyph-image-data)
         (.flip fg-image-data)
         (.flip bg-image-data)
-        #_(doseq [line (partition (* 4 glyph-texture-width) (vec (nio/buffer-seq glyph-image-data)))]
-          (log/info (vec line)))
+        #_(doseq [layer (partition layer-size (vec (nio/buffer-seq glyph-image-data)))]
+          (log/info "layer")
+          (doseq [line (partition (* 4 glyph-texture-width) layer)]
+            (log/info (vec line))))
         (try
           (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER, fbo-id)
           (GL11/glViewport 0 0 screen-width screen-height)
@@ -875,7 +880,8 @@
                                              font-texture-image
                                              character-width
                                              character-height
-                                             character->col-row]
+                                             character->col-row
+                                             character->transparent]
                                       :as font-parameters} (zfont/glyph-graphics new-font)
                                      _ (log/info "cw" character-width "cols" columns)
                                      screen-width (* character-width columns)
@@ -889,6 +895,7 @@
                                                       :character-width character-width
                                                       :character-height character-height
                                                       :character->col-row character->col-row
+                                                      :character->transparent character->transparent
                                                       :font-texture-width font-texture-width
                                                       :font-texture-height font-texture-height
                                                       :font-texture-image font-texture-image}))))
