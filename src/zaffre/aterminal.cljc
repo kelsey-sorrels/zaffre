@@ -8,6 +8,7 @@
   (set-bg! [this layer-id x y bg])
   (assoc-fx-uniform! [this k v])
   (get-key-chan [this])
+  (get-mouse-chan [this])
   (apply-font! [this windows-font else-font])
   (set-cursor! [this x y])
   (refresh! [this])

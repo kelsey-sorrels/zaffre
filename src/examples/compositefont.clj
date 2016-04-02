@@ -44,7 +44,7 @@
   (zipmap (flatten tilemap) (repeat false)))
 
 (def font (CompositeFont. [(CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2 true)
-                           (TileSet. "http://opengameart.org/sites/default/files/tileset_1bit.png" :green 16 16
+                           (TileSet. "http://opengameart.org/sites/default/files/tileset_1bit.png" :green 16 16 0
                                      (map->tile->col-row one-bit-map)
                                      (map->tile->transparent one-bit-map))]))
                                      
@@ -63,7 +63,13 @@
                                         :icon-paths ["images/icon-16x16.png"
                                                      "images/icon-32x32.png"
                                                      "images/icon-128x128.png"]})
+       event-chan   (async/merge
+                      [(zat/get-key-chan terminal)
+                       (zat/get-mouse-chan terminal)]
+                      10)
         last-key    (atom nil)
+        trail-length 6
+        last-mouse-pos (atom [])
         ;; Every 10ms, set the "Rainbow" text to have a random fg color
         fx-chan     (go-loop []
                       (dosync
@@ -102,24 +108,35 @@
                             {:c :metal       :fg [4 4 5] :bg [0 128 0] :x 8 :y 7}
                             {:c :metal       :fg [4 4 5] :bg [0 128 0] :x 9 :y 7}
                             {:c :metal       :fg [4 4 5] :bg [0 128 0] :x 10 :y 7}])
+                          (doseq [[col row] @last-mouse-pos]
+                            (zat/put-chars! terminal :text [{:c \* :fg [200 200 100] :bg [4 4 5] :x col :y row}]))
                           (zat/refresh! terminal)))
                           ;; ~30fps
                         (Thread/sleep 33)
                         (recur))]
     ;; get key presses in fg thread
     (loop []
-      (let [new-key (async/<!! (zat/get-key-chan terminal))]
-        (reset! last-key new-key)
-        (log/info "got key" (or (str @last-key) "nil"))
-        ;; change font size on s/m/l keypress
-        (case new-key
-          \q (zat/destroy! terminal)
-          nil)
-        (if (= new-key :exit)
-          (do
-            (async/close! fx-chan)
-            (async/close! render-chan)
-            (System/exit 0))
-          (recur))))))
+      (let [new-event (async/<!! event-chan)]
+        (cond
+          (map? new-event)
+            (let [{:keys [mouse-leave]} new-event]
+              (log/info "Got mouse-event" new-event (vec @last-mouse-pos))
+              (when mouse-leave
+                (swap! last-mouse-pos (fn [col] (take trail-length (cons mouse-leave col)))))
+              (recur))
+          (char? new-event)
+            (let [new-key new-event]
+              (reset! last-key new-key)
+              (log/info "got key" (or (str @last-key) "nil"))
+              (case new-key
+                \q (zat/destroy! terminal)
+                nil)
+              (if (= new-key :exit)
+                (do
+                  (async/close! fx-chan)
+                  (async/close! render-chan)
+                  (System/exit 0))
+                ;; change font size on s/m/l keypress
+                (recur))))))))
 
 

@@ -7,7 +7,6 @@
             [taoensso.timbre :as log]
             [clojure.core.async :as async :refer [go go-loop]]
             [clojure-watch.core :as cwc]
-            [clojure.core.async :as async]
             [clojure.java.io :as jio])
   (:import
     (java.lang.reflect Field)
@@ -482,6 +481,7 @@
                            fx-uniforms
                            gl
                            key-chan
+                           mouse-chan
                            gl-lock
                            destroyed]
   zat/ATerminal
@@ -529,6 +529,8 @@
     (-> fx-uniforms (get k) first (reset! v)))
   (get-key-chan [_]
     key-chan)
+  (get-mouse-chan [_]
+    mouse-chan)
   (apply-font! [_ windows-font else-font]
     (with-gl-context gl-lock
       (reset! normal-font
@@ -902,6 +904,8 @@
           _                  (reset! normal-font (if is-windows
                                                    windows-font
                                                    else-font))
+          ;; Last [col row] of mouse movement
+          mouse-col-row      (atom nil)
           ;; false if Display is destoyed
           destroyed          (atom false)
           gl-lock            (atom true)
@@ -924,6 +928,7 @@
           cursor-xy             (atom nil)
 
           key-chan         (async/chan)
+          mouse-chan       (async/chan (async/buffer 100))
           on-key-fn        (or on-key-fn
                                (fn alt-on-key-fn [k]
                                  (async/put! key-chan k)))
@@ -1059,6 +1064,7 @@
                                    :fg-image-data fg-image-data
                                    :bg-image-data bg-image-data}}
                            key-chan
+                           mouse-chan
                            gl-lock
                            destroyed)]
       ;; Access to terminal will be multi threaded. Release context so that other threads can access it)))
@@ -1087,7 +1093,38 @@
                      (convert-key-code character key on-key-fn)))
                  (recur)))
              (catch Exception e
-               (log/error "Error getting keyboard input" e))))
+               (log/error "Error getting keyboard input" e)))
+           (try
+             (loop []
+               (when (Mouse/next)
+                 (let [button (Mouse/getEventButton)
+                       state  (if (Mouse/getEventButtonState) :mousedown :mouseup)
+                       event-x ^int (Mouse/getEventX)
+                       event-y ^int (Mouse/getEventY)
+                       {:keys [screen-height
+                               character-width
+                               character-height]} (get @font-textures (font-key @normal-font))
+                       col    (quot event-x (int character-width))
+                       row    (quot (- (int screen-height) event-y) (int character-height))]
+                   (when (<= 0 button 2)
+                     (async/put! mouse-chan (case button
+                       0 {:button :left :state state :col col :row row}
+                       1 {:button :right :state state :col col :row row}
+                       2 {:button :middle :state state :col col :row row}))))
+                 (recur)))
+             (catch Exception e
+               (log/error "Error getting keyboard input" e)))
+            (let [{:keys [screen-height
+                          character-width
+                          character-height]} (get @font-textures (font-key @normal-font))
+                  mouse-x ^int (Mouse/getX)
+                  mouse-y ^int (Mouse/getY)
+                  col     (quot mouse-x (int character-width))
+                  row     (quot (- (int screen-height) mouse-y) (int character-height))]
+              (when (not= [col row] @mouse-col-row)
+                (async/>! mouse-chan {:mouse-leave @mouse-col-row})
+                (reset! mouse-col-row [col row])
+                (async/>! mouse-chan {:mouse-enter @mouse-col-row}))))
          (if @gl-lock
            (do
              (Thread/sleep 5)
