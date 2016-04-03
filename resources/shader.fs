@@ -44,7 +44,8 @@ void main(void) {
         //result.r = 0.5;
         break;
       case 2u:
-        result += fnt * fg * fnt.a + (result * (1.0 - fnt.a));
+        //result += fnt * fg * fnt.a + (result * (1.0 - fnt.a));
+        result = fnt * fg * fnt.a + (result * (1.0 - fnt.a));
         //result.r = 0.8;
         break;
     }
