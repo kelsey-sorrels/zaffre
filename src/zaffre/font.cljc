@@ -10,7 +10,7 @@
                      Graphics
                      Graphics2D
                      RenderingHints)
-           (java.awt.image BufferedImage DataBufferByte)
+           (java.awt.image BufferedImage DataBufferByte ImageObserver)
            (javax.imageio ImageIO)))
 
 (set! *warn-on-reflection* true)
@@ -95,14 +95,35 @@
 
 (defn compact [^BufferedImage buffered-image tile-width tile-height margin]
   (if (pos? margin)
-    (let [cols (/ (.getWidth buffered-image) (+ tile-width margin))
-          rows (/ (.getHeight buffered-image) (+ tile-height margin))
+    (let [cols                   (quot (.getWidth buffered-image) (+ tile-width margin))
+          rows                   (quot (.getHeight buffered-image) (+ tile-height margin))
           compact-buffered-image (BufferedImage. (* cols tile-width) (* rows tile-height) (.getType buffered-image))
-          graphics (.createGraphics compact-buffered-image)]
+          graphics               (.createGraphics compact-buffered-image)
+          ^ImageObserver observer nil]
+      (log/info tile-width tile-height)
+      (log/info "Copying cols" cols "rows" rows)
       (doseq [row (range rows)
-              col (range cols)]
-        (.drawImage graphics buffered-image (* col tile-width) (row * tile-height) tile-width tile-height))
+              col (range cols)
+              :let [dx1 (* col tile-width)
+                    dy1 (* row tile-height)
+                    dx2 (+ dx1 tile-width)
+                    dy2 (+ dy1 tile-height)
+                    ;; source
+                    sx1 (* col (+ tile-width margin))
+                    sy1 (* row (+ tile-height margin))
+                    sx2 (+ sx1 tile-width)
+                    sy2 (+ sy1 tile-height)]]
+        (log/info "Copying from" sx1 sy1 sx2 sy2 "to" dx1 dy1 dx2 dy2)
+        (log/info "row" row "tile-height" tile-height)
+        (assert (.drawImage graphics
+                    buffered-image
+                    ;; destination
+                    dx1 dy1 dx2 dy2
+                    ;; source
+                    sx1 sy1 sx2 sy2
+                    observer)))
       (.dispose graphics)
+      (ImageIO/write compact-buffered-image "png", (File. "compact-texture.png"))
       compact-buffered-image)
     buffered-image))
 
@@ -164,7 +185,11 @@
                           (ImageIO/read image-stream)
                           (convert-type BufferedImage/TYPE_4BYTE_ABGR)
                           (scale-image (get font :scale))
-                          (copy-channels! (get font :alpha)))
+                          (as-> font-image
+                            (let [alpha (get font :alpha)]
+                              (if-not (= alpha :alpha)
+                                (copy-channels! font-image (get font :alpha))
+                                font-image))))
           width         (zutil/next-pow-2 (.getWidth font-image))
           height        (zutil/next-pow-2 (.getHeight font-image))
           cwidth        (/ (.getWidth font-image) 16)
@@ -297,7 +322,7 @@
               (rest glyphs)))
           (do
             (.dispose composite-graphics)
-            ;(ImageIO/write composite-image "png", (File. "composite-texture.png"))
+            (ImageIO/write composite-image "png", (File. "composite-texture.png"))
             {:font-texture-width width
              :font-texture-height height
              :font-texture-image composite-image
@@ -315,7 +340,11 @@
                           (compact (get font :tile-width)
                                    (get font :tile-height)
                                    (get font :margin))
-                          (copy-channels! (get font :alpha)))
+                          (as-> font-image
+                            (let [alpha (get font :alpha)]
+                              (if-not (= alpha :alpha)
+                                (copy-channels! font-image (get font :alpha))
+                                font-image))))
           width         (zutil/next-pow-2 (.getWidth font-image))
           height        (zutil/next-pow-2 (.getHeight font-image))
           texture-image (BufferedImage. width height BufferedImage/TYPE_4BYTE_ABGR)
@@ -326,7 +355,7 @@
       (while (not (.drawImage texture-graphics font-image 0 0 nil))
         (Thread/sleep(100)))
       (.dispose texture-graphics)
-      ;(ImageIO/write font-image "png", (File. "tileset-texture.png"))
+      (ImageIO/write font-image "png", (File. "tileset-texture.png"))
       {:font-texture-width width
        :font-texture-height height
        :font-texture-image texture-image

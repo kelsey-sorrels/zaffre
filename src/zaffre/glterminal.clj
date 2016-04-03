@@ -133,7 +133,9 @@
                  (as-> db
                    (let [dbb ^DataBufferByte db]
                      (.getData dbb))))]
-    (.put texture-buffer data 0 (alength data))
+    (doseq [i (range (quot (alength data) 4))]
+      (doseq [n (reverse (range 4))]
+        (.put texture-buffer (aget data (+ (* i 4) n)))))
     (.flip texture-buffer)
     texture-buffer))
 
