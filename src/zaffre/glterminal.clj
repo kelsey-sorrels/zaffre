@@ -3,12 +3,12 @@
   (:require [zaffre.aterminal :as zat]
             [zaffre.font :as zfont]
             [zaffre.util :as zutil]
+            [zaffre.imageutil :as zimgutil]
             [zaffre.keyboard :as zkeyboard]
             [nio.core :as nio]
             [taoensso.timbre :as log]
             [clojure.core.async :as async :refer [go go-loop]]
-            [clojure-watch.core :as cwc]
-            [clojure.java.io :as jio])
+            [clojure-watch.core :as cwc])
   (:import
     (java.lang.reflect Field)
     (org.lwjgl BufferUtils LWJGLUtil)
@@ -19,9 +19,8 @@
                       GL11 GL12 GL13 GL15 GL20 GL30 GL32)
     (org.lwjgl.input Keyboard Mouse)
     (org.lwjgl.util.vector Matrix4f Vector3f)
-    (de.matthiasmann.twl.utils PNGDecoder PNGDecoder$Format)
     (java.io File FileInputStream FileOutputStream)
-    (java.awt.image BufferedImage DataBufferByte)
+    (java.awt.image BufferedImage)
     (zaffre.aterminal ATerminal)
     (zaffre.font CP437Font TTFFont))
   (:gen-class))
@@ -69,19 +68,6 @@
             ~@body
             (recur (next coll#) (inc ~idx-name)))))))
 
-(defn hsv->rgb [h s v]
-  (let [c (* v s)
-        x (* c (- 1.0 (Math/abs (double (dec (mod (/ h 60.0) 2.0))))))]
-    (mapv (comp int (partial * 255))
-      (cond
-        (< h  60) [c x 0]
-        (< h 120) [x c 0]
-        (< h 180) [0 c x]
-        (< h 240) [0 x c]
-        (< h 300) [x 0 c]
-        (< h 360) [c 0 x]))))
-  
-
 (defn convert-key-code [event-char event-key on-key-fn]
   ;; Cond instead of case. For an unknown reason, case does not match event-key to Keyboard/* constants.
   ;; Instead it always drops to the default case
@@ -90,22 +76,6 @@
     (on-key-fn key)))
 
 (defn font-key [font] font)
-
-(defn- buffered-image-byte-buffer [^BufferedImage buffered-image]
-  (let [width          (.getWidth buffered-image)
-        height         (.getHeight buffered-image)
-        texture-buffer (BufferUtils/createByteBuffer (* width height 4))
-        data ^bytes (-> buffered-image
-                 (.getRaster)
-                 (.getDataBuffer)
-                 (as-> db
-                   (let [dbb ^DataBufferByte db]
-                     (.getData dbb))))]
-    (doseq [i (range (quot (alength data) 4))]
-      (doseq [n (reverse (range 4))]
-        (.put texture-buffer (aget data (+ (* i 4) n)))))
-    (.flip texture-buffer)
-    texture-buffer))
 
 (defn- get-fields [#^Class static-class]
   (.getFields static-class))
@@ -133,7 +103,7 @@
   (let [width          (.getWidth buffered-image)
         height         (.getHeight buffered-image)
         texture-id     (GL11/glGenTextures)
-        texture-buffer ^ByteBuffer (buffered-image-byte-buffer buffered-image)]
+        texture-buffer ^ByteBuffer (zimgutil/buffered-image-byte-buffer buffered-image)]
      ;;(.order texture-buffer (ByteOrder/nativeOrder))
      (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
      (GL11/glPixelStorei GL11/GL_UNPACK_ALIGNMENT 1)
@@ -148,7 +118,7 @@
   ([^BufferedImage buffered-image]
   (let [width  (.getWidth buffered-image)
         height (.getHeight buffered-image)]
-    (texture-id width height 1 (buffered-image-byte-buffer buffered-image))))
+    (texture-id width height 1 (zimgutil/buffered-image-byte-buffer buffered-image))))
   ([width height layers]
    (texture-id width height layers (BufferUtils/createByteBuffer (* width height 4 layers))))
   ([^long width ^long height ^long layers ^ByteBuffer texture-buffer]
@@ -197,16 +167,6 @@
         (throw (Exception. "Framebuffer not complete")))
       [id texture-id])))
         
-(defn png-bytes [path]
-  (with-open [input-stream (jio/input-stream path)]
-    (let [decoder (PNGDecoder. input-stream)
-          width (.getWidth decoder)
-          height (.getHeight decoder)
-          bytebuf (ByteBuffer/allocateDirect (* width height 4))]
-      (.decode decoder bytebuf (* width 4) PNGDecoder$Format/RGBA)
-      (.flip bytebuf)
-      bytebuf)))
-
 ;; Extract native libs and setup system properties
 (defn init-natives []
   (when (.exists (File. "natives"))
@@ -233,10 +193,10 @@
         icon-array         (when icon-paths
                              (condp = (LWJGLUtil/getPlatform)
 
-                               LWJGLUtil/PLATFORM_LINUX (into-array ByteBuffer [(png-bytes (get icon-paths 1))])
-                               LWJGLUtil/PLATFORM_MACOSX  (into-array ByteBuffer [(png-bytes (get icon-paths 2))])
-                               LWJGLUtil/PLATFORM_WINDOWS (into-array ByteBuffer [(png-bytes (get icon-paths 0))
-                                                                                  (png-bytes (get icon-paths 1))])))
+                               LWJGLUtil/PLATFORM_LINUX (into-array ByteBuffer [(zimgutil/png-bytes (get icon-paths 1))])
+                               LWJGLUtil/PLATFORM_MACOSX  (into-array ByteBuffer [(zimgutil/png-bytes (get icon-paths 2))])
+                               LWJGLUtil/PLATFORM_WINDOWS (into-array ByteBuffer [(zimgutil/png-bytes (get icon-paths 0))
+                                                                                  (zimgutil/png-bytes (get icon-paths 1))])))
         latch              (java.util.concurrent.CountDownLatch. 1)]
      ;; init-natives must be called before the Display is created
      (init-natives)
