@@ -27,8 +27,8 @@
                                         :columns 80 :rows 24
                                         :default-fg-color [250 250 250]
                                         :default-bg-color [5 5 8]
-                                        :windows-font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1)
-                                        :else-font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1)
+                                        :windows-font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 false)
+                                        :else-font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 false)
                                         :icon-paths ["images/icon-16x16.png"
                                                      "images/icon-32x32.png"
                                                      "images/icon-128x128.png"]})

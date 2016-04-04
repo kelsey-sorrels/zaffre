@@ -115,7 +115,7 @@
    [:? :? :? :? :? :? :? :? :? :?]
    [:? :? :? :? :? :? :? :? :? :?]])
 
-(assert (every? (fn [line] (= (count line) 10)) fantasy-map))
+;(assert (every? (fn [line] (= (count line) 10)) fantasy-map))
 
 (def fantasy (TileSet. "http://opengameart.org/sites/default/files/16x16_Jerom_CC-BY-SA-3.0_0.png" :alpha 16 16 0
                        (map->tile->col-row fantasy-map)
