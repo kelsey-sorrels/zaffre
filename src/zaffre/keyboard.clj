@@ -1,106 +1,82 @@
 (ns zaffre.keyboard
-  (:import (org.lwjgl.input Keyboard)))
+  (:import (org.lwjgl.glfw GLFW)))
 
 (defn convert-key-code [event-char event-key]
-  ;; Cond instead of case. For an unknown reason, case does not match event-key to Keyboard/* constants.
+  ;; Cond instead of case. For an unknown reason, case does not match event-key to GLFW/* constants.
   ;; Instead it always drops to the default case
   (when-let [key (condp = (int event-key)
-                   Keyboard/KEY_RETURN        :enter
-                   Keyboard/KEY_ESCAPE        :escape
-                   Keyboard/KEY_SPACE         :space
-                   (int Keyboard/KEY_BACK)    :backspace
+                   ;GLFW/KEY_RETURN        :enter
+                   GLFW/GLFW_KEY_ESCAPE        :escape
+                   GLFW/GLFW_KEY_SPACE         :space
+                   (int GLFW/GLFW_KEY_BACKSPACE)    :backspace
                    ;; Function keys
-                   Keyboard/KEY_F1            :f1
-                   Keyboard/KEY_F2            :f2
-                   Keyboard/KEY_F3            :f3
-                   Keyboard/KEY_F4            :f4
-                   Keyboard/KEY_F5            :f5
-                   Keyboard/KEY_F6            :f6
-                   Keyboard/KEY_F7            :f7
-                   Keyboard/KEY_F8            :f8
-                   Keyboard/KEY_F9            :f9
-                   Keyboard/KEY_F10           :f10
-                   Keyboard/KEY_F11           :f11
-                   Keyboard/KEY_F12           :f12
+                   GLFW/GLFW_KEY_F1            :f1
+                   GLFW/GLFW_KEY_F2            :f2
+                   GLFW/GLFW_KEY_F3            :f3
+                   GLFW/GLFW_KEY_F4            :f4
+                   GLFW/GLFW_KEY_F5            :f5
+                   GLFW/GLFW_KEY_F6            :f6
+                   GLFW/GLFW_KEY_F7            :f7
+                   GLFW/GLFW_KEY_F8            :f8
+                   GLFW/GLFW_KEY_F9            :f9
+                   GLFW/GLFW_KEY_F10           :f10
+                   GLFW/GLFW_KEY_F11           :f11
+                   GLFW/GLFW_KEY_F12           :f12
                    ;; Arrow keys
-                   Keyboard/KEY_UP            :up
-                   Keyboard/KEY_DOWN          :down
-                   Keyboard/KEY_LEFT          :left
-                   Keyboard/KEY_RIGHT         :right
+                   GLFW/GLFW_KEY_UP            :up
+                   GLFW/GLFW_KEY_DOWN          :down
+                   GLFW/GLFW_KEY_LEFT          :left
+                   GLFW/GLFW_KEY_RIGHT         :right
                    ;; Numberpad
-                   Keyboard/KEY_NUMPAD1       :numpad1
-                   Keyboard/KEY_NUMPAD2       :numpad2
-                   Keyboard/KEY_NUMPAD3       :numpad3
-                   Keyboard/KEY_NUMPAD4       :numpad4
-                   Keyboard/KEY_NUMPAD5       :numpad5
-                   Keyboard/KEY_NUMPAD6       :numpad6
-                   Keyboard/KEY_NUMPAD7       :numpad7
-                   Keyboard/KEY_NUMPAD8       :numpad8
-                   Keyboard/KEY_NUMPAD9       :numpad9
-                   Keyboard/KEY_NUMLOCK       :numlock
-                   Keyboard/KEY_NUMPADCOMMA   :numpadcomma
-                   Keyboard/KEY_NUMPADENTER   :numpadenter
-                   Keyboard/KEY_NUMPADEQUALS  :numpadequals
+                   GLFW/GLFW_KEY_KP_0          :numpad0
+                   GLFW/GLFW_KEY_KP_1          :numpad1
+                   GLFW/GLFW_KEY_KP_2          :numpad2
+                   GLFW/GLFW_KEY_KP_3          :numpad3
+                   GLFW/GLFW_KEY_KP_4          :numpad4
+                   GLFW/GLFW_KEY_KP_5          :numpad5
+                   GLFW/GLFW_KEY_KP_6          :numpad6
+                   GLFW/GLFW_KEY_KP_7          :numpad7
+                   GLFW/GLFW_KEY_KP_8          :numpad8
+                   GLFW/GLFW_KEY_KP_9          :numpad9
+                   GLFW/GLFW_KEY_NUM_LOCK      :numlock
+                   GLFW/GLFW_KEY_KP_ENTER      :numpadenter
+                   GLFW/GLFW_KEY_KP_EQUAL      :numpadequal
                    ;; Left special keys
-                   Keyboard/KEY_TAB           :tab
-                   Keyboard/KEY_LCONTROL      :lcontrol
-                   Keyboard/KEY_LMENU         :lmenu
-                   Keyboard/KEY_LMETA         :lmeta
-                   Keyboard/KEY_LSHIFT        :lshift
-                   Keyboard/KEY_CAPITAL       :capital
+                   GLFW/GLFW_KEY_TAB           :tab
+                   GLFW/GLFW_KEY_LEFT_CONTROL  :lcontrol
+                   GLFW/GLFW_KEY_LEFT_SHIFT    :lshift
 
                    ;; Right special keys
-                   Keyboard/KEY_ADD           :add
-                   Keyboard/KEY_APOSTROPHE    :apostrophe
-                   Keyboard/KEY_BACKSLASH     :backslash
-                   Keyboard/KEY_COLON         :colon
-                   Keyboard/KEY_COMMA         :comma
-                   Keyboard/KEY_DIVIDE        :divide
-                   Keyboard/KEY_LBRACKET      :lbracket
-                   Keyboard/KEY_MINUS         :minus
-                   Keyboard/KEY_MULTIPLY      :multiply
-                   Keyboard/KEY_PERIOD        :period
-                   Keyboard/KEY_RBRACKET      :rbracket
-                   Keyboard/KEY_RCONTROL      :rcontrol
-                   Keyboard/KEY_RETURN        :return
-                   Keyboard/KEY_RMENU         :rmenu
-                   Keyboard/KEY_RMETA         :rmeta
-                   Keyboard/KEY_RSHIFT        :rshift
-                   Keyboard/KEY_EQUALS        :equals
-                   Keyboard/KEY_SEMICOLON     :semicolon
-                   Keyboard/KEY_SLASH         :slash
-                   Keyboard/KEY_SUBTRACT      :subtract
-                   Keyboard/KEY_UNDERLINE     :underline
+                   ;GLFW/GLFW_KEY_ADD           :add
+                   ;GLFW/GLFW_KEY_APOSTROPHE    :apostrophe
+                   ;GLFW/GLFW_KEY_BACKSLASH     :backslash
+                   ;GLFW/GLFW_KEY_COLON         :colon
+                   ;GLFW/GLFW_KEY_COMMA         :comma
+                   ;GLFW/GLFW_KEY_DIVIDE        :divide
+                   ;GLFW/GLFW_KEY_LEFT_BRACKET  :lbracket
+                   ;GLFW/GLFW_KEY_MINUS         :minus
+                   ;GLFW/GLFW_KEY_MULTIPLY      :multiply
+                   ;GLFW/GLFW_KEY_PERIOD        :period
+                   ;GLFW/GLFW_KEY_RIGHT_BRACKET :rbracket
+                   ;GLFW/GLFW_KEY_RIGHT_CONTROL :rcontrol
+                   ;GLFW/GLFW_KEY_RETURN        :return
+                   ;GLFW/GLFW_KEY_RIGHT_SHIFT   :rshift
+                   ;GLFW/GLFW_KEY_EQUALS        :equals
+                   ;GLFW/GLFW_KEY_SEMICOLON     :semicolon
+                   ;GLFW/GLFW_KEY_SLASH         :slash
+                   ;GLFW/GLFW_KEY_SUBTRACT      :subtract
 
-                   ;; Symbols
-                   Keyboard/KEY_AT            :at
-                   Keyboard/KEY_AX            :ax
-                   Keyboard/KEY_CIRCUMFLEX    :circumflex
-                   Keyboard/KEY_DECIMAL       :decimal
-                   Keyboard/KEY_YEN           :yen
-
-                   Keyboard/KEY_CLEAR         :clear
-                   Keyboard/KEY_CONVERT       :convert
-                   Keyboard/KEY_FUNCTION      :function
                    ;; Navigation/editing
-                   Keyboard/KEY_DELETE        :delete
-                   Keyboard/KEY_END           :end
-                   Keyboard/KEY_HOME          :home
-                   Keyboard/KEY_INSERT        :insert
+                   GLFW/GLFW_KEY_DELETE        :delete
+                   GLFW/GLFW_KEY_END           :end
+                   GLFW/GLFW_KEY_HOME          :home
+                   GLFW/GLFW_KEY_INSERT        :insert
 
-                   Keyboard/KEY_KANA          :kana
-                   Keyboard/KEY_KANJI         :kanji
-                   Keyboard/KEY_NEXT          :next
-                   Keyboard/KEY_NOCONVERT     :noconvert
-                   Keyboard/KEY_PAUSE         :pause
-                   Keyboard/KEY_POWER         :power
-                   Keyboard/KEY_PRIOR         :prior
-                   Keyboard/KEY_SCROLL        :scroll
-                   Keyboard/KEY_SECTION       :section
-                   Keyboard/KEY_SLEEP         :sleep
-                   Keyboard/KEY_STOP          :stop
-                   Keyboard/KEY_SYSRQ         :sysrq
-                   Keyboard/KEY_UNLABELED     :unlabeled
+                   ;GLFW/GLFW_KEY_PAUSE         :pause
+                   ;GLFW/GLFW_KEY_PRIOR         :prior
+                   ;GLFW/GLFW_KEY_SCROLL        :scroll
+                   ;GLFW/GLFW_KEY_SECTION       :section
+                   ;GLFW/GLFW_KEY_SYSRQ         :sysrq
                    ;; event-key didn't match, default to event-char if it is printable, else nil
                    (when (<= (int (first " ")) (int event-char) (int \~))
                      event-char))]
