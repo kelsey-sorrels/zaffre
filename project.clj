@@ -13,5 +13,4 @@
                  [clojure-watch "0.1.11"]]
   :lein-release {:deploy-via :lein-deploy
                  :scm :git
-                 :build-uberjar true}
-  :main zaffre.glterminal)
+                 :build-uberjar true})
