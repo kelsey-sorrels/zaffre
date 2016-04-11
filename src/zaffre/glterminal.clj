@@ -15,7 +15,7 @@
     (java.nio FloatBuffer ByteBuffer)
     (java.nio.charset Charset)
     (org.lwjgl.opengl GL GLUtil GL11 GL12 GL13 GL15 GL20 GL30 GL32)
-    (org.lwjgl.glfw GLFW GLFWVidMode GLFWErrorCallback GLFWKeyCallback GLFWMouseButtonCallback GLFWCursorPosCallback)
+    (org.lwjgl.glfw GLFW GLFWVidMode GLFWErrorCallback GLFWCharCallback GLFWKeyCallback GLFWMouseButtonCallback GLFWCursorPosCallback)
     (org.lwjgl.system Platform)
     (org.joml Matrix4f Vector3f)
     (java.io File FileInputStream FileOutputStream)
@@ -29,6 +29,7 @@
 
 ;; GLFW won't maintain a strong reference to our callback objects, so we have to
 (def key-callback-atom (atom nil))
+(def char-callback-atom (atom nil))
 (def mouse-callback-atom (atom nil))
 
 (defmacro with-gl-context
@@ -73,13 +74,6 @@
           (let [~form (first coll#)]
             ~@body
             (recur (next coll#) (inc ~idx-name)))))))
-
-(defn convert-key-code [event-key event-scancode on-key-fn]
-  ;; Cond instead of case. For an unknown reason, case does not match event-key to Keyboard/* constants.
-  ;; Instead it always drops to the default case
-  (when-let [key (zkeyboard/convert-key-code event-key event-scancode)]
-    (log/info "key" key)
-    (on-key-fn key)))
 
 (defn font-key [font] font)
 
@@ -980,9 +974,13 @@
                 (log/info "Found uniform" uniform-name))))
           key-callback (proxy [GLFWKeyCallback] []
                                         (invoke [window key scancode action mods]
-                                          (when-let [key (zkeyboard/convert-key-code key scancode)]
+                                          (when-let [key (zkeyboard/convert-key-code key scancode action mods)]
                                             (log/info "key" key)
                                             (on-key-fn key))))
+          char-callback (proxy [GLFWCharCallback] []
+                                        (invoke [window codepoint]
+                                          (log/info "char" key)
+                                          (on-key-fn (first (Character/toChars codepoint)))))
           terminal
           ;; Create and return terminal
           (OpenGlTerminal. columns
@@ -1062,7 +1060,9 @@
       ;; Poll keyboard in background thread and offer input to key-chan
       ;; If gl-lock is false ie: the window has been closed, put :exit on the key-chan
       (reset! key-callback-atom key-callback)
+      (reset! char-callback-atom char-callback)
       (GLFW/glfwSetKeyCallback window key-callback)
+      (GLFW/glfwSetCharCallback window char-callback)
       #_(go-loop []
         (with-gl-context gl-lock window capabilities
           (try
