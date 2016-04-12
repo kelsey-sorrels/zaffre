@@ -334,7 +334,7 @@
 (defmethod glyph-graphics TileSet [font]
   {:post [(glyph-graphics? %)]}
   (with-open [image-stream (jio/input-stream (get font :path-or-url))]
-    (let [font-image    (->
+    (let [^BufferedImage font-image    (->
                           (ImageIO/read image-stream)
                           (convert-type BufferedImage/TYPE_4BYTE_ABGR)
                           (compact (get font :tile-width)
