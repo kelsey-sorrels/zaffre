@@ -50,47 +50,49 @@
                                      
 (defn -main [& _]
   ;; render in background thread
-   (let [terminal   (zgl/make-terminal [:text :overlay]
-                                       {:title "Zaffre demo"
-                                        :columns 16 :rows 16
-                                        :default-fg-color [250 250 250]
-                                        :default-bg-color [5 5 8]
-                                        :windows-font font
-                                        :else-font font
-                                        :icon-paths ["images/icon-16x16.png"
-                                                     "images/icon-32x32.png"
-                                                     "images/icon-128x128.png"]})
-        key-chan   (zat/get-key-chan terminal)
-        last-key    (atom nil)
-        ;; Every 33ms, draw a full frame
-        render-chan (go-loop []
-                      (dosync
-                        (let [key-in (or @last-key \?)]
-                          (zat/clear! terminal)
-                          (zutil/put-string terminal :text 0 0 "Hello world")
-                          (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
-                            (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
-                          (zutil/put-string terminal :text 12 0 (str key-in))
-                          (zutil/put-string terminal :overlay 2 7 "Overlay")
-                          (zat/put-chars! terminal :text
-                            (for [x (range 1 11)
-                                  y (range 5 10)]
-                              {:c :metal       :fg [4 4 5] :bg [0 128 0] :x x :y y}))
-                          (zat/refresh! terminal)))
-                          ;; ~30fps
-                        (Thread/sleep 33)
-                        (recur))]
-    ;; get key presses in fg thread
-    (loop []
-      (let [new-key (async/<!! key-chan)]
-        (reset! last-key new-key)
-        (log/info "got key" (or (str @last-key) "nil"))
-        (case new-key
-          \q (zat/destroy! terminal)
-          nil)
-        (if (= new-key :exit)
-          (do
-            (async/close! render-chan)
-            (System/exit 0))
-          ;; change font size on s/m/l keypress
-          (recur))))))
+   (zgl/make-terminal
+     [:text :overlay]
+     {:title "Zaffre demo"
+      :columns 16 :rows 16
+      :default-fg-color [250 250 250]
+      :default-bg-color [5 5 8]
+      :windows-font font
+      :else-font font
+      :icon-paths ["images/icon-16x16.png"
+                   "images/icon-32x32.png"
+                   "images/icon-128x128.png"]}
+     (fn [terminal]
+       (let [key-chan   (zat/get-key-chan terminal)
+             last-key    (atom nil)
+             ;; Every 33ms, draw a full frame
+             render-chan (go-loop []
+                           (dosync
+                             (let [key-in (or @last-key \?)]
+                               (zat/clear! terminal)
+                               (zutil/put-string terminal :text 0 0 "Hello world")
+                               (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
+                                 (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
+                               (zutil/put-string terminal :text 12 0 (str key-in))
+                               (zutil/put-string terminal :overlay 2 7 "Overlay")
+                               (zat/put-chars! terminal :text
+                                 (for [x (range 1 11)
+                                       y (range 5 10)]
+                                   {:c :metal       :fg [4 4 5] :bg [0 128 0] :x x :y y}))
+                               (zat/refresh! terminal)))
+                               ;; ~30fps
+                             (Thread/sleep 33)
+                             (recur))]
+         ;; get key presses in fg thread
+         (loop []
+           (let [new-key (async/<!! key-chan)]
+             (reset! last-key new-key)
+             (log/info "got key" (or (str @last-key) "nil"))
+             (case new-key
+               \q (zat/destroy! terminal)
+               nil)
+             (if (= new-key :exit)
+               (do
+                 (async/close! render-chan)
+                 (System/exit 0))
+               ;; change font size on s/m/l keypress
+               (recur))))))))
