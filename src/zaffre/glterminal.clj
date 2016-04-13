@@ -432,8 +432,8 @@
                            cursor-xy
                            fx-uniforms
                            gl
-                           key-chan
-                           mouse-chan
+                           term-chan
+                           term-pub
                            gl-lock
                            destroyed
                            window
@@ -481,10 +481,8 @@
              (fn [cm] (assoc-in cm [y x :bg-color] bg))))
   (assoc-fx-uniform! [_ k v]
     (-> fx-uniforms (get k) first (reset! v)))
-  (get-key-chan [_]
-    key-chan)
-  (get-mouse-chan [_]
-    mouse-chan)
+  (pub [_]
+    term-pub)
   (apply-font! [_ windows-font else-font]
     (with-gl-context gl-lock window capabilities
       (reset! normal-font
@@ -888,11 +886,17 @@
           layers-character-map  (zipmap layer-order (repeatedly #(ref character-map-cleared)))
           cursor-xy             (atom nil)
 
-          key-chan         (async/chan)
-          mouse-chan       (async/chan (async/buffer 100))
+          term-chan       (async/chan (async/buffer 100))
+          ;; Turn term-chan into a pub(lishable) channel
+          term-pub        (async/pub term-chan (fn [v]
+                                        (cond
+                                          (char? v)    :keypress
+                                          (keyword? v) v
+                                          :else        (get v :type))))
+                                        
           on-key-fn        (or on-key-fn
                                (fn alt-on-key-fn [k]
-                                 (async/put! key-chan k)))
+                                 (async/put! term-chan k)))
 
           ;; create width*height texture that gets updated each frame that determines which character to draw in each cell
           _ (log/info "Creating glyph array")
@@ -989,18 +993,20 @@
                                                    GLFW/GLFW_RELEASE :mouseup)
                                           [col
                                            row]   @mouse-col-row]
-                                      (async/put! mouse-chan (case (int button)
-                                        0 {:button :left :state state :col col :row row}
-                                        1 {:button :right :state state :col col :row row}
-                                        2 {:button :middle :state state :col col :row row})))))
+                                      (async/put! term-chan (case (int button)
+                                        0 {:button :left :type state :col col :row row}
+                                        1 {:button :right :type state :col col :row row}
+                                        2 {:button :middle :type state :col col :row row})))))
           cursor-pos-callback   (proxy [GLFWCursorPosCallback] []
                                   (invoke [window xpos ypos]
                                     (let [col (int (quot xpos (int character-width)))
-                                          row (int (quot ypos (int character-height)))]
+                                          row (int (quot ypos (int character-height)))
+                                          [last-col
+                                           last-row] @mouse-col-row]
                                       (when (not= [col row] @mouse-col-row)
-                                        (async/put! mouse-chan {:mouse-leave @mouse-col-row})
+                                        (async/put! term-chan {:type :mouse-leave :col last-col :row last-row})
                                         (reset! mouse-col-row [col row])
-                                        (async/put! mouse-chan {:mouse-enter @mouse-col-row})))))
+                                        (async/put! term-chan {:type :mouse-enter :col col :row row})))))
           terminal
           ;; Create and return terminal
           (OpenGlTerminal. columns
@@ -1058,8 +1064,8 @@
                             :data {:glyph-image-data glyph-image-data
                                    :fg-image-data fg-image-data
                                    :bg-image-data bg-image-data}}
-                           key-chan
-                           mouse-chan
+                           term-chan
+                           term-pub
                            gl-lock
                            destroyed
                            window
@@ -1078,7 +1084,7 @@
                                              (make-font filename Font/PLAIN font-size)))
                          :options {:recursive true}}])
       ;; Poll keyboard in background thread and offer input to key-chan
-      ;; If gl-lock is false ie: the window has been closed, put :exit on the key-chan
+      ;; If gl-lock is false ie: the window has been closed, put :exit on the term-chan
       (reset! key-callback-atom key-callback)
       (reset! char-callback-atom char-callback)
       (reset! mouse-button-callback-atom mouse-button-callback)
@@ -1112,7 +1118,7 @@
                       col    (quot event-x (int character-width))
                       row    (quot (- (int screen-height) event-y) (int character-height))]
                   (when (<= 0 button 2)
-                    (async/put! mouse-chan (case button
+                    (async/put! term-chan (case button
                       0 {:button :left :state state :col col :row row}
                       1 {:button :right :state state :col col :row row}
                       2 {:button :middle :state state :col col :row row}))))
@@ -1128,9 +1134,9 @@
                   col     (quot mouse-x (int character-width))
                   row     (quot (- (int screen-height) mouse-y) (int character-height))]
               (when (not= [col row] @mouse-col-row)
-                (async/>! mouse-chan {:mouse-leave @mouse-col-row})
+                (async/>! term-chan {:mouse-leave @mouse-col-row})
                 (reset! mouse-col-row [col row])
-                (async/>! mouse-chan {:mouse-enter @mouse-col-row})))
+                (async/>! term-chan {:mouse-enter @mouse-col-row})))
             (catch Throwable e
               (log/error "Error getting mouse movement" e))))
         (if @gl-lock
