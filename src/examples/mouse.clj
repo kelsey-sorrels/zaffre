@@ -25,10 +25,10 @@
                    "images/icon-32x32.png"
                    "images/icon-128x128.png"]}
      (fn [terminal]
-       (let [event-chan   (async/merge
-                            [(zat/get-key-chan terminal)
-                             (zat/get-mouse-chan terminal)]
-                            10)
+       (let [term-pub    (zat/pub terminal)
+             key-chan    (async/chan)
+             mouse-leave-chan (async/chan)
+             close-chan  (async/chan)
              last-key    (atom nil)
              trail-length 6
              last-mouse-pos (atom [])
@@ -47,29 +47,26 @@
                                ;; ~30fps
                              (Thread/sleep 33)
                              (recur))]
+         (async/sub term-pub :keypress key-chan)
+         (async/sub term-pub :mouse-leave mouse-leave-chan)
+         (async/sub term-pub :close close-chan)
          ;; get key presses in fg thread
-         (loop []
-           (let [new-event (async/<!! event-chan)]
-             (cond
-               (map? new-event)
-                 (let [{:keys [mouse-leave]} new-event]
-                   (log/info "Got mouse-event" new-event (vec @last-mouse-pos))
-                   (when mouse-leave
-                     (swap! last-mouse-pos (fn [col] (take trail-length (cons mouse-leave col)))))
-                   (recur))
-               (char? new-event)
-                 (let [new-key new-event]
-                   (reset! last-key new-key)
-                   (log/info "got key" (or (str @last-key) "nil"))
-                   (case new-key
-                     \q (zat/destroy! terminal)
-                     nil)
-                   (if (= new-key :exit)
-                     (do
-                       (async/close! render-chan)
-                       (async/close! event-chan)
-                       (System/exit 0))
-                     ;; change font size on s/m/l keypress
-                     (recur))))))))))
+         (go-loop []
+           (let [new-key (async/<! key-chan)]
+             (reset! last-key new-key)
+             (log/info "got key" (or (str @last-key) "nil"))
+             (case new-key
+               \q (zat/destroy! terminal)
+               nil)))
+         (go-loop []
+           (let [{:keys [col row]} (async/<! mouse-leave-chan)]
+             (log/info "got mouse-leave" [col row])
+             (swap! last-mouse-pos (fn [coll] (take trail-length (cons [col row] coll)))))
+             (recur))
+         (let [_ (async/<! close-chan)]
+           (async/close! render-chan)
+           (async/close! key-chan)
+           (async/close! mouse-leave-chan)
+           (System/exit 0))))))
 
 
