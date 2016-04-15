@@ -245,11 +245,19 @@
            (GLFW/glfwMakeContextCurrent window)
            (GLFW/glfwSwapInterval 1)
            (GLFW/glfwShowWindow window)
-           (let [capabilities (GL/createCapabilities)]
-             (GL11/glViewport 0 0 screen-width screen-height)
-             (GLFW/glfwMakeContextCurrent 0)
-             ;; Signal to parent that display has been created
-             [window capabilities])))
+           (let [capabilities (GL/createCapabilities)
+                 width-buffer (BufferUtils/createIntBuffer 1)
+                 height-buffer (BufferUtils/createIntBuffer 1)]
+             (GLFW/glfwGetFramebufferSize window width-buffer height-buffer)
+             (let [frame-buffer-width (.get width-buffer)
+                   frame-buffer-height (.get height-buffer)]
+               (GL11/glViewport 0 0 frame-buffer-width frame-buffer-height)
+               (GLFW/glfwMakeContextCurrent 0)
+               ;; Signal to parent that display has been created
+               [window
+                capabilities
+                frame-buffer-width
+                frame-buffer-height]))))
      (throw (RuntimeException. "Failed to create the GLFW window")))))
 
 (defn- load-shader
@@ -480,8 +488,8 @@
               (if (= (Platform/get) Platform/WINDOWS)
                 windows-font
                 else-font))
-      (let [{:keys [screen-width
-                    screen-height
+      (let [{:keys [frame-buffer-width
+                    frame-buffer-height
                     character-width
                     character-height
                     font-texture-width
@@ -489,14 +497,14 @@
                     font-texture-image]} (get @font-textures (font-key @normal-font))
             ;; type nil as ByteBuffer to avoid reflection on glTexImage2D
             ^ByteBuffer bbnil nil]
-        (log/info "screen size" screen-width "x" screen-height)
+        (log/info "framebuffer size" frame-buffer-width "x" frame-buffer-height)
         (try
           ;; TODO: fix fullscreen
           #_(when-not @fullscreen
             (Display/setDisplayMode (DisplayMode. screen-width screen-height)))
           ;; resize FBO
           (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
-          (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB (int screen-width) (int screen-height) 0 GL11/GL_RGB GL11/GL_UNSIGNED_BYTE bbnil)
+          (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB (int frame-buffer-width) (int frame-buffer-height) 0 GL11/GL_RGB GL11/GL_UNSIGNED_BYTE bbnil)
           (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture (texture-id-2d font-texture-image))))
           (catch Throwable t
             (log/error "Error changing font" t))))))
@@ -518,8 +526,8 @@
             glyph-image-data glyph-image-data
             fg-image-data fg-image-data
             bg-image-data bg-image-data
-            {:keys [screen-width
-                    screen-height
+            {:keys [frame-buffer-width
+                    frame-buffer-height
                     character-width
                     character-height
                     character->col-row
@@ -615,17 +623,17 @@
             (log/info (vec line))))
         (try
           (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER, fbo-id)
-          (GL11/glViewport 0 0 screen-width screen-height)
-          (except-gl-errors (str "glViewport " screen-width screen-height))
+          (GL11/glViewport 0 0 frame-buffer-width frame-buffer-height)
+          (except-gl-errors (str "glViewport " frame-buffer-width frame-buffer-height))
           (GL11/glClearColor 0.0 0.0 1.0 1.0)
           (except-gl-errors (str "glClearColor  " 0.0 0.0 1.0 1.0))
           (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
           (except-gl-errors (str "glClear  " (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT)))
           (GL20/glUseProgram program-id)
-          (GL20/glUniformMatrix4fv u-PMatrix false (ortho-matrix-buffer screen-width screen-height p-matrix-buffer))
+          (GL20/glUniformMatrix4fv u-PMatrix false (ortho-matrix-buffer frame-buffer-width frame-buffer-height p-matrix-buffer))
           (except-gl-errors (str "u-PMatrix - glUniformMatrix4  " u-PMatrix))
-          (GL20/glUniformMatrix4fv u-MVMatrix false (position-matrix-buffer [(- (/ screen-width 2)) (- (/ screen-height 2)) -1.0 0.0]
-                                                                          [screen-width screen-height 1.0]
+          (GL20/glUniformMatrix4fv u-MVMatrix false (position-matrix-buffer [(- (/ frame-buffer-width 2)) (- (/ frame-buffer-height 2)) -1.0 0.0]
+                                                                          [frame-buffer-width frame-buffer-height 1.0]
                                                                           mv-matrix-buffer))
           (except-gl-errors (str "u-MVMatrix - glUniformMatrix4  " u-MVMatrix))
           ; Bind VAO
@@ -688,14 +696,14 @@
 
           ;; Draw fbo to screen
           (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
-          (GL11/glViewport 0 0 screen-width screen-height)
+          (GL11/glViewport 0 0 frame-buffer-width frame-buffer-height)
           (GL11/glClearColor 0.0 1.0 0.0 1.0)
           (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
           (GL20/glUseProgram fb-program-id)
-          (GL20/glUniformMatrix4fv u-fb-PMatrix false (ortho-matrix-buffer screen-width screen-height p-matrix-buffer))
+          (GL20/glUniformMatrix4fv u-fb-PMatrix false (ortho-matrix-buffer frame-buffer-width frame-buffer-height p-matrix-buffer))
           (except-gl-errors (str "u-fb-PMatrix - glUniformMatrix4  " u-fb-PMatrix))
-          (GL20/glUniformMatrix4fv u-fb-MVMatrix false (position-matrix-buffer [(- (/ screen-width 2)) (- (/ screen-height 2)) -1.0 0.0]
-                                                                          [screen-width screen-height 1.0]
+          (GL20/glUniformMatrix4fv u-fb-MVMatrix false (position-matrix-buffer [(- (/ frame-buffer-width 2)) (- (/ frame-buffer-height 2)) -1.0 0.0]
+                                                                          [frame-buffer-width frame-buffer-height 1.0]
                                                                           mv-matrix-buffer))
           (except-gl-errors (str "u-fb-MVMatrix - glUniformMatrix4  " u-fb-MVMatrix))
           (GL20/glEnableVertexAttribArray 0);pos-vertex-attribute)
@@ -733,7 +741,7 @@
   (fullscreen! [_ v]
     (with-gl-context gl-lock window capabilities
       (if (false? v)
-        (let [{:keys [screen-width screen-height]} (get @font-textures (font-key @normal-font))]
+        (let [{:keys [frame-buffer-width frame-buffer-height]} (get @font-textures (font-key @normal-font))]
           (reset! fullscreen false)
           #_(Display/setDisplayMode (DisplayMode. screen-width screen-height)))
         (let [[width height mode] v]
@@ -836,8 +844,8 @@
                                  (log/info "Created font texture " font-parameters " screen-width" screen-width "screen-height" screen-height)
                                  (swap! font-textures assoc
                                                      (font-key new-font)
-                                                     {:screen-width screen-width
-                                                      :screen-height screen-height
+                                                     {:frame-buffer-width screen-width
+                                                      :frame-buffer-height screen-height
                                                       :character-width character-width
                                                       :character-height character-height
                                                       :character->col-row character->col-row
@@ -855,16 +863,21 @@
           destroyed          (atom false)
           gl-lock            (atom true)
           latch              (java.util.concurrent.CountDownLatch. 1)
-          {:keys [screen-width
-                  screen-height
+          {:keys [frame-buffer-width
+                  frame-buffer-height
                   character-width
                   character-height
                   font-texture-width
                   font-texture-height
                   font-texture-image]} (get @font-textures (font-key @normal-font))
-          _                  (log/info "screen size" screen-width "x" screen-height)
-          [window capabilities] (init-display title screen-width screen-height icon-paths gl-lock destroyed)
-          _                  (log/info "window" window "capabilities" capabilities)
+          _                  (log/info "screen size" (* columns character-width) "x" (* rows character-height))
+          _                  (log/info "framebuffer size" frame-buffer-width "x" frame-buffer-height)
+          [window
+           capabilities
+           frame-buffer-width
+           frame-buffer-height]
+                             (init-display title (* columns character-width) (* rows character-height) icon-paths gl-lock destroyed)
+          _                  (log/info "window" window "capabilities" capabilities "fb" frame-buffer-width "x" frame-buffer-height)
 
           font-texture       (with-gl-context gl-lock window capabilities (texture-id-2d font-texture-image))
           _                  (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture font-texture)))
@@ -902,7 +915,7 @@
           ;fg-texture       (texture-id next-pow-2-columns next-pow-2-rows (count layer-order) fg-image-data)
           bg-texture       (with-gl-context gl-lock window capabilities (texture-id next-pow-2-columns next-pow-2-rows (count layer-order) bg-image-data))
           [fbo-id fbo-texture]
-                           (with-gl-context gl-lock window capabilities (fbo-texture screen-width screen-height))
+                           (with-gl-context gl-lock window capabilities (fbo-texture frame-buffer-width frame-buffer-height))
           ; init shaders
           [^int pgm-id
            ^int fb-pgm-id]      (with-gl-context gl-lock window capabilities (init-shaders (get fx-shader :name)))
@@ -1017,9 +1030,9 @@
                            layer-order
                            cursor-xy
                            fx-uniforms
-                           {:p-matrix-buffer (ortho-matrix-buffer screen-width screen-height)
-                            :mv-matrix-buffer (position-matrix-buffer [(- (/ screen-width 2)) (- (/ screen-height 2)) -1.0 0.0]
-                                                                      [screen-width screen-height 1.0])
+                           {:p-matrix-buffer (ortho-matrix-buffer frame-buffer-width frame-buffer-height)
+                            :mv-matrix-buffer (position-matrix-buffer [(- (/ frame-buffer-width 2)) (- (/ frame-buffer-height 2)) -1.0 0.0]
+                                                                      [frame-buffer-width frame-buffer-height 1.0])
                             :buffers {:vertices-vbo-id vertices-vbo-id
                                       :vertices-count vertices-count
                                       :texture-coords-vbo-id texture-coords-vbo-id
