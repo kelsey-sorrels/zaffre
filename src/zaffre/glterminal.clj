@@ -106,7 +106,6 @@
         height         (.getHeight buffered-image)
         texture-id     (GL11/glGenTextures)
         texture-buffer ^ByteBuffer (zimgutil/buffered-image-byte-buffer buffered-image)]
-     ;;(.order texture-buffer (ByteOrder/nativeOrder))
      (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
      (GL11/glPixelStorei GL11/GL_UNPACK_ALIGNMENT 1)
      (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MIN_FILTER GL11/GL_NEAREST)
@@ -125,7 +124,6 @@
    (texture-id width height layers (BufferUtils/createByteBuffer (* width height 4 layers))))
   ([^long width ^long height ^long layers ^ByteBuffer texture-buffer]
    (let [texture-id (GL11/glGenTextures)]
-     ;;(.order texture-buffer (ByteOrder/nativeOrder))
      (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY texture-id)
      (GL11/glPixelStorei GL11/GL_UNPACK_ALIGNMENT 1)
      (GL11/glTexParameteri GL30/GL_TEXTURE_2D_ARRAY GL11/GL_TEXTURE_MIN_FILTER GL11/GL_NEAREST)
@@ -137,7 +135,6 @@
 
 (defn- xy-texture-id [^long width ^long height ^long layers ^ByteBuffer texture-buffer]
   (let [texture-id (GL11/glGenTextures)]
-    ;;(.order texture-buffer (ByteOrder/nativeOrder))
     (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY texture-id)
     (GL11/glTexParameteri GL30/GL_TEXTURE_2D_ARRAY GL11/GL_TEXTURE_MIN_FILTER GL11/GL_NEAREST)
     (GL11/glTexParameteri GL30/GL_TEXTURE_2D_ARRAY GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
@@ -342,7 +339,6 @@
       (set! (.m33 ortho-matrix) m33)
       (.clear matrix-buffer)
       (.get ortho-matrix matrix-buffer)
-      ;(.flip matrix-buffer)
       matrix-buffer)))
 
 (defn position-matrix-buffer
@@ -355,7 +351,6 @@
       (.scale matrix (Vector3f. (get s 0) (get s 1) (get s 2)))
       (.clear matrix-buffer)
       (.get matrix matrix-buffer)
-      ;(.flip matrix-buffer)
       matrix-buffer)))
 
 (defn- init-buffers []
@@ -615,9 +610,6 @@
           (.position glyph-image-data (* glyph-texture-width glyph-texture-height 4 (inc layer)))
           (.position fg-image-data    (* glyph-texture-width glyph-texture-height 4 (inc layer)))
           (.position bg-image-data    (* glyph-texture-width glyph-texture-height 4 (inc layer))))
-        #_(.position glyph-image-data (.limit glyph-image-data))
-        #_(.position fg-image-data (.limit fg-image-data))
-        #_(.position bg-image-data (.limit bg-image-data))
         (.flip glyph-image-data)
         (.flip fg-image-data)
         (.flip bg-image-data)
@@ -648,16 +640,12 @@
           (GL30/glBindVertexArray vao-id)
           (except-gl-errors (str "vao bind - glBindVertexArray " vao-id))
           ; Setup vertex buffer
-          ;(GL15/glBindBuffer GL15/GL_ARRAY_BUFFER, vertices-vbo-id)
           (except-gl-errors (str "vbo bind - glBindBuffer " vertices-vbo-id))
           (GL20/glEnableVertexAttribArray 0);pos-vertex-attribute)
           (except-gl-errors "vbo bind - glEnableVertexAttribArray")
-          ;;(GL20/glVertexAttribPointer 0 3 GL11/GL_FLOAT false 0 0)
           (except-gl-errors "vbo bind - glVertexAttribPointer")
           ; Setup uv buffer
-          ;(GL15/glBindBuffer GL15/GL_ARRAY_BUFFER, texture-coords-vbo-id)
           (GL20/glEnableVertexAttribArray 1);texture-coords-vertex-attribute)
-          ;;(GL20/glVertexAttribPointer 1 2 GL11/GL_FLOAT false 0 0)
           (except-gl-errors "texture coords bind")
           ; Setup font texture
           (GL13/glActiveTexture GL13/GL_TEXTURE0)
@@ -1105,7 +1093,6 @@
                            window
                            capabilities)]
       ;; Access to terminal will be multi threaded. Release context so that other threads can access it)))
-      ;(Display/releaseContext)
       (when @fullscreen
         (zat/fullscreen! terminal (first (zat/fullscreen-sizes terminal))))
       ;; Start font file change listener thread
@@ -1138,7 +1125,6 @@
               (except-gl-errors "Start of loop")
               ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
               ; input on the thread that created the window
-              ;(Display/processMessages)
               (GLFW/glfwPollEvents)
               ;; Close the display if the close window button has been clicked
               ;; or the gl-lock has been released programmatically (e.g. by destroy!)
