@@ -638,9 +638,13 @@
           (GL20/glUseProgram program-id)
           (GL20/glUniformMatrix4fv u-PMatrix false (ortho-matrix-buffer frame-buffer-width frame-buffer-height p-matrix-buffer))
           (except-gl-errors (str "u-PMatrix - glUniformMatrix4  " u-PMatrix))
-          (GL20/glUniformMatrix4fv u-MVMatrix false (position-matrix-buffer [(- (/ frame-buffer-width 2)) (- (/ frame-buffer-height 2)) -1.0 0.0]
-                                                                          [frame-buffer-width frame-buffer-height 1.0]
-                                                                          mv-matrix-buffer))
+          (GL20/glUniformMatrix4fv
+            u-MVMatrix
+            false
+            (position-matrix-buffer
+              [(- (/ frame-buffer-width 2)) (- (/ frame-buffer-height 2)) -1.0 0.0]
+              [(* 1 frame-buffer-width) (* 1 frame-buffer-height) 1.0]
+              mv-matrix-buffer))
           (except-gl-errors (str "u-MVMatrix - glUniformMatrix4  " u-MVMatrix))
           ; Bind VAO
           (GL30/glBindVertexArray vao-id)
@@ -702,15 +706,19 @@
 
           ;; Draw fbo to screen
           (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
-          (GL11/glViewport 0 0 frame-buffer-width frame-buffer-height)
+          (GL11/glViewport 0 0 (* 2 frame-buffer-width) (* 2 frame-buffer-height))
           (GL11/glClearColor 0.0 1.0 0.0 1.0)
           (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
           (GL20/glUseProgram fb-program-id)
           (GL20/glUniformMatrix4fv u-fb-PMatrix false (ortho-matrix-buffer frame-buffer-width frame-buffer-height p-matrix-buffer))
           (except-gl-errors (str "u-fb-PMatrix - glUniformMatrix4  " u-fb-PMatrix))
-          (GL20/glUniformMatrix4fv u-fb-MVMatrix false (position-matrix-buffer [(- (/ frame-buffer-width 2)) (- (/ frame-buffer-height 2)) -1.0 0.0]
-                                                                          [frame-buffer-width frame-buffer-height 1.0]
-                                                                          mv-matrix-buffer))
+          (GL20/glUniformMatrix4fv
+            u-fb-MVMatrix
+            false
+            (position-matrix-buffer
+              [(- (/ frame-buffer-width 2)) (- (/ frame-buffer-height 2)) -1.0 0.0]
+              [(* 2 frame-buffer-width) (* 2 frame-buffer-height) 1.0]
+              mv-matrix-buffer))
           (except-gl-errors (str "u-fb-MVMatrix - glUniformMatrix4  " u-fb-MVMatrix))
           (GL20/glEnableVertexAttribArray 0);pos-vertex-attribute)
           (except-gl-errors "vbo bind - glEnableVertexAttribArray")
