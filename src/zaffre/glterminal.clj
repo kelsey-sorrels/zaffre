@@ -438,13 +438,12 @@
     [0 0])
   ;; characters is a list of {:c \character :x col :y row :fg [r g b] :bg [r g b]}
   (put-chars! [_ layer-id characters]
-    ; TODO: make better precondition check
-    {:pre [#_(contains? (set layer-order) layer-id)
+    {:pre [(get layer-id->group layer-id)
            (get layer-character-map layer-id)]}
     #_(log/info "characters" (str characters))
     (let [columns (-> layer-id layer-id->group :columns)
           rows    (-> layer-id layer-id->group :rows)]
-      (log/info "writing to layer" layer-id "dim:" columns "x" rows)
+      ;(log/info "writing to layer" layer-id "dim:" columns "x" rows)
       (alter (get layer-character-map layer-id)
              (fn [cm]
                (reduce (fn [cm [row row-characters]]
@@ -563,8 +562,8 @@
                 :let [^ByteBuffer glyph-image-data glyph-image-data
                       ^ByteBuffer fg-image-data fg-image-data
                       ^ByteBuffer bg-image-data bg-image-data
-                      texture-columns (zutil/next-pow-2 columns)
-                      texture-rows    (zutil/next-pow-2 rows)
+                      texture-columns (int (zutil/next-pow-2 columns))
+                      texture-rows    (int (zutil/next-pow-2 rows))
                       layer-count     (count layers)
                       layer-size      (* 4 texture-columns texture-rows)]]
           ;; Update glyph texture in buffers
@@ -684,7 +683,6 @@
             (GL20/glUniform1i u-glyphs 1)
             (GL20/glUniform1i u-fg 2)
             (GL20/glUniform1i u-bg 3)
-            ;; TODO: use real value
             (GL20/glUniform1i u-num-layers layer-count)
             (except-gl-errors "uniformli bind")
             (GL20/glUniform2f font-size, character-width character-height)
@@ -765,8 +763,7 @@
     (doseq [[id character-map] layer-character-map]
       (ref-set character-map (get layer-character-map-cleared id))))
   (clear! [_ layer-id]
-    ; TODO: make better precondition check
-    ;{:pre [(contains? (set layer-order) layer-id)]}
+    {:pre [(get layer-id->group layer-id)]}
     (ref-set (get layer-character-map layer-id) (get layer-character-map-cleared layer-id)))
   (fullscreen! [_ v]
     (with-gl-context gl-lock window capabilities
@@ -806,25 +803,21 @@
   (set-fx-fg! [_ layer-id x y fg]
     {:pre [(vector? fg)
            (= (count fg) 3)
-           ; TODO: make better precondition check
-           #_(contains? (set layer-order) layer-id)]}
+           (get layer-id->group layer-id)]}
       (alter (get layer-character-map layer-id)
              (fn [cm] (assoc-in cm [y x :fx-fg-color] fg))))
   (set-fx-bg! [_ layer-id x y bg]
     {:pre [(vector? bg)
            (= (count bg) 3)
-           ; TODO: make better precondition check
-           #_(contains? (set layer-order) layer-id)]}
+           (get layer-id->group layer-id)]}
       (alter (get layer-character-map layer-id)
              (fn [cm] (assoc-in cm [y x :fx-bg-color] bg))))
   (set-fx-char! [_ layer-id x y c]
-    ; TODO: make better precondition check
-    ;{:pre [(contains? (set layer-order) layer-id)]}
+    {:pre [(get layer-id->group layer-id)]}
     (alter (get layer-character-map layer-id)
            (fn [cm] (assoc-in cm [y x :fx-character] c))))
   (clear-fx! [_ layer-id]
-    ; TODO: make better precondition check
-    ;{:pre [(contains? (set layer-order) layer-id)]}
+    {:pre [(get layer-id->group layer-id)]}
     (alter (get layer-character-map layer-id)
            (fn [cm]
              (mapv (fn [line]
@@ -958,11 +951,6 @@
 
           ;; create width*height texture that gets updated each frame that determines which character to draw in each cell
           _ (log/info "Creating glyph array")
-          ;next-pow-2-columns (zutil/next-pow-2 columns)
-          ;next-pow-2-rows    (zutil/next-pow-2 rows)
-          ;glyph-texture-width  next-pow-2-columns
-          ;glyph-texture-height next-pow-2-rows
-          ;glyph-array    (ta/unsigned-int8 (repeat (* columns rows) 0))
           glyph-image-data (for [layer-group layer-groups]
                              (let [np2-columns (zutil/next-pow-2 (get layer-group :columns))
                                    np2-rows    (zutil/next-pow-2 (get layer-group :rows))]
