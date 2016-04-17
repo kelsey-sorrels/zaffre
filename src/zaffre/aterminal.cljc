@@ -3,12 +3,12 @@
 
 (defprotocol ATerminal
   (get-size [this])
+  (alter-group-pos! [this group-id f])
   (put-chars! [this layer-id characters])
   (set-fg! [this layer-id x y fg])
   (set-bg! [this layer-id x y bg])
   (assoc-fx-uniform! [this k v])
   (pub [this])
-  (get-mouse-chan [this])
   (apply-font! [this windows-font else-font])
   (set-cursor! [this x y])
   (refresh! [this])

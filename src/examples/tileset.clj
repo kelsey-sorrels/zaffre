@@ -39,11 +39,11 @@
 (defn -main [& _]
   ;; render in background thread
   (zgl/make-terminal
-    [{:id      :app
+    {:app {
       :layers  [:ui :0 :1 :2 :3]
       :columns 31
       :rows    35
-      :pos     [0 0]}]
+      :pos     [0 0]}}
     {:title            "Zaffre demo"
      :screen-width     (* 31 16)
      :screen-height    (* 35 16)
