@@ -14,7 +14,7 @@
     (org.lwjgl BufferUtils)
     (java.nio FloatBuffer ByteBuffer)
     (java.nio.charset Charset)
-    (org.lwjgl.opengl GL GLUtil GL11 GL12 GL13 GL15 GL20 GL30 GL32)
+    (org.lwjgl.opengl GL GLUtil GL11 GL12 GL13 GL14 GL15 GL20 GL30 GL32)
     (org.lwjgl.glfw GLFW GLFWVidMode GLFWErrorCallback GLFWCharCallback GLFWKeyCallback GLFWMouseButtonCallback GLFWCursorPosCallback)
     (org.lwjgl.system Platform)
     (org.joml Matrix4f Vector3f)
@@ -396,6 +396,77 @@
      :texture-coords-count texture-coords-count
      :vao-id vao-id}))
 
+(defn- fill-glyph-fg-bg-buffers [layer-id->character-map character->col-row character->transparent texture-columns texture-rows rows layer-size cursor-xy glyph-image-data fg-image-data bg-image-data]
+  (.clear glyph-image-data)
+  (.clear fg-image-data)
+  (.clear bg-image-data)
+  (loop-with-index layer [[layer-id character-map] layer-id->character-map]
+    ;;(doseq [[layer-id character-map] layers-character-map]
+    ;;  (doseq [[row line] (map-indexed vector (reverse @character-map))
+    ;;          [col c]    (map-indexed vector line)]
+        ;;(log/info "row" row "col" col "c" c)
+    ;(log/info layer-id)
+    ;; Set buffer positions to beginning
+    (loop-with-index row [line (reverse @character-map)]
+      (loop-with-index col [c line]
+        (let [chr        (or (get c :fx-character) (get c :character))
+              highlight  (= @cursor-xy [col (- rows row 1)])
+              [fg-r fg-g fg-b] (if highlight
+                                 (or (get c :fx-bg-color)  (get c :bg-color))
+                                 (or (get c :fx-fg-color)  (get c :fg-color)))
+              [bg-r bg-g bg-b] (if highlight
+                                 (or (get c :fx-fg-color)  (get c :fg-color))
+                                 (or (get c :fx-bg-color)  (get c :bg-color)))
+              ;s         (str (get c :character))
+              style     (get c :style)
+              i         (+ (* 4 (+ (* texture-columns row) col)) (* layer-size layer))
+              [x y]     (get character->col-row chr)
+              transparent (get character->transparent chr)]
+          (log/info "Drawing " layer-id "at col row" col row "character from atlas col row" x y c "(index=" i ") transparent" transparent )
+          (when (zero? col)
+            ;(log/info "glyph texture" glyph-texture-width glyph-texture-height)
+            ;(log/info "resetting position to start of line" layer row col i)
+            (.position glyph-image-data i)
+            (.position fg-image-data i)
+            (.position bg-image-data i))
+          (if (not= chr (char 0))
+            (do
+              (assert (or (not (nil? x)) (not (nil? y)))
+                      (format "X/Y nil - glyph not found for character %s %s"
+                        (or (str chr) "nil")
+                        (or (cond
+                              (nil? chr) "nil"
+                              (char? chr) (format "%x" (int chr))
+                              :else (str chr)))))
+              (.put glyph-image-data (unchecked-byte x))
+              (.put glyph-image-data (unchecked-byte y))
+              ;; TODO fill with appropriate type
+              (.put glyph-image-data (unchecked-byte (cond
+                                                       transparent 2
+                                                       :else 1)))
+              (.put glyph-image-data (unchecked-byte 0))
+              (.put fg-image-data    (unchecked-byte fg-r))
+              (.put fg-image-data    (unchecked-byte fg-g))
+              (.put fg-image-data    (unchecked-byte fg-b))
+              (.put fg-image-data    (unchecked-byte 0))
+              (.put bg-image-data    (unchecked-byte bg-r))
+              (.put bg-image-data    (unchecked-byte bg-g))
+              (.put bg-image-data    (unchecked-byte bg-b))
+              (.put bg-image-data    (unchecked-byte 0)))
+            ;; space ie empty, skip forward
+            (do
+              (.put glyph-image-data (byte-array 4))
+              (.put fg-image-data (byte-array 4))
+              (.put bg-image-data (byte-array 4)))))))
+      #_(log/info "At pos" (.position glyph-image-data))
+      #_(log/info "Setting layer" layer "new pos" (* texture-columns texture-height 4 (inc layer)))
+      (.position glyph-image-data (* texture-columns texture-rows 4 (inc layer)))
+      (.position fg-image-data    (* texture-columns texture-rows 4 (inc layer)))
+      (.position bg-image-data    (* texture-columns texture-rows 4 (inc layer))))
+    (.flip glyph-image-data)
+    (.flip fg-image-data)
+    (.flip bg-image-data))
+
 ;; Normally this would be a record, but until http://dev.clojure.org/jira/browse/CLJ-1224 is fixed
 ;; it is not performant to memoize records because hashCode values are not cached and are recalculated
 ;; each time.
@@ -546,7 +617,43 @@
         (assert (not (nil? font-texture-width)) "font-texture-width nil")
         (assert (not (nil? font-texture-height)) "font-texture-height")
         (assert (not (nil? font-texture)) "font-texture nil")
-        (doseq [[{:keys [columns rows layers]}
+        (log/info "drawing with" (mapv vec [glyph-textures fg-textures bg-textures glyph-image-data fg-image-data bg-image-data]))
+        ;; Setup render to FBO
+        (try
+          (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER, fbo-id)
+          (GL30/glEnablei GL11/GL_BLEND fbo-id)
+          (GL14/glBlendFuncSeparate GL11/GL_SRC_ALPHA GL11/GL_ONE_MINUS_SRC_ALPHA GL11/GL_ONE GL11/GL_ONE_MINUS_SRC_ALPHA)
+          (GL11/glViewport 0 0 framebuffer-width framebuffer-height)
+          (except-gl-errors (str "glViewport " framebuffer-width framebuffer-height))
+          (GL11/glClearColor 0.0 0.0 1.0 1.0)
+          (except-gl-errors (str "glClearColor  " 0.0 0.0 1.0 1.0))
+          (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
+          (except-gl-errors (str "glClear  " (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT)))
+          (GL20/glUseProgram program-id)
+          (GL20/glUniformMatrix4fv u-PMatrix false (ortho-matrix-buffer framebuffer-width framebuffer-height p-matrix-buffer))
+          (except-gl-errors (str "u-PMatrix - glUniformMatrix4  " u-PMatrix))
+          ; Bind VAO
+          (GL30/glBindVertexArray vao-id)
+          (except-gl-errors (str "vao bind - glBindVertexArray " vao-id))
+          ; Setup vertex buffer
+          (except-gl-errors (str "vbo bind - glBindBuffer " vertices-vbo-id))
+          (GL20/glEnableVertexAttribArray 0);pos-vertex-attribute
+          (except-gl-errors "vbo bind - glEnableVertexAttribArray")
+          (except-gl-errors "vbo bind - glVertexAttribPointer")
+          ; Setup uv buffer
+          (GL20/glEnableVertexAttribArray 1);texture-coords-vertex-attribute
+          (except-gl-errors "texture coords bind")
+          ; Setup font texture
+          (GL13/glActiveTexture GL13/GL_TEXTURE0)
+          (except-gl-errors "font texture glActiveTexture")
+          (GL11/glBindTexture GL11/GL_TEXTURE_2D font-texture)
+          (except-gl-errors "font texture glBindTexture")
+          (GL20/glUniform1i u-font 0)
+          (except-gl-errors "font texture glUniform1i")
+          (catch Error e
+           (log/error "OpenGL error:" e)))
+        ;; Render each layer to FBO
+        (doseq [[{:keys [columns rows layers] [x-pos y-pos] :pos}
                  glyph-texture
                  fg-texture
                  bg-texture
@@ -568,119 +675,22 @@
                       texture-rows    (int (zutil/next-pow-2 rows))
                       layer-count     (count layers)
                       layer-size      (* 4 texture-columns texture-rows)]]
-          ;; Update glyph texture in buffers
-          (.clear glyph-image-data)
-          (.clear fg-image-data)
-          (.clear bg-image-data)
-          
           ;(log/info "rendering layers")
           ;(log/info character->transparent)
-          (loop-with-index layer [[layer-id character-map] layer-character-map]
-            ;;(doseq [[layer-id character-map] layers-character-map]
-            ;;  (doseq [[row line] (map-indexed vector (reverse @character-map))
-            ;;          [col c]    (map-indexed vector line)]
-                ;;(log/info "row" row "col" col "c" c)
-            ;(log/info layer-id)
-            (loop-with-index row [line (reverse @character-map)]
-              (loop-with-index col [c line]
-                (let [chr        (or (get c :fx-character) (get c :character))
-                      highlight  (= @cursor-xy [col (- rows row 1)])
-                      [fg-r fg-g fg-b] (if highlight
-                                         (or (get c :fx-bg-color)  (get c :bg-color))
-                                         (or (get c :fx-fg-color)  (get c :fg-color)))
-                      [bg-r bg-g bg-b] (if highlight
-                                         (or (get c :fx-fg-color)  (get c :fg-color))
-                                         (or (get c :fx-bg-color)  (get c :bg-color)))
-                      ;s         (str (get c :character))
-                      style     (get c :style)
-                      i         (+ (* 4 (+ (* texture-columns row) col)) (* layer-size layer))
-                      [x y]     (get character->col-row chr)
-                      transparent (get character->transparent chr)]
-                  ;(log/info "Drawing at col row" col row "character from atlas col row" x y c "(index=" i ")")
-                  (when (zero? col)
-                    ;(log/info "glyph texture" glyph-texture-width glyph-texture-height)
-                    ;(log/info "resetting position to start of line" layer row col i)
-                    (.position glyph-image-data i)
-                    (.position fg-image-data i)
-                    (.position bg-image-data i))
-                  (if (not= chr (char 0))
-                    (do
-                      (assert (or (not (nil? x)) (not (nil? y)))
-                              (format "X/Y nil - glyph not found for character %s %s"
-                                (or (str chr) "nil")
-                                (or (cond
-                                      (nil? chr) "nil"
-                                      (char? chr) (format "%x" (int chr))
-                                      :else (str chr)))))
-                      (.put glyph-image-data (unchecked-byte x))
-                      (.put glyph-image-data (unchecked-byte y))
-                      ;; TODO fill with appropriate type
-                      (.put glyph-image-data (unchecked-byte (cond
-                                                               transparent 2
-                                                               :else 1)))
-                      (.put glyph-image-data (unchecked-byte 0))
-                      (.put fg-image-data    (unchecked-byte fg-r))
-                      (.put fg-image-data    (unchecked-byte fg-g))
-                      (.put fg-image-data    (unchecked-byte fg-b))
-                      (.put fg-image-data    (unchecked-byte 0))
-                      (.put bg-image-data    (unchecked-byte bg-r))
-                      (.put bg-image-data    (unchecked-byte bg-g))
-                      (.put bg-image-data    (unchecked-byte bg-b))
-                      (.put bg-image-data    (unchecked-byte 0)))
-                    ;; not base layer and space ie empty, skip forward
-                    (do
-                      (.put glyph-image-data (byte-array 4))
-                      (.put fg-image-data (byte-array 4))
-                      (.put bg-image-data (byte-array 4)))))))
-              #_(log/info "At pos" (.position glyph-image-data))
-              #_(log/info "Setting layer" layer "new pos" (* texture-columns texture-height 4 (inc layer)))
-              (.position glyph-image-data (* texture-columns texture-rows 4 (inc layer)))
-              (.position fg-image-data    (* texture-columns texture-rows 4 (inc layer)))
-              (.position bg-image-data    (* texture-columns texture-rows 4 (inc layer))))
-            (.flip glyph-image-data)
-            (.flip fg-image-data)
-            (.flip bg-image-data)
+          (fill-glyph-fg-bg-buffers (select-keys layer-character-map layers) character->col-row character->transparent texture-columns texture-rows rows layer-size cursor-xy glyph-image-data fg-image-data bg-image-data)
           #_(doseq [layer (partition layer-size (vec (nio/buffer-seq glyph-image-data)))]
             (log/info "layer")
             (doseq [line (partition (* 4 texture-columns) layer)]
               (log/info (vec line))))
           (try
-            (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER, fbo-id)
-            (GL11/glViewport 0 0 framebuffer-width framebuffer-height)
-            (except-gl-errors (str "glViewport " framebuffer-width framebuffer-height))
-            (GL11/glClearColor 0.0 0.0 1.0 1.0)
-            (except-gl-errors (str "glClearColor  " 0.0 0.0 1.0 1.0))
-            (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
-            (except-gl-errors (str "glClear  " (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT)))
-            (GL20/glUseProgram program-id)
-            (GL20/glUniformMatrix4fv u-PMatrix false (ortho-matrix-buffer framebuffer-width framebuffer-height p-matrix-buffer))
-            (except-gl-errors (str "u-PMatrix - glUniformMatrix4  " u-PMatrix))
             (GL20/glUniformMatrix4fv
               u-MVMatrix
               false
               (position-matrix-buffer
-                [(- (/ framebuffer-width 2)) (- (/ framebuffer-height 2)) -1.0 0.0]
+                [(+ x-pos (- (/ framebuffer-width 2))) (+ y-pos (- (/ framebuffer-height 2))) -1.0 0.0]
                 [framebuffer-width framebuffer-height 1.0]
                 mv-matrix-buffer))
             (except-gl-errors (str "u-MVMatrix - glUniformMatrix4  " u-MVMatrix))
-            ; Bind VAO
-            (GL30/glBindVertexArray vao-id)
-            (except-gl-errors (str "vao bind - glBindVertexArray " vao-id))
-            ; Setup vertex buffer
-            (except-gl-errors (str "vbo bind - glBindBuffer " vertices-vbo-id))
-            (GL20/glEnableVertexAttribArray 0);pos-vertex-attribute
-            (except-gl-errors "vbo bind - glEnableVertexAttribArray")
-            (except-gl-errors "vbo bind - glVertexAttribPointer")
-            ; Setup uv buffer
-            (GL20/glEnableVertexAttribArray 1);texture-coords-vertex-attribute
-            (except-gl-errors "texture coords bind")
-            ; Setup font texture
-            (GL13/glActiveTexture GL13/GL_TEXTURE0)
-            (except-gl-errors "font texture glActiveTexture")
-            (GL11/glBindTexture GL11/GL_TEXTURE_2D font-texture)
-            (except-gl-errors "font texture glBindTexture")
-            (GL20/glUniform1i u-font 0)
-            (except-gl-errors "font texture glUniform1i")
             ; Setup uniforms for glyph, fg, bg, textures
             (GL20/glUniform1i u-glyphs 1)
             (GL20/glUniform1i u-fg 2)
@@ -724,6 +734,7 @@
           (GL11/glViewport 0 0 framebuffer-width framebuffer-height)
           (GL11/glClearColor 0.0 1.0 0.0 1.0)
           (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
+          (GL11/glBlendFunc GL11/GL_ONE GL11/GL_ONE_MINUS_SRC_ALPHA)
           (GL20/glUseProgram fb-program-id)
           (GL20/glUniformMatrix4fv u-fb-PMatrix false (ortho-matrix-buffer framebuffer-width framebuffer-height p-matrix-buffer))
           (except-gl-errors (str "u-fb-PMatrix - glUniformMatrix4  " u-fb-PMatrix))
