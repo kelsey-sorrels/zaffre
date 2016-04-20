@@ -515,7 +515,7 @@
   (get-size [_]
     [0 0])
   (alter-group-pos! [_ group-id f]
-    (alter (get group-map group-id) f))
+    (alter (get group-map group-id) (fn [group] (update group :pos (fn [pos] (mapv int (f pos)))))))
   ;; characters is a list of {:c \character :x col :y row :fg [r g b] :bg [r g b]}
   (put-chars! [_ layer-id characters]
     {:pre [(get layer-id->group layer-id)
