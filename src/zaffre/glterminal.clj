@@ -422,7 +422,7 @@
               i         (+ (* 4 (+ (* texture-columns row) col)) (* layer-size layer))
               [x y]     (get character->col-row chr)
               transparent (get character->transparent chr)]
-          (log/info "Drawing " layer-id "at col row" col row "character from atlas col row" x y c "(index=" i ") transparent" transparent )
+          ;(log/info "Drawing " layer-id "at col row" col row "character from atlas col row" x y c "(index=" i ") transparent" transparent )
           (when (zero? col)
             ;(log/info "glyph texture" glyph-texture-width glyph-texture-height)
             ;(log/info "resetting position to start of line" layer row col i)
@@ -617,13 +617,14 @@
         (assert (not (nil? font-texture-width)) "font-texture-width nil")
         (assert (not (nil? font-texture-height)) "font-texture-height")
         (assert (not (nil? font-texture)) "font-texture nil")
-        (log/info "drawing with" (mapv vec [glyph-textures fg-textures bg-textures glyph-image-data fg-image-data bg-image-data]))
+        ;(log/info "drawing with" (mapv vec [glyph-textures fg-textures bg-textures glyph-image-data fg-image-data bg-image-data]))
         ;; Setup render to FBO
         (try
           (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER, fbo-id)
           (GL11/glEnable GL11/GL_BLEND)
-          (GL30/glEnablei GL11/GL_BLEND fbo-id)
-          (GL14/glBlendFuncSeparate GL11/GL_SRC_ALPHA GL11/GL_ONE_MINUS_SRC_ALPHA GL11/GL_ONE GL11/GL_ONE_MINUS_SRC_ALPHA)
+          (GL11/glDisable GL11/GL_DEPTH_TEST)
+          (GL14/glBlendEquation GL14/GL_FUNC_ADD)
+          (GL11/glBlendFunc GL11/GL_ONE GL11/GL_ONE_MINUS_SRC_ALPHA)
           (GL11/glViewport 0 0 framebuffer-width framebuffer-height)
           (except-gl-errors (str "glViewport " framebuffer-width framebuffer-height))
           (GL11/glClearColor 0.0 0.0 0.0 0.0)
@@ -735,7 +736,6 @@
           (GL11/glViewport 0 0 framebuffer-width framebuffer-height)
           (GL11/glClearColor 0.0 0.0 0.0 0.0)
           (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
-          (GL11/glBlendFunc GL11/GL_ONE GL11/GL_ONE_MINUS_SRC_ALPHA)
           (GL20/glUseProgram fb-program-id)
           (GL20/glUniformMatrix4fv u-fb-PMatrix false (ortho-matrix-buffer framebuffer-width framebuffer-height p-matrix-buffer))
           (except-gl-errors (str "u-fb-PMatrix - glUniformMatrix4  " u-fb-PMatrix))
@@ -747,10 +747,10 @@
               [framebuffer-width framebuffer-height 1.0]
               mv-matrix-buffer))
           (except-gl-errors (str "u-fb-MVMatrix - glUniformMatrix4  " u-fb-MVMatrix))
-          (GL20/glEnableVertexAttribArray 0);pos-vertex-attribute)
+          (GL20/glEnableVertexAttribArray 0);pos-vertex-attribute
           (except-gl-errors "vbo bind - glEnableVertexAttribArray")
           ;;; Setup uv buffer
-          (GL20/glEnableVertexAttribArray 1);texture-coords-vertex-attribute)
+          (GL20/glEnableVertexAttribArray 1);texture-coords-vertex-attribute
           (except-gl-errors "texture coords bind")
           ;;; Setup font texture
           (GL13/glActiveTexture GL13/GL_TEXTURE0)
