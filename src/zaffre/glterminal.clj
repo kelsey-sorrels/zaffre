@@ -397,75 +397,82 @@
      :vao-id vao-id}))
 
 (defn- fill-glyph-fg-bg-buffers [layer-id->character-map character->col-row character->transparent texture-columns texture-rows rows layer-size cursor-xy glyph-image-data fg-image-data bg-image-data]
-  (.clear glyph-image-data)
-  (.clear fg-image-data)
-  (.clear bg-image-data)
-  (loop-with-index layer [[layer-id character-map] layer-id->character-map]
-    ;;(doseq [[layer-id character-map] layers-character-map]
-    ;;  (doseq [[row line] (map-indexed vector (reverse @character-map))
-    ;;          [col c]    (map-indexed vector line)]
-        ;;(log/info "row" row "col" col "c" c)
-    ;(log/info layer-id)
-    ;; Set buffer positions to beginning
-    (loop-with-index row [line (reverse @character-map)]
-      (loop-with-index col [c line]
-        (let [chr        (or (get c :fx-character) (get c :character))
-              highlight  (= @cursor-xy [col (- rows row 1)])
-              [fg-r fg-g fg-b] (if highlight
-                                 (or (get c :fx-bg-color)  (get c :bg-color))
-                                 (or (get c :fx-fg-color)  (get c :fg-color)))
-              [bg-r bg-g bg-b] (if highlight
-                                 (or (get c :fx-fg-color)  (get c :fg-color))
-                                 (or (get c :fx-bg-color)  (get c :bg-color)))
-              ;s         (str (get c :character))
-              style     (get c :style)
-              i         (+ (* 4 (+ (* texture-columns row) col)) (* layer-size layer))
-              [x y]     (get character->col-row chr)
-              transparent (get character->transparent chr)]
-          ;(log/info "Drawing " layer-id "at col row" col row "character from atlas col row" x y c "(index=" i ") transparent" transparent )
-          (when (zero? col)
-            ;(log/info "glyph texture" glyph-texture-width glyph-texture-height)
-            ;(log/info "resetting position to start of line" layer row col i)
-            (.position glyph-image-data i)
-            (.position fg-image-data i)
-            (.position bg-image-data i))
-          (if (not= chr (char 0))
-            (do
-              (assert (or (not (nil? x)) (not (nil? y)))
-                      (format "X/Y nil - glyph not found for character %s %s"
-                        (or (str chr) "nil")
-                        (or (cond
-                              (nil? chr) "nil"
-                              (char? chr) (format "%x" (int chr))
-                              :else (str chr)))))
-              (.put glyph-image-data (unchecked-byte x))
-              (.put glyph-image-data (unchecked-byte y))
-              ;; TODO fill with appropriate type
-              (.put glyph-image-data (unchecked-byte (cond
-                                                       transparent 2
-                                                       :else 1)))
-              (.put glyph-image-data (unchecked-byte 0))
-              (.put fg-image-data    (unchecked-byte fg-r))
-              (.put fg-image-data    (unchecked-byte fg-g))
-              (.put fg-image-data    (unchecked-byte fg-b))
-              (.put fg-image-data    (unchecked-byte 0))
-              (.put bg-image-data    (unchecked-byte bg-r))
-              (.put bg-image-data    (unchecked-byte bg-g))
-              (.put bg-image-data    (unchecked-byte bg-b))
-              (.put bg-image-data    (unchecked-byte 0)))
-            ;; space ie empty, skip forward
-            (do
-              (.put glyph-image-data (byte-array 4))
-              (.put fg-image-data (byte-array 4))
-              (.put bg-image-data (byte-array 4)))))))
-      #_(log/info "At pos" (.position glyph-image-data))
-      #_(log/info "Setting layer" layer "new pos" (* texture-columns texture-height 4 (inc layer)))
-      (.position glyph-image-data (* texture-columns texture-rows 4 (inc layer)))
-      (.position fg-image-data    (* texture-columns texture-rows 4 (inc layer)))
-      (.position bg-image-data    (* texture-columns texture-rows 4 (inc layer))))
-    (.flip glyph-image-data)
-    (.flip fg-image-data)
-    (.flip bg-image-data))
+  (let [^long texture-columns texture-columns
+        ^long texture-rows texture-rows
+        ^long rows rows
+        ^long layer-size layer-size
+        ^ByteBuffer glyph-image-data glyph-image-data
+        ^ByteBuffer fg-image-data fg-image-data
+        ^ByteBuffer bg-image-data bg-image-data]
+    (.clear glyph-image-data)
+    (.clear fg-image-data)
+    (.clear bg-image-data)
+    (loop-with-index layer [[layer-id character-map] layer-id->character-map]
+      ;;(doseq [[layer-id character-map] layers-character-map]
+      ;;  (doseq [[row line] (map-indexed vector (reverse @character-map))
+      ;;          [col c]    (map-indexed vector line)]
+          ;;(log/info "row" row "col" col "c" c)
+      ;(log/info layer-id)
+      ;; Set buffer positions to beginning
+      (loop-with-index row [line (reverse @character-map)]
+        (loop-with-index col [c line]
+          (let [chr        (or (get c :fx-character) (get c :character))
+                highlight  (= @cursor-xy [col (- rows row 1)])
+                [fg-r fg-g fg-b] (if highlight
+                                   (or (get c :fx-bg-color)  (get c :bg-color))
+                                   (or (get c :fx-fg-color)  (get c :fg-color)))
+                [bg-r bg-g bg-b] (if highlight
+                                   (or (get c :fx-fg-color)  (get c :fg-color))
+                                   (or (get c :fx-bg-color)  (get c :bg-color)))
+                ;s         (str (get c :character))
+                style     (get c :style)
+                i         (+ (* 4 (+ (* texture-columns row) col)) (* layer-size layer))
+                [x y]     (get character->col-row chr)
+                transparent (get character->transparent chr)]
+            ;(log/info "Drawing " layer-id "at col row" col row "character from atlas col row" x y c "(index=" i ") transparent" transparent )
+            (when (zero? col)
+              ;(log/info "glyph texture" glyph-texture-width glyph-texture-height)
+              ;(log/info "resetting position to start of line" layer row col i)
+              (.position glyph-image-data i)
+              (.position fg-image-data i)
+              (.position bg-image-data i))
+            (if (not= chr (char 0))
+              (do
+                (assert (or (not (nil? x)) (not (nil? y)))
+                        (format "X/Y nil - glyph not found for character %s %s"
+                          (or (str chr) "nil")
+                          (or (cond
+                                (nil? chr) "nil"
+                                (char? chr) (format "%x" (int chr))
+                                :else (str chr)))))
+                (.put glyph-image-data (unchecked-byte x))
+                (.put glyph-image-data (unchecked-byte y))
+                ;; TODO fill with appropriate type
+                (.put glyph-image-data (unchecked-byte (cond
+                                                         transparent 2
+                                                         :else 1)))
+                (.put glyph-image-data (unchecked-byte 0))
+                (.put fg-image-data    (unchecked-byte fg-r))
+                (.put fg-image-data    (unchecked-byte fg-g))
+                (.put fg-image-data    (unchecked-byte fg-b))
+                (.put fg-image-data    (unchecked-byte 0))
+                (.put bg-image-data    (unchecked-byte bg-r))
+                (.put bg-image-data    (unchecked-byte bg-g))
+                (.put bg-image-data    (unchecked-byte bg-b))
+                (.put bg-image-data    (unchecked-byte 0)))
+              ;; space ie empty, skip forward
+              (do
+                (.put glyph-image-data (byte-array 4))
+                (.put fg-image-data (byte-array 4))
+                (.put bg-image-data (byte-array 4)))))))
+        #_(log/info "At pos" (.position glyph-image-data))
+        #_(log/info "Setting layer" layer "new pos" (* texture-columns texture-height 4 (inc layer)))
+        (.position glyph-image-data (* texture-columns texture-rows 4 (inc layer)))
+        (.position fg-image-data    (* texture-columns texture-rows 4 (inc layer)))
+        (.position bg-image-data    (* texture-columns texture-rows 4 (inc layer))))
+      (.flip glyph-image-data)
+      (.flip fg-image-data)
+      (.flip bg-image-data)))
 
 ;; Normally this would be a record, but until http://dev.clojure.org/jira/browse/CLJ-1224 is fixed
 ;; it is not performant to memoize records because hashCode values are not cached and are recalculated
