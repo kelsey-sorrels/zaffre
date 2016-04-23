@@ -1,11 +1,11 @@
 (ns examples.fx
-  (:require [zaffre.aterminal :as zat]
+  (:require [zaffre.terminal :as zat]
             [zaffre.glterminal :as zgl]
             [zaffre.font :as zfont]
             [zaffre.util :as zutil]
             [clojure.core.async :as async :refer [go-loop]]
             [taoensso.timbre :as log])
-  (:import (zaffre.aterminal ATerminal)
+  (:import (zaffre.terminal Terminal)
            (zaffre.font CP437Font TTFFont)))
 
 (defn hsv->rgb [h s v]
@@ -21,7 +21,7 @@
         (< h 360) [c 0 x]))))
 
 (defn -main [& _]
-  (zgl/make-terminal
+  (zgl/create-terminal
     [:text :rainbow]
     {:title "Zaffre demo"
      :columns 80 :rows 24

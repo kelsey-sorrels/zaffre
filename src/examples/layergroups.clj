@@ -1,11 +1,11 @@
 (ns examples.layergroups
-  (:require [zaffre.aterminal :as zat]
+  (:require [zaffre.terminal :as zat]
             [zaffre.glterminal :as zgl]
             [zaffre.font :as zfont]
             [zaffre.util :as zutil]
             [clojure.core.async :as async :refer [go-loop]]
             [taoensso.timbre :as log])
-  (:import (zaffre.aterminal ATerminal)
+  (:import (zaffre.terminal Terminal)
            (zaffre.font CompositeFont CP437Font TileSet TTFFont))
   (:gen-class))
 
