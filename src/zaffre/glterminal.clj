@@ -571,13 +571,20 @@
     term-pub)
   (apply-font! [_ group-id font-fn]
     (with-gl-context gl-lock window capabilities
-      (alter (get group->font-texture group-id)
-             (fn [font-texture]
-               (let [font (font-fn (platform))
-                     gg   (zfont/glyph-graphics font)
-                     font-texture (texture-id-2d (get gg :font-texture-image))]
-                 (log/info "loaded font-texture for" group-id font-texture)
-                 (assoc gg :font-texture font-texture))))))
+      (let [old-texture  (-> group->font-texture group-id deref :font-texture)
+            font         (font-fn (platform))
+            gg           (if (zfont/glyph-graphics? font)
+                           font
+                           (zfont/glyph-graphics font))
+            font-texture (or (get gg :font-texture)
+                             (texture-id-2d (get gg :font-texture-image)))]
+        (log/info "loaded font-texture for" group-id font-texture)
+        (dosync 
+          (ref-set (get group->font-texture group-id)
+                 (assoc gg :font-texture font-texture)))
+        ; Free old texture
+        (log/info "Freeing texture" old-texture)
+        (GL11/glDeleteTextures old-texture))))
           ; TODO: uncomment when LWJGL version is newer
           ;;(when-not @fullscreen
           ;;  (GLFW/glfwSetWindowMonitor window
@@ -652,99 +659,102 @@
           (catch Error e
            (log/error "OpenGL error:" e)))
         ;; Render each layer to FBO
-        (doseq [[{:keys [group-id columns rows layers] [x-pos y-pos] :pos}
-                 glyph-texture
-                 fg-texture
-                 bg-texture
-                 glyph-image-data
-                 fg-image-data
-                 bg-image-data] (map
-                                  vector
-                                  (dosync (map (fn [[group-id group-ref]] (assoc @group-ref :group-id group-id)) group-map))
-                                  glyph-textures
-                                  fg-textures
-                                  bg-textures
-                                  glyph-image-data
-                                  fg-image-data
-                                  bg-image-data)
-                :let [{:keys [character-width
-                              character-height
-                              character->col-row
-                              character->transparent
-                              font-texture-width
-                              font-texture-height
-                              font-texture]} (-> group->font-texture group-id deref)
-                      ^ByteBuffer glyph-image-data glyph-image-data
-                      ^ByteBuffer fg-image-data fg-image-data
-                      ^ByteBuffer bg-image-data bg-image-data
-                      texture-columns (int (zutil/next-pow-2 columns))
-                      texture-rows    (int (zutil/next-pow-2 rows))
-                      layer-count     (count layers)
-                      layer-size      (* 4 texture-columns texture-rows)]]
-          (assert (not (nil? font-texture-width)) "font-texture-width nil")
-          (assert (not (nil? font-texture-height)) "font-texture-height")
-          (assert (not (nil? font-texture)) "font-texture nil")
-          ;(log/info "rendering layers")
-          ;(log/info character->transparent)
-          (fill-glyph-fg-bg-buffers (select-keys layer-character-map layers) character->col-row character->transparent texture-columns texture-rows rows layer-size cursor-xy glyph-image-data fg-image-data bg-image-data)
-          #_(doseq [layer (partition layer-size (vec (nio/buffer-seq glyph-image-data)))]
-            (log/info "layer")
-            (doseq [line (partition (* 4 texture-columns) layer)]
-              (log/info (vec line))))
-          (try
-            (GL20/glUniformMatrix4fv
-              u-MVMatrix
-              false
-              (position-matrix-buffer
-                [(+ x-pos (- (/ framebuffer-width 2))) (+ y-pos (- (/ framebuffer-height 2))) -1.0 0.0]
-                [(* character-width columns) (* character-height rows) 1.0]
-                mv-matrix-buffer))
-            (except-gl-errors (str "u-MVMatrix - glUniformMatrix4  " u-MVMatrix))
-            ; Setup uniforms for glyph, fg, bg, textures
-            (GL20/glUniform1i u-font 0)
-            (GL20/glUniform1i u-glyphs 1)
-            (GL20/glUniform1i u-fg 2)
-            (GL20/glUniform1i u-bg 3)
-            (GL20/glUniform1i u-num-layers layer-count)
-            (except-gl-errors "uniformli bind")
-            (log/info "drawing" group-id)
-            (log/info "font-size" character-width character-height)
-            (log/info "term-dim" columns rows)
-            (log/info "font-tex-dim" font-texture-width font-texture-height)
-            (log/info "glyph-tex-dim" texture-columns texture-rows)
-            (GL20/glUniform2f font-size character-width character-height)
-            (GL20/glUniform2f term-dim columns rows)
-            (GL20/glUniform2f font-tex-dim font-texture-width font-texture-height)
-            (GL20/glUniform2f glyph-tex-dim texture-columns texture-rows)
-            (except-gl-errors "uniform2f bind")
-            (except-gl-errors "gl(en/dis)able")
-            ; Bind font texture
-            (log/info "binding font texture" font-texture)
-            (GL13/glActiveTexture GL13/GL_TEXTURE0)
-            (except-gl-errors "font texture glActiveTexture")
-            (GL11/glBindTexture GL11/GL_TEXTURE_2D font-texture)
-            (except-gl-errors "font texture glBindTexture")
-            ; Send updated glyph texture to gl
-            (GL13/glActiveTexture GL13/GL_TEXTURE1)
-            (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY glyph-texture)
-            (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL30/GL_RGBA8UI texture-columns texture-rows layer-count 0 GL30/GL_RGBA_INTEGER GL11/GL_UNSIGNED_BYTE glyph-image-data)
-            (except-gl-errors "glyph texture data")
-            ; Send updated fg texture to gl
-            (GL13/glActiveTexture GL13/GL_TEXTURE2)
-            (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY fg-texture)
-            (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL11/GL_RGBA texture-columns texture-rows layer-count 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE fg-image-data)
-            (except-gl-errors "fg color texture data")
-            ; Send updated bg texture to gl
-            (GL13/glActiveTexture GL13/GL_TEXTURE3)
-            (except-gl-errors "bg color glActiveTexture")
-            (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY bg-texture)
-            (except-gl-errors "bg color glBindTexture")
-            (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL11/GL_RGBA texture-columns texture-rows layer-count 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bg-image-data)
-            (except-gl-errors "bg color glTexImage2D")
-            (GL11/glDrawArrays GL11/GL_TRIANGLE_STRIP 0 vertices-count)
-            (except-gl-errors "bg color glDrawArrays")
-            (catch Error e
-             (log/error "OpenGL error:" e))))
+        (dosync
+          (doseq [[{:keys [group-id columns rows layers] [x-pos y-pos] :pos}
+                   glyph-texture
+                   fg-texture
+                   bg-texture
+                   glyph-image-data
+                   fg-image-data
+                   bg-image-data] (map
+                                    vector
+                                    (map (fn [[group-id group-ref]] (assoc @group-ref :group-id group-id)) group-map)
+                                    glyph-textures
+                                    fg-textures
+                                    bg-textures
+                                    glyph-image-data
+                                    fg-image-data
+                                    bg-image-data)
+                  :let [{:keys [character-width
+                                character-height
+                                character->col-row
+                                character->transparent
+                                font-texture-width
+                                font-texture-height
+                                font-texture]} (-> group->font-texture group-id deref)
+                        ^ByteBuffer glyph-image-data glyph-image-data
+                        ^ByteBuffer fg-image-data fg-image-data
+                        ^ByteBuffer bg-image-data bg-image-data
+                        texture-columns (int (zutil/next-pow-2 columns))
+                        texture-rows    (int (zutil/next-pow-2 rows))
+                        layer-count     (count layers)
+                        layer-size      (* 4 texture-columns texture-rows)]]
+            (assert (not (nil? font-texture-width)) "font-texture-width nil")
+            (assert (not (nil? font-texture-height)) "font-texture-height")
+            (assert (not (nil? font-texture)) "font-texture nil")
+            ;(log/info "rendering layers")
+            ;(log/info character->transparent)
+            (fill-glyph-fg-bg-buffers (select-keys layer-character-map layers) character->col-row character->transparent texture-columns texture-rows rows layer-size cursor-xy glyph-image-data fg-image-data bg-image-data)
+            #_(doseq [layer (partition layer-size (vec (nio/buffer-seq glyph-image-data)))]
+              (log/info "layer")
+              (doseq [line (partition (* 4 texture-columns) layer)]
+                (log/info (vec line))))
+            (try
+              (GL20/glUniformMatrix4fv
+                u-MVMatrix
+                false
+                (position-matrix-buffer
+                  [(+ x-pos (- (/ framebuffer-width 2))) (+ y-pos (- (/ framebuffer-height 2))) -1.0 0.0]
+                  [(* character-width columns) (* character-height rows) 1.0]
+                  mv-matrix-buffer))
+              (except-gl-errors (str "u-MVMatrix - glUniformMatrix4  " u-MVMatrix))
+              ; Setup uniforms for glyph, fg, bg, textures
+              (GL20/glUniform1i u-font 0)
+              (GL20/glUniform1i u-glyphs 1)
+              (GL20/glUniform1i u-fg 2)
+              (GL20/glUniform1i u-bg 3)
+              (GL20/glUniform1i u-num-layers layer-count)
+              (except-gl-errors "uniformli bind")
+              #_(log/info "drawing" group-id)
+              #_(log/info "font-size" character-width character-height)
+              #_(log/info "term-dim" columns rows)
+              #_(log/info "font-tex-dim" font-texture-width font-texture-height)
+              #_(log/info "glyph-tex-dim" texture-columns texture-rows)
+              (GL20/glUniform2f font-size character-width character-height)
+              (GL20/glUniform2f term-dim columns rows)
+              (GL20/glUniform2f font-tex-dim font-texture-width font-texture-height)
+              (GL20/glUniform2f glyph-tex-dim texture-columns texture-rows)
+              (except-gl-errors "uniform2f bind")
+              (except-gl-errors "gl(en/dis)able")
+              ; Bind font texture
+              #_(log/info "binding font texture" font-texture)
+              ; TODO: Find root of font texture update sync bug and remove this check
+              (when (GL11/glIsTexture font-texture)
+                (GL13/glActiveTexture GL13/GL_TEXTURE0)
+                (except-gl-errors "font texture glActiveTexture")
+                (GL11/glBindTexture GL11/GL_TEXTURE_2D font-texture)
+                (except-gl-errors "font texture glBindTexture"))
+              ; Send updated glyph texture to gl
+              (GL13/glActiveTexture GL13/GL_TEXTURE1)
+              (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY glyph-texture)
+              (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL30/GL_RGBA8UI texture-columns texture-rows layer-count 0 GL30/GL_RGBA_INTEGER GL11/GL_UNSIGNED_BYTE glyph-image-data)
+              (except-gl-errors "glyph texture data")
+              ; Send updated fg texture to gl
+              (GL13/glActiveTexture GL13/GL_TEXTURE2)
+              (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY fg-texture)
+              (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL11/GL_RGBA texture-columns texture-rows layer-count 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE fg-image-data)
+              (except-gl-errors "fg color texture data")
+              ; Send updated bg texture to gl
+              (GL13/glActiveTexture GL13/GL_TEXTURE3)
+              (except-gl-errors "bg color glActiveTexture")
+              (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY bg-texture)
+              (except-gl-errors "bg color glBindTexture")
+              (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL11/GL_RGBA texture-columns texture-rows layer-count 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bg-image-data)
+              (except-gl-errors "bg color glTexImage2D")
+              (GL11/glDrawArrays GL11/GL_TRIANGLE_STRIP 0 vertices-count)
+              (except-gl-errors "bg color glDrawArrays")
+              (catch Error e
+               (log/error "OpenGL error:" e)))))
         (try 
           (GL20/glDisableVertexAttribArray 0)
           (GL20/glDisableVertexAttribArray 1)
@@ -922,7 +932,9 @@
                              (into {}
                                (mapv (fn [[k v]]
                                        [k (ref (let [font ((get @v :font) (platform))
-                                                     gg   (zfont/glyph-graphics font)
+                                                     gg   (if (zfont/glyph-graphics? font)
+                                                              font
+                                                              (zfont/glyph-graphics font))
                                                      font-texture (texture-id-2d (get gg :font-texture-image))]
                                                  (log/info "loaded font-texture for" k font-texture (select-keys gg [:font-texture-width :font-texture-height :character-width :character-height]))
                                                  (assoc gg :font-texture font-texture)))])
