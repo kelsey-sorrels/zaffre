@@ -886,7 +886,7 @@
     (async/put! term-chan :close)))
 
 
-(defn make-terminal
+(defn create-terminal
   [group-map {:keys [title screen-width screen-height default-fg-color default-bg-color on-key-fn windows-font else-font font-size fullscreen antialias icon-paths fx-shader]
     :or {title "Zaffre"
          default-fg-color [255 255 255]
