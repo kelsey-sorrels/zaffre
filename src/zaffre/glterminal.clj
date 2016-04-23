@@ -496,12 +496,7 @@
   ([character fg-color bg-color style fx-character fx-fg-color fg-bg-color]
    (GLCharacter. character fg-color bg-color style fx-character fx-fg-color fg-bg-color)))
 
-(defrecord OpenGlTerminal [;^int columns
-                           ;^int rows
-                           ;^int texture-columns
-                           ;^int texture-rows
-                           ;font-textures
-                           ;normal-font
+(defrecord OpenGlTerminal [term-args
                            fbo-texture
                            fullscreen
                            antialias
@@ -520,10 +515,26 @@
                            window
                            capabilities]
   zat/Terminal
-  (get-size [_]
-    [0 0])
-  (alter-group-pos! [_ group-id f]
-    (alter (get group-map group-id) (fn [group] (update group :pos (fn [pos] (mapv int (f pos)))))))
+  (args [_]
+    term-args)
+  (alter-group-pos! [_ group-id pos-fn]
+    (alter (get group-map group-id) (fn [group] (update group :pos (fn [pos] (mapv int (pos-fn pos)))))))
+  (alter-group-font! [_ group-id font-fn]
+    (with-gl-context gl-lock window capabilities
+      (let [old-texture  (-> group->font-texture group-id deref :font-texture)
+            font         (font-fn (platform))
+            gg           (if (zfont/glyph-graphics? font)
+                           font
+                           (zfont/glyph-graphics font))
+            font-texture (or (get gg :font-texture)
+                             (texture-id-2d (get gg :font-texture-image)))]
+        (log/info "loaded font-texture for" group-id font-texture)
+        (dosync 
+          (ref-set (get group->font-texture group-id)
+                 (assoc gg :font-texture font-texture)))
+        ; Free old texture
+        (log/info "Freeing texture" old-texture)
+        (GL11/glDeleteTextures old-texture))))
   ;; characters is a list of {:c \character :x col :y row :fg [r g b] :bg [r g b]}
   (put-chars! [_ layer-id characters]
     {:pre [(get layer-id->group layer-id)
@@ -565,43 +576,10 @@
            (= (count bg) 3)]}
       (alter (get layer-character-map)
              (fn [cm] (assoc-in cm [y x :bg-color] bg))))
-  (assoc-fx-uniform! [_ k v]
+  (assoc-shader-param! [_ k v]
     (-> fx-uniforms (get k) first (reset! v)))
   (pub [_]
     term-pub)
-  (apply-font! [_ group-id font-fn]
-    (with-gl-context gl-lock window capabilities
-      (let [old-texture  (-> group->font-texture group-id deref :font-texture)
-            font         (font-fn (platform))
-            gg           (if (zfont/glyph-graphics? font)
-                           font
-                           (zfont/glyph-graphics font))
-            font-texture (or (get gg :font-texture)
-                             (texture-id-2d (get gg :font-texture-image)))]
-        (log/info "loaded font-texture for" group-id font-texture)
-        (dosync 
-          (ref-set (get group->font-texture group-id)
-                 (assoc gg :font-texture font-texture)))
-        ; Free old texture
-        (log/info "Freeing texture" old-texture)
-        (GL11/glDeleteTextures old-texture))))
-          ; TODO: uncomment when LWJGL version is newer
-          ;;(when-not @fullscreen
-          ;;  (GLFW/glfwSetWindowMonitor window
-          ;;                             (GLFW/glfwGetWindowMonitor window)
-          ;;                             0
-          ;;                             0
-          ;;                             (* columns character-width)
-          ;;                             (* rows character-height)
-          ;;                             60))
-          ;;;; resize FBO
-          ;;(GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
-          ;;(GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB (int framebuffer-width) (int framebuffer-height) 0 GL11/GL_RGB GL11/GL_UNSIGNED_BYTE bbnil)
-          ;;(swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture (texture-id-2d font-texture-image))))
-          ;;(catch Throwable t
-          ;;  (log/error "Error changing font" t))))))
-  (set-cursor! [_ x y]
-    (reset! cursor-xy [x y]))
   (refresh! [_]
     (with-gl-context gl-lock window capabilities
       (let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id vao-id fbo-id]} :buffers
@@ -611,24 +589,13 @@
              {:keys [u-MVMatrix u-PMatrix u-fb-MVMatrix u-fb-PMatrix u-font u-glyphs u-fg u-bg u-num-layers font-size term-dim font-tex-dim
                      font-texture-width font-texture-height glyph-tex-dim
                      u-fb framebuffer-width framebuffer-height]} :uniforms
-             ;; TODO move typehints because these are now lists of ByteBuffer elements
              {:keys [glyph-image-data
                      fg-image-data
                      bg-image-data]} :data
              :keys [p-matrix-buffer mv-matrix-buffer]} gl
-            ;glyph-image-data glyph-image-data
-            ;fg-image-data fg-image-data
-            ;bg-image-data bg-image-data
-            ;{:keys [character-width
-            ;        character-height
-            ;        character->col-row
-            ;        character->transparent
-            ;        font-texture-width
-            ;        font-texture-height
-            ;        font-texture]} (get @font-textures (font-key @normal-font))
             [display-width display-height] (let [mode (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor))]
                                              [(.width mode) (.height mode)])]
-        ;(log/info "drawing with" (mapv vec [glyph-textures fg-textures bg-textures glyph-image-data fg-image-data bg-image-data]))
+        #_(log/info "drawing with" (mapv vec [glyph-textures fg-textures bg-textures glyph-image-data fg-image-data bg-image-data]))
         ;; Setup render to FBO
         (try
           (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER, fbo-id)
@@ -895,9 +862,10 @@
          fullscreen       false
          antialias        true
          icon-paths       nil
-         fx-shader        {:name "passthrough.fs"}}}
+         fx-shader        {:name "passthrough.fs"}} :as opts}
    f]
-    (let [group-map        (into {}
+    (let [term-args        [group-map opts]
+          group-map        (into {}
                              (map (fn [[k v]]
                                     [k (ref v)])
                                   group-map))
@@ -1101,25 +1069,7 @@
                                           (async/put! term-chan {:type :mouse-leave :col last-col :row last-row}))
                                         (reset! mouse-col-row [col row])
                                         (async/put! term-chan {:type :mouse-enter :col col :row row})))))
-          terminal
-          ;; Create and return terminal
-          (OpenGlTerminal. ;columns
-                           ;rows
-                           ;next-pow-2-columns
-                           ;next-pow-2-rows
-                           ;font-textures
-                           ;normal-font
-                           fbo-texture
-                           fullscreen
-                           antialias
-                           layer-character-map-cleared
-                           layer-character-map
-                           group-map
-                           group->font-texture
-                           layer-id->group
-                           cursor-xy
-                           fx-uniforms
-                           {:p-matrix-buffer (ortho-matrix-buffer framebuffer-width framebuffer-height)
+          gl               {:p-matrix-buffer (ortho-matrix-buffer framebuffer-width framebuffer-height)
                             :mv-matrix-buffer (position-matrix-buffer [(- (/ framebuffer-width 2)) (- (/ framebuffer-height 2)) -1.0 0.0]
                                                                       [framebuffer-width framebuffer-height 1.0])
                             :buffers {:vertices-vbo-id vertices-vbo-id
@@ -1162,6 +1112,20 @@
                             :data {:glyph-image-data glyph-image-data
                                    :fg-image-data fg-image-data
                                    :bg-image-data bg-image-data}}
+          terminal
+          ;; Create and return terminal
+          (OpenGlTerminal. term-args
+                           fbo-texture
+                           fullscreen
+                           antialias
+                           layer-character-map-cleared
+                           layer-character-map
+                           group-map
+                           group->font-texture
+                           layer-id->group
+                           cursor-xy
+                           fx-uniforms
+                           gl
                            term-chan
                            term-pub
                            gl-lock
