@@ -4,6 +4,10 @@
 
 Zaffre is fast console library for drawing characters to a screen.
 
+<img src="https://cloud.githubusercontent.com/assets/1139945/14769786/a4815352-0a15-11e6-8d01-38d650a0a212.png" alt="Screenshot with 2-bit tileset by Muziak" title="" align="right" />
+<img src="https://cloud.githubusercontent.com/assets/1139945/14769784/a40b1aa2-0a15-11e6-9252-8d6598e697bb.png" alt="Screenshot using 16x16 Fantasy tileset by Jerom" title="" align="right" />
+
+
 ## Features
   * It's fast. Zaffre uses LWJGL and OpenGL to render characters as fast as possible.
   * Unicode support (minus CJK code points)
@@ -90,6 +94,9 @@ Run a little hello world terminal
         ;; Block until a message is received on the close channel
         (<!! close-chan)))))
 ```
+
+
+<img src="https://cloud.githubusercontent.com/assets/1139945/14769783/a3f2141c-0a15-11e6-9103-be02a9809c8c.png" alt="Screenshot" title="" align="right" />
 
 ## More Examples
 
