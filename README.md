@@ -28,19 +28,6 @@ Add the dependency to your project:
 [zaffre "0.4.0-SNAPSHOT"]
 ```
 
-## Examples
-
-Run with
-
-`lein run examples.basic`
-
-or
-
-`lein run -m examples.tileset`
-
-etc.
-
-
 ## Quickstart
 
 Add zaffre as a dependency to your project. `[zaffre "0.4.0-SNAPSHOT]`
@@ -103,6 +90,20 @@ Run a little hello world terminal
         ;; Block until a message is received on the close channel
         (<!! close-chan)))))
 ```
+
+## More Examples
+
+Run with
+
+`lein run examples.basic`
+
+or
+
+`lein run -m examples.tileset`
+
+etc.
+
+
 ## License
 
 Copyright © 2016 Aaron Santos
