@@ -8,7 +8,8 @@
             [nio.core :as nio]
             [taoensso.timbre :as log]
             [clojure.core.async :as async :refer [go go-loop]]
-            [clojure-watch.core :as cwc])
+            [clojure-watch.core :as cwc]
+            [clojure.test :refer [is]])
   (:import
     (java.lang.reflect Field)
     (org.lwjgl BufferUtils)
@@ -536,8 +537,8 @@
         (GL11/glDeleteTextures old-texture))))
   ;; characters is a list of {:c \character :x col :y row :fg [r g b] :bg [r g b]}
   (put-chars! [_ layer-id characters]
-    {:pre [(get layer-id->group layer-id)
-           (get layer-character-map layer-id)]}
+    {:pre [(is (get layer-id->group layer-id) (format "Invalid layer-id %s" layer-id))
+           (is (get layer-character-map layer-id) (format "Invalid layer-id %s" layer-id))]}
     #_(log/info "characters" (str characters))
     (let [columns (-> layer-id layer-id->group deref :columns)
           rows    (-> layer-id layer-id->group deref :rows)]
@@ -566,13 +567,17 @@
                        (group-by :y characters))))
       #_(log/info "character-map" (str @character-map))))
   (set-fg! [_ layer-id x y fg]
-    {:pre [(vector? fg)
-           (= (count fg) 3)]}
+    {:pre [(is (vector? fg) "fg not a vector")
+           (is (= (count fg) 3) "fg must have 3 elements")
+           (is (every? number? fg) "fg elements must be numbers")
+           (is (get layer-character-map layer-id) (format "Invalid layer-id %s" layer-id))]}
       (alter (get layer-character-map layer-id)
              (fn [cm] (assoc-in cm [y x :fg-color] fg))))
   (set-bg! [_ layer-id x y bg]
-    {:pre [(vector? bg)
-           (= (count bg) 3)]}
+    {:pre [(is (vector? bg) "bg not a vector")
+           (is (= (count bg) 3) "bg must have 3 elements")
+           (is (every? number? bg) "bg elements must be numbers")
+           (is (get layer-character-map layer-id) (format "Invalid layer-id %s" layer-id))]}
       (alter (get layer-character-map)
              (fn [cm] (assoc-in cm [y x :bg-color] bg))))
   (assoc-shader-param! [_ k v]
@@ -772,7 +777,7 @@
     (doseq [[id character-map] layer-character-map]
       (ref-set character-map (get layer-character-map-cleared id))))
   (clear! [_ layer-id]
-    {:pre [(get layer-id->group layer-id)]}
+    {:pre [(is (get layer-character-map layer-id) (format "Invalid layer-id %s" layer-id))]}
     (ref-set (get layer-character-map layer-id) (get layer-character-map-cleared layer-id)))
   (fullscreen! [_ v]
     (with-gl-context gl-lock window capabilities
@@ -810,23 +815,25 @@
                  mode])
               compatible-modes))))
   (set-fx-fg! [_ layer-id x y fg]
-    {:pre [(vector? fg)
-           (= (count fg) 3)
-           (get layer-id->group layer-id)]}
+    {:pre [(is (vector? fg) "fg not a vector")
+           (is (= (count fg) 3) "fg must have 3 elements")
+           (is (every? number? fg) "fg elements must be numbers")
+           (is (get layer-character-map layer-id) (format "Invalid layer-id %s" layer-id))]}
       (alter (get layer-character-map layer-id)
              (fn [cm] (assoc-in cm [y x :fx-fg-color] fg))))
   (set-fx-bg! [_ layer-id x y bg]
-    {:pre [(vector? bg)
-           (= (count bg) 3)
-           (get layer-id->group layer-id)]}
+    {:pre [(is (vector? bg) "bg not a vector")
+           (is (= (count bg) 3) "bg must have 3 elements")
+           (is (every? number? bg) "bg elements must be numbers")
+           (is (get layer-character-map layer-id) (format "Invalid layer-id %s" layer-id))]}
       (alter (get layer-character-map layer-id)
              (fn [cm] (assoc-in cm [y x :fx-bg-color] bg))))
   (set-fx-char! [_ layer-id x y c]
-    {:pre [(get layer-id->group layer-id)]}
+    {:pre [(is (get layer-character-map layer-id) (format "Invalid layer-id %s" layer-id))]}
     (alter (get layer-character-map layer-id)
            (fn [cm] (assoc-in cm [y x :fx-character] c))))
   (clear-fx! [_ layer-id]
-    {:pre [(get layer-id->group layer-id)]}
+    {:pre [(is (get layer-character-map layer-id) (format "Invalid layer-id %s" layer-id))]}
     (alter (get layer-character-map layer-id)
            (fn [cm]
              (mapv (fn [line]
