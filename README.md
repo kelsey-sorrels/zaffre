@@ -97,7 +97,7 @@ Run a little hello world terminal
 ```
 
 
-<img src="https://cloud.githubusercontent.com/assets/1139945/14769783/a3f2141c-0a15-11e6-9103-be02a9809c8c.png" alt="Screenshot" title="" align="right" />
+<img src="https://cloud.githubusercontent.com/assets/1139945/14769783/a3f2141c-0a15-11e6-9103-be02a9809c8c.png" alt="Screenshot" title="" />
 
 ## More Examples
 
