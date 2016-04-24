@@ -10,11 +10,15 @@ Zaffre is fast console library for drawing characters to a screen.
   * CP437 tileset support (eg: loading [Dwarf Fortress Wiki: Tileset repository](http://dwarffortresswiki.org/index.php/Tileset_repository))
   * Cross-platform codebase
   * Thread safe
-
-## Not Features
   * Multiple fonts
   * Glyph stacking
-  * Non-character tiles
+  * Non-character tiles ie: sprites
+  * Mix different font sizes
+
+## Not Features
+  * Effects
+  * Animation
+  * GUI control emulation
 
 ## Usage
 
@@ -44,97 +48,111 @@ Setup your namespace imports:
 ```clojure
 (ns my-clj-ns
   (:require
-    [zaffre.aterminal :as zat]
-    [zaffre.glterminal]
+    [zaffre.terminal :as zat]
+    [zaffre.glterminal :as zgl]
+    [zaffre.font :as zfont]
     [clojure.core.async :as async :refer [go-loop]])
   (:import
-    (zaffre.font CP437Font TTFFont)))
+    (zaffre.font CP437Font)))
 ```
 
 Create a terminal:
 
 ```clojure
   ;; render in background thread
-  (let [terminal   (zaffre.glterminal/make-terminal
-                     ;; Two layers, :text on the bottom and :rainbow on top
-                     [:text :rainbow]
-                     {:title "Zaffre demo"
-                      :columns 80 :rows 24
-                      :default-fg-color [250 250 250]
-                      :default-bg-color [5 5 8]
-                      ;; Specify font to use for windows platform
-                      ;; In this case let's pull a font from the dwarf fortress tileset repository
-                      ;; Use the :green channel and a scale of 1. (2 would, for example, be twice as large)
-                      :windows-font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1)
-                      ;; Specify font to use for non-windows platforms
-                      ;; Here we'll load a ttf font by font-family. A font name or even a filesystem path can be used too
-                      :else-font (TTFFont. "Monospaced" 16)
-                      ;; Use fullscreen for fun
-                      :fullscreen true
-                      :icon-paths ["images/icon-16x16.png"
-                                   "images/icon-32x32.png"
-                                   "images/icon-128x128.png"]})
+  (zgl/create-terminal
+    {:app {
+      ;; Two layers, :text on the bottom and :rainbow on top
+      :layers [:text :rainbow]
+      :columns 80
+      :rows 24
+      :pos [0 0]
+      ;; In this case let's pull a font from the dwarf fortress tileset repository
+      ;; Use the :green channel and a scale of 1. (2 would, for example, be twice as large)
+      :font (constantly (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2 true))}}
+    {:title "Zaffre demo"
+     :screen-width (* 8 2 80) :screen-height (* 8 2 24)
+     :default-fg-color [250 250 250]
+     :default-bg-color [5 5 8]}
+```
+The last parameter is a function that receives the newly created terminal.
+```clojure
+    (fn [terminal]
+      (let [
+```
+
+Capture the terminal pub(lication) and set up some channels to receive messages from the terminal.
+```clojure
+            term-pub    (zat/pub terminal)
+            key-chan    (async/chan)
+            close-chan  (async/chan)
 ```
 
 Store some state, in this case the last key that was pressed:
 
 ```clojure
-       last-key    (atom nil)
+            last-key    (atom nil)
 ```
 
 Start a background job that changes text colors:
 
 ```clojure
-       ;; Every 10ms, set the "Rainbow" text to have a random fg color
-       fx-chan     (go-loop []
-                     (dosync
-                       (doseq [x (range (count "Rainbow"))]
-                         (zat/set-fx-fg! terminal :rainbow (inc x) 1 [128 (rand 255) (rand 255)])))
-                       (zat/refresh! terminal)
-                     (Thread/sleep 10)
-                     (recur))
+            ;; Every 10ms, set the "Rainbow" text to have a random fg color
+            fx-chan     (go-loop []
+                          (dosync
+                            (doseq [x (range (count "Rainbow"))]
+                              (zat/set-fx-fg! terminal :rainbow (inc x) 1 [128 (rand 255) (rand 255)])))
+                            (zat/refresh! terminal)
+                          (Thread/sleep 10)
+                          (recur))
 ```
 
 Start a background job to render at 30fps:
 
 ```clojure
-       ;; Every 33ms, draw a full frame
-       render-chan (go-loop []
-                     (dosync
-                       (let [key-in (or @last-key \?)]
-                         (zat/clear! terminal)
-                         (put-string terminal :text 0 0 "Hello world")
-                         (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
-                           (put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
-                         (put-string terminal :text 12 0 (str key-in))
-                         (put-string terminal :rainbow 1 1 "Rainbow")
-                         (zat/refresh! terminal)))
-                         ;; ~30fps
-                       (Thread/sleep 33)
-                       (recur))]
+            ;; Every 33ms, draw a full frame
+            render-chan (go-loop []
+                          (dosync
+                            (let [key-in (or @last-key \?)]
+                              (zat/clear! terminal)
+                              (put-string terminal :text 0 0 "Hello world")
+                              (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
+                                (put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
+                              (put-string terminal :text 12 0 (str key-in))
+                              (put-string terminal :rainbow 1 1 "Rainbow")
+                              (zat/refresh! terminal)))
+                              ;; ~30fps
+                            (Thread/sleep 33)
+                            (recur))]
 ```
 
-In the main loop, read a key, process messages, and possibly change font-size:
+Subscribe to keypress and close events.
+
+```clojure
+       (async/sub term-pub :keypress key-chan)
+       (async/sub term-pub :close close-chan)
+```
+
+In the input loop, read a key, process messages
 
 ```clojure
    ;; get key presses in fg thread
-   (loop []
-     (let [new-key (async/<!! (zat/get-key-chan terminal))]
-       (if (= new-key :exit)
-         (do
+   (go-loop []
+     (let [new-key (async/<! key-chan)]
+       (reset! last-key new-key)
+       (case new-key
+         \q (zat/destroy! terminal)
+         nil)
+       (recur)))
+```
+
+Block until a close message arrives.
+
+```clojure
+         (let [_ (async/<!! close-chan)]
            (async/close! fx-chan)
            (async/close! render-chan)
-           (System/exit 0))
-         (do
-           (reset! last-key new-key)
-           (log/info "got key" (or (str @last-key) "nil")))
-           ;; change font size on s/m/l keypress
-           (case @last-key
-             \s (zat/apply-font! terminal (TTFFont. "Consolas" 12) (TTFFont. "Monospaced" 12))
-             \m (zat/apply-font! terminal (TTFFont. "Consolas" 18) (TTFFont. "Monospaced" 18))
-             \l (zat/apply-font! terminal (TTFFont. "Consolas" 24) (TTFFont. "Monospaced" 24))
-             nil)
-           (recur))))
+           (System/exit 0)))))
 ```
 
 ## `make-terminal` parameters
