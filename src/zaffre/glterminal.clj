@@ -1225,7 +1225,7 @@
             (GLFW/glfwPollEvents)
             ;; Close the display if the close window button has been clicked
             ;; or the gl-lock has been released programmatically (e.g. by destroy!)
-            (or (= (GLFW/glfwWindowShouldClose window) GLFW/GLFW_TRUE) @destroyed))
+            (or (GLFW/glfwWindowShouldClose window) @destroyed))
         (do
           (log/info "Destroying display")
           (with-gl-context gl-lock window capabilities
