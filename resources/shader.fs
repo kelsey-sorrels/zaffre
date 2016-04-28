@@ -48,7 +48,8 @@ void main(void) {
         break;
     }
     //result.r = ((r | (glyphType * 10u)  << (2u * i))/ 256u);
-    //result.r = (r + i)/ 256;
+    //result.r = 1.0;
+    //result.a = 1.0;
   }
   outcolor = result;
 }

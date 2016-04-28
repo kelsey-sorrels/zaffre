@@ -41,19 +41,15 @@
   (zgl/create-terminal
     {:app {
       :layers  [:ui :0 :1 :2 :3]
-      :columns 31
-      :rows    35
-      :pos     [0 0]}}
+      :columns 32
+      :rows    32
+      :pos     [0 0]
+      :font    (constantly font)}}
     {:title            "Zaffre demo"
-     :screen-width     (* 31 16)
+     :screen-width     (* 33 16)
      :screen-height    (* 35 16)
      :default-fg-color [250 250 250]
-     :default-bg-color [5 5 8]
-     :windows-font     font
-     :else-font        font
-     :icon-paths       ["images/icon-16x16.png"
-                        "images/icon-32x32.png"
-                        "images/icon-128x128.png"]}
+     :default-bg-color [5 5 8]}
     (fn [terminal]
       (let [term-pub      (zat/pub terminal)
             ;key-chan      (async/chan)
@@ -68,10 +64,10 @@
             render-chan (go-loop []
                           (dosync
                             (zat/clear! terminal)
-                            (zutil/put-string terminal :ui 2 33 (format "layer: %s" (str @current-layer)))
-                            (zutil/put-string terminal :ui 16 33 (str @current-tile))
+                            (zutil/put-string terminal :ui 2 30 (format "layer: %s" (str @current-layer)))
+                            (zutil/put-string terminal :ui 16 30 (str @current-tile))
                             (zat/put-chars! terminal :ui palette)
-                            (zat/put-chars! terminal :ui [{:c @current-tile :fg [255 255 255] :bg [128 128 128] :x 0 :y 13}])
+                            (zat/put-chars! terminal :ui [{:c @current-tile :fg [255 255 255] :bg [128 128 128] :x 0 :y 30}])
                             (zat/put-chars! terminal :0 (map (fn [[[col row] t]]
                                                                {:c t :fg [255 255 255] :bg [0 0 0] :x col :y row})
                                                              @(get layers :0)))
@@ -81,7 +77,7 @@
                             (zat/put-chars! terminal :2 (map (fn [[[col row] t]]
                                                                {:c t :fg [255 255 255] :bg [0 0 0] :x col :y row})
                                                              @(get layers :2)))
-                            (zat/put-chars! terminal :3 (map (fn [[[col row] t]]
+                            #_(zat/put-chars! terminal :3 (map (fn [[[col row] t]]
                                                                {:c t :fg [255 255 255] :bg [0 0 0] :x col :y row})
                                                              @(get layers :3)))
                             (zat/refresh! terminal))
@@ -89,7 +85,7 @@
                           (Thread/sleep 33)
                           (recur))]
         ;(async/sub term-pub :keypress key-chan)
-        (async/sub term-pub :click mouse-chan)
+        ;(async/sub term-pub :click mouse-chan)
         (zevents/add-event-listener terminal :keypress 
           (fn [keypress]
             (log/info "got keypress" keypress)
@@ -116,7 +112,8 @@
               ;; select new tile
               (do
                 (log/info "selecting tile at" [row col])
-                (reset! current-tile (get-in ztiles/fantasy-map [row col])))
+                (when-let [tile (get-in ztiles/fantasy-map [row col])]
+                  (reset! current-tile tile)))
               ;; draw new tile
               (do
                 (log/info "placing tile at" [row col])

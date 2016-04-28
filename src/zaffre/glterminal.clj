@@ -139,7 +139,7 @@
     (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY texture-id)
     (GL11/glTexParameteri GL30/GL_TEXTURE_2D_ARRAY GL11/GL_TEXTURE_MIN_FILTER GL11/GL_NEAREST)
     (GL11/glTexParameteri GL30/GL_TEXTURE_2D_ARRAY GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
-    (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL30/GL_RGBA8UI width height layers 0 GL30/GL_RGBA_INTEGER GL11/GL_INT texture-buffer)
+    (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL30/GL_RGBA8UI width height layers 0 GL30/GL_RGBA_INTEGER GL11/GL_BYTE texture-buffer)
     (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY 0)
     (except-gl-errors "end of xy-texture-id")
     texture-id))
@@ -537,8 +537,8 @@
         (GL11/glDeleteTextures old-texture))))
   ;; characters is a list of {:c \character :x col :y row :fg [r g b] :bg [r g b]}
   (put-chars! [_ layer-id characters]
-    {:pre [(is (get layer-id->group layer-id) (format "Invalid layer-id %s" layer-id))
-           (is (get layer-character-map layer-id) (format "Invalid layer-id %s" layer-id))]}
+    {:pre [(is (not (nil? (get layer-id->group layer-id))) (format "Invalid layer-id %s" layer-id))
+           (is (not (nil? (get layer-character-map layer-id))) (format "Invalid layer-id %s" layer-id))]}
     #_(log/info "characters" (str characters))
     (let [columns (-> layer-id layer-id->group deref :columns)
           rows    (-> layer-id layer-id->group deref :rows)]
@@ -675,7 +675,10 @@
                 u-MVMatrix
                 false
                 (position-matrix-buffer
-                  [(+ x-pos (- (/ framebuffer-width 2))) (+ y-pos (- (/ framebuffer-height 2))) -1.0 0.0]
+                  [(+ x-pos (- (/ framebuffer-width 2)))
+                   (+ y-pos (- framebuffer-height (* rows character-height)) (- (/ framebuffer-height 2)))
+                   -1.0
+                   0.0]
                   [(* character-width columns) (* character-height rows) 1.0]
                   mv-matrix-buffer))
               (except-gl-errors (str "u-MVMatrix - glUniformMatrix4  " u-MVMatrix))
@@ -777,7 +780,7 @@
     (doseq [[id character-map] layer-character-map]
       (ref-set character-map (get layer-character-map-cleared id))))
   (clear! [_ layer-id]
-    {:pre [(is (get layer-character-map layer-id) (format "Invalid layer-id %s" layer-id))]}
+    {:pre [(is (not (nil? (get layer-character-map layer-id))) (format "Invalid layer-id %s" layer-id))]}
     (ref-set (get layer-character-map layer-id) (get layer-character-map-cleared layer-id)))
   (fullscreen! [_ v]
     (with-gl-context gl-lock window capabilities
@@ -829,11 +832,11 @@
       (alter (get layer-character-map layer-id)
              (fn [cm] (assoc-in cm [y x :fx-bg-color] bg))))
   (set-fx-char! [_ layer-id x y c]
-    {:pre [(is (get layer-character-map layer-id) (format "Invalid layer-id %s" layer-id))]}
+    {:pre [(is (not (nil? (get layer-character-map layer-id))) (format "Invalid layer-id %s" layer-id))]}
     (alter (get layer-character-map layer-id)
            (fn [cm] (assoc-in cm [y x :fx-character] c))))
   (clear-fx! [_ layer-id]
-    {:pre [(is (get layer-character-map layer-id) (format "Invalid layer-id %s" layer-id))]}
+    {:pre [(is (not (nil? (get layer-character-map layer-id))) (format "Invalid layer-id %s" layer-id))]}
     (alter (get layer-character-map layer-id)
            (fn [cm]
              (mapv (fn [line]
@@ -966,36 +969,47 @@
         _ (log/info "Creating glyph array")
         glyph-image-data    (for [[_ layer-group] group-map]
                               (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                    np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
-                                (log/info "creating buffers for glyph/fg/bg textures" np2-columns "x" np2-rows)
-                                (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 (count (get @layer-group :layers))))))
+                                    np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                    np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
+                                (log/info "creating buffer for glyph textures" np2-columns "x" np2-rows "x" np2-layers)
+                                (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 np2-layers))))
         fg-image-data       (for [[_ layer-group] group-map]
                               (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                    np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
-                                (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 (count (get @layer-group :layers))))))
+                                    np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                    np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
+                                (log/info "creating buffer for fg textures" np2-columns "x" np2-rows) "x" np2-layers
+                                (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 np2-layers))))
         bg-image-data       (for [[_ layer-group] group-map]
                               (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                    np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
-                                (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 (count (get @layer-group :layers))))))
+                                    np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                    np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
+                                (log/info "creating buffer for bg textures" np2-columns "x" np2-rows) "x" np2-layers
+                                (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 np2-layers))))
         glyph-textures      (with-gl-context gl-lock window capabilities
                               (mapv (fn [layer-group glyph-image-data]
                                       (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                            np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
-                                        (xy-texture-id np2-columns np2-rows (count (get @layer-group :layers)) glyph-image-data)))
+                                            np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                            np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
+                                        (log/info "creating glyph texture" np2-columns "x" np2-rows "x" np2-layers)
+                                        (xy-texture-id np2-columns np2-rows np2-layers glyph-image-data)))
                                     (vals group-map)
                                     glyph-image-data))
         fg-textures         (with-gl-context gl-lock window capabilities
                               (mapv (fn [layer-group fg-image-data]
                                       (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                            np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
-                                        (texture-id np2-columns np2-rows (count (get @layer-group :layers)) fg-image-data)))
+                                            np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                            np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
+                                        (log/info "creating fg texture" np2-columns "x" np2-rows "x" np2-layers)
+                                        (texture-id np2-columns np2-rows np2-layers fg-image-data)))
                                     (vals group-map)
                                     fg-image-data))
         bg-textures         (with-gl-context gl-lock window capabilities
                               (mapv (fn [layer-group bg-image-data]
                                       (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                            np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
-                                        (texture-id np2-columns np2-rows (count (get @layer-group :layers)) bg-image-data)))
+                                            np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                            np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
+                                        (log/info "creating bg texture" np2-columns "x" np2-rows "x" np2-layers)
+                                        (texture-id np2-columns np2-rows np2-layers bg-image-data)))
                                     (vals group-map)
                                     bg-image-data))
         [fbo-id fbo-texture]
