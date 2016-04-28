@@ -5,7 +5,8 @@
             :url "https://raw.githubusercontent.com/aaron-santos/zaffre/master/LICENSE"}
   :dependencies [[org.clojure/clojure "1.7.0"]
                  [org.clojure/core.async "0.2.374"]
-                 [hello_lwjgl/lwjgl "3.0.0b1"]
+                 [aaron-santos/lwjgl "3.0.0rc1"]
+                 ;[hello_lwjgl/lwjgl "3.0.0b1"]
                  [nio "1.0.3"]
                  [org.joml/joml "1.7.1"]
                  [im.bci/pngdecoder "0.13"]
