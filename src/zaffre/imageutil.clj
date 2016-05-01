@@ -24,7 +24,7 @@
     texture-buffer))
 
 
-(defn png-bytes [path]
+(defn png [path]
   (with-open [input-stream (jio/input-stream path)]
     (let [decoder (PNGDecoder. input-stream)
           width (.getWidth decoder)
@@ -32,21 +32,20 @@
           bytebuf (ByteBuffer/allocateDirect (* width height 4))]
       (.decode decoder bytebuf (* width 4) PNGDecoder$Format/RGBA)
       (.flip bytebuf)
-      bytebuf)))
+      {:width width :height height :pixels bytebuf})))
 
 (defn icons [paths]
   (let [icons (GLFWImage/create (count paths))]
-    (loop [idx 0 icon-bytebuffers (mapv png-bytes paths)]
-      (if-let [^ByteBuffer icon-bytebuffer (first icon-bytebuffers)]
-        (let [width (int (Math/sqrt (quot (.limit icon-bytebuffer) 4)))
-              height width]
-          (log/info "Icon" idx "(" width "x" height ")" (.limit icon-bytebuffer))
+    (loop [idx 0 pngs (mapv png paths)]
+      (if-let [png (first pngs)]
+        (let [{:keys [width height pixels]} png]
+          (log/info "Icon" idx "(" width "x" height ")" (.limit pixels))
           (doto icons
             (.position idx)
             (.width width)
             (.height height)
-            (.pixels icon-bytebuffer))
-          (recur (inc idx) (next icon-bytebuffers)))
-         (do
-           (.flip icons)
-           icons))))) 
+            (.pixels pixels))
+          (recur (inc idx) (next pngs)))
+        (do
+         (.flip icons)
+         icons)))))
