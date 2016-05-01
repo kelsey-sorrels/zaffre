@@ -20,22 +20,26 @@
         (< h 300) [x 0 c]
         (< h 360) [c 0 x]))))
 
+(def small-font-fn (constantly (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 true)))
+(def medium-font-fn (constantly (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2 true)))
+(def large-font-fn (constantly (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 3 true)))
 (defn -main [& _]
   ;; render in background thread
   (zgl/create-terminal
-    [:text :rainbow]
+    {:app {
+       :layers [:text :rainbow]
+       :columns 16
+       :rows 16
+       :pos [0 0]
+       :font medium-font-fn}}
     {:title "Zaffre demo"
-     :columns 80 :rows 24
+     :screen-width (* 16 16)
+     :screen-height (* 16 16)
      :default-fg-color [250 250 250]
      :default-bg-color [5 5 8]
-     :windows-font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 true)
-     :else-font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 true)
-     ;; Alternatively
-     ;:windows-font (TTFFont. "Consolas" 12)
-     ;:else-font (TTFFont. "Monospaced" 12)
-     :icon-paths ["images/icon-16x16.png"
+     #_#_:icon-paths ["images/icon-16x16.png"
                   "images/icon-32x32.png"
-                  "images/icon-128x128.png"]}
+                  #_"images/icon-128x128.png"]}
     (fn [terminal]
       (let [term-pub    (zat/pub terminal)
             key-chan    (async/chan)
@@ -76,20 +80,16 @@
         ;; change font size on s/m/l keypress
         ;; \w for windowed mode, and \f for fullscreen
         (case new-key
-          \s (zat/apply-font! terminal
-               (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 true)
-               (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 true))
-          \m (zat/apply-font! terminal
-               (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2 true)
-               (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2 true))
-          \l (zat/apply-font! terminal
-               (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 3 true)
-               (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 3 true))
-          \f (zat/fullscreen! terminal (first fullscreen-sizes))
-          \w (zat/fullscreen! terminal false)
+          \s (zat/alter-group-font! terminal :app
+               small-font-fn)
+          \m (zat/alter-group-font! terminal :app
+               medium-font-fn)
+          \l (zat/alter-group-font! terminal :app
+               large-font-fn)
+          \f (zat/fullscreen! terminal (last fullscreen-sizes))
+          \w (zat/fullscreen! terminal {:width (* 16 16) :height (* 16 16)})
           \q (zat/destroy! terminal)
-          nil)))
-    (let [_ (async/<! close-chan)]
-      (async/close! fx-chan)
-      (async/close! render-chan)
-      (System/exit 0))))))
+          nil)
+        (recur)))
+    (async/<!! close-chan)
+    (System/exit 0)))))

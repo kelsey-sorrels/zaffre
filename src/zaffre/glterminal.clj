@@ -16,7 +16,7 @@
     (java.nio FloatBuffer ByteBuffer)
     (java.nio.charset Charset)
     (org.lwjgl.opengl GL GLUtil GL11 GL12 GL13 GL14 GL15 GL20 GL30 GL32)
-    (org.lwjgl.glfw GLFW GLFWVidMode GLFWErrorCallback GLFWCharCallback GLFWKeyCallback GLFWMouseButtonCallback GLFWCursorPosCallback)
+    (org.lwjgl.glfw GLFW GLFWVidMode GLFWVidMode$Buffer GLFWImage GLFWImage$Buffer GLFWErrorCallback GLFWCharCallback GLFWKeyCallback GLFWMouseButtonCallback GLFWCursorPosCallback)
     (org.lwjgl.system Platform)
     (org.joml Matrix4f Vector3f)
     (java.io File FileInputStream FileOutputStream)
@@ -210,13 +210,8 @@
       (System/setProperty "org.lwjgl.librarypath", (.getAbsolutePath (File. "natives/windows/x86_64"))))))
 
 (defn- init-display [title screen-width screen-height icon-paths gl-lock destroyed]
-  (let [icon-array         (when icon-paths
-                             (condp = (Platform/get)
-
-                               Platform/LINUX   (into-array ByteBuffer [(zimgutil/png-bytes (get icon-paths 1))])
-                               Platform/MACOSX  (into-array ByteBuffer [(zimgutil/png-bytes (get icon-paths 2))])
-                               Platform/WINDOWS (into-array ByteBuffer [(zimgutil/png-bytes (get icon-paths 0))
-                                                                        (zimgutil/png-bytes (get icon-paths 1))])))]
+  (let [icons         (when icon-paths
+                        (zimgutil/icons icon-paths))]
      ;; init-natives must be called before the Display is created
      (init-natives)
      ;;(GLFW/glfwSetErrorCallback (GLFWErrorCallback/createPrint System/out))
@@ -226,8 +221,8 @@
      (when-not (= (GLFW/glfwInit) GLFW/GLFW_TRUE)
        (assert "Unable to initialize GLFW"))
      (GLFW/glfwDefaultWindowHints)
-     (GLFW/glfwWindowHint GLFW/GLFW_VISIBLE GLFW/GLFW_FALSE)
-     (GLFW/glfwWindowHint GLFW/GLFW_RESIZABLE GLFW/GLFW_FALSE)
+     ;(GLFW/glfwWindowHint GLFW/GLFW_VISIBLE GLFW/GLFW_FALSE)
+     (GLFW/glfwWindowHint GLFW/GLFW_RESIZABLE GLFW/GLFW_TRUE)
      
      (GLFW/glfwWindowHint GLFW/GLFW_CONTEXT_VERSION_MAJOR 3)
      (GLFW/glfwWindowHint GLFW/GLFW_CONTEXT_VERSION_MINOR 2)
@@ -237,11 +232,10 @@
      (if-let [window (GLFW/glfwCreateWindow (int screen-width) (int screen-height) (str title) 0 0)]
        (do
          ; TODO: set window icons
-         #_(when icon-array
+         (when icons
            (log/info "Setting icons")
-           ;(Display/setIcon icon-array)
-           (Thread/sleep 100))
-         (log/info "byte-buffer" icon-array)
+           (GLFW/glfwSetWindowIcon window icons))
+         (log/info "byte-buffer" icons)
          (let [vidmode      (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor))]
            (GLFW/glfwSetWindowPos
              window
@@ -264,6 +258,38 @@
                 framebuffer-width
                 framebuffer-height]))))
      (throw (RuntimeException. "Failed to create the GLFW window")))))
+
+
+(defn- video-modes [^GLFWVidMode$Buffer video-modes-buffer]
+  (mapv (fn [idx]
+          (let [^GLFWVidMode video-mode (.get video-modes-buffer idx)]
+            {:width (.width video-mode)
+             :height (.height video-mode)
+             :refresh-rate (.refreshRate video-mode)}))
+        (range (.limit video-modes-buffer))))
+
+(defn- glfw-fullscreen-sizes []
+  (let [monitors (GLFW/glfwGetMonitors)]
+    (vec
+      (mapcat (fn [idx]
+                (let [monitor      (.get monitors idx)
+                      monitor-name (GLFW/glfwGetMonitorName monitor)]
+                  (mapv (fn [video-mode]
+                          (assoc video-mode :name monitor-name :monitor monitor))
+                        (video-modes (GLFW/glfwGetVideoModes monitor)))))
+              (range (.limit monitors))))))
+
+(defn- glfw-current-monitor [window]
+  (let [monitor       (GLFW/glfwGetWindowMonitor window)
+        width-buffer  (BufferUtils/createIntBuffer 1)
+        height-buffer (BufferUtils/createIntBuffer 1)]
+    (GLFW/glfwGetFramebufferSize window width-buffer height-buffer)
+    (cond->
+      {:width (.get width-buffer)
+       :height (.get height-buffer)
+       :refresh-rate 0
+       :monitor monitor}
+      (pos? monitor) (assoc :name (GLFW/glfwGetMonitorName monitor)))))
 
 (defn- load-shader
   [^String shader-str ^Integer shader-type]
@@ -500,6 +526,7 @@
 (defrecord OpenGlTerminal [term-args
                            fbo-texture
                            fullscreen
+                           monitor-fullscreen-sizes
                            layer-character-map-cleared
                            layer-character-map
                            group-map
@@ -783,40 +810,9 @@
     {:pre [(is (not (nil? (get layer-character-map layer-id))) (format "Invalid layer-id %s" layer-id))]}
     (ref-set (get layer-character-map layer-id) (get layer-character-map-cleared layer-id)))
   (fullscreen! [_ v]
-    (with-gl-context gl-lock window capabilities
-      #_(if (false? v)
-        (let [{:keys [framebuffer-width framebuffer-height]} (get @font-textures (font-key @normal-font))]
-          (reset! fullscreen false)
-          ; TODO: Uncomment when LGJWL version is upgraded
-          #_(GLFW/glfwSetWindowMonitor window
-                                     (GLFW/glfwGetWindowMonitor window)
-                                     0
-                                     0
-                                     (* columns character-width)
-                                     (* rows character-height)
-                                     60)
-        (let [[width height mode] v]
-          (reset! fullscreen true)
-          ; TODO: Uncomment when LGJWL version is upgraded
-          #_(GLFW/glfwSetWindowMonitor window
-                                     (GLFW/glfwGetWindowMonitor window)
-                                     0
-                                     0
-                                     (.width mode)
-                                     (.height mode)
-                                     60))))))
+    (reset! fullscreen v))
   (fullscreen-sizes [_]
-    (with-gl-context gl-lock window capabilities
-      (let [desktop-mode     (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor))
-            modes            (GLFW/glfwGetVideoModes (GLFW/glfwGetPrimaryMonitor))
-            compatible-modes (filter (fn [^GLFWVidMode mode]
-                                       (= (.refreshRate mode) (.refreshRate desktop-mode)))
-                                     (map (fn [i] (.get modes (int i))) (range (.capacity modes))))]
-        (mapv (fn [^GLFWVidMode mode]
-                [(.width mode)
-                 (.height mode)
-                 mode])
-              compatible-modes))))
+    monitor-fullscreen-sizes)
   (set-fx-fg! [_ layer-id x y fg]
     {:pre [(is (vector? fg) "fg not a vector")
            (is (= (count fg) 3) "fg must have 3 elements")
@@ -901,6 +897,7 @@
   (let [term-args           [group-map opts]
         group-map           (into {}
                               (map (fn [[k v]]
+                                     (is (every? v #{:layers :columns :rows :pos :font}))
                                      [k (ref v)])
                                    group-map))
         layer-id->group     (->> group-map
@@ -927,6 +924,9 @@
                             (init-display title screen-width screen-height icon-paths gl-lock destroyed)
         _                   (log/info "window" window "capabilities" capabilities)
         _                   (log/info "framebuffer size" framebuffer-width "x" framebuffer-height)
+        monitor-fullscreen-sizes (with-gl-context gl-lock window capabilities
+                                   (glfw-fullscreen-sizes))
+        _                   (log/info "monitor-fullscreen-sizes" monitor-fullscreen-sizes)
 
         group->font-texture (with-gl-context gl-lock window capabilities
                               (into {}
@@ -1175,6 +1175,7 @@
                            (OpenGlTerminal. term-args
                                             fbo-texture
                                             fullscreen
+                                            monitor-fullscreen-sizes
                                             layer-character-map-cleared
                                             layer-character-map
                                             group-map
@@ -1190,7 +1191,7 @@
                                             window
                                             capabilities)]
     ;; Access to terminal will be multi threaded. Release context so that other threads can access it)))
-    (when @fullscreen
+    #_(when @fullscreen
       (zat/fullscreen! terminal (first (zat/fullscreen-sizes terminal))))
     ;; Start font file change listener thread
     ; TODO: fix resource reloader
@@ -1213,36 +1214,74 @@
     (GLFW/glfwSetMouseButtonCallback window mouse-button-callback)
     (GLFW/glfwSetCursorPosCallback window cursor-pos-callback)
     (future
-      ;; Wait for Display to be created
+      ;; Wait for main thread loop to start
       (.await latch)
       (f terminal))
-    (loop []
-      (.countDown latch)
-      (if (with-gl-context gl-lock window capabilities
-            (except-gl-errors "Start of loop")
-            ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
-            ; input on the thread that created the window
-            (GLFW/glfwPollEvents)
-            ;; Close the display if the close window button has been clicked
-            ;; or the gl-lock has been released programmatically (e.g. by destroy!)
-            (or (GLFW/glfwWindowShouldClose window) @destroyed))
-        (do
-          (log/info "Destroying display")
-          (with-gl-context gl-lock window capabilities
-            (reset! gl-lock false)
-            ;; TODO: Clean up textures and programs
-            ;;(let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id vao-id fbo-id]} :buffers
-            ;;       {:keys [font-texture glyph-texture fg-texture bg-texture fbo-texture]} :textures
-            ;;       program-id :program-id
-            ;;       fb-program-id :fb-program-id} gl]
-              (doseq [id [pgm-id fb-pgm-id]]
-                (GL20/glDeleteProgram (int id)))
-              (doseq [id (flatten [[fbo-texture] glyph-textures fg-textures bg-textures])]
-                (GL11/glDeleteTextures (int id))))
-            (GLFW/glfwDestroyWindow window)
-          (log/info "Exiting")
-          (on-key-fn :exit))
-        (do
-          (Thread/sleep 5)
-          (recur))))))
+    (let [primary-video-mode (with-gl-context gl-lock window capabilities
+                               (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor)))
+          current-video-mode (atom (with-gl-context gl-lock window capabilities
+                                     (glfw-current-monitor window)))]
+      (log/info "current-video-mode" @current-video-mode)
+      (reset! fullscreen @current-video-mode)
+      (loop []
+        (.countDown latch)
+        (if (with-gl-context gl-lock window capabilities
+              (except-gl-errors "Start of loop")
+              ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
+              ; input on the thread that created the window
+              (GLFW/glfwPollEvents)
+              ;; Close the display if the close window button has been clicked
+              ;; or the gl-lock has been released programmatically (e.g. by destroy!)
+              (or (GLFW/glfwWindowShouldClose window) @destroyed))
+          (do
+            (log/info "Destroying display")
+            (with-gl-context gl-lock window capabilities
+              (reset! gl-lock false)
+              ;; TODO: Clean up textures and programs
+              ;;(let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id vao-id fbo-id]} :buffers
+              ;;       {:keys [font-texture glyph-texture fg-texture bg-texture fbo-texture]} :textures
+              ;;       program-id :program-id
+              ;;       fb-program-id :fb-program-id} gl]
+                (doseq [id [pgm-id fb-pgm-id]]
+                  (GL20/glDeleteProgram (int id)))
+                (doseq [id (flatten [[fbo-texture] glyph-textures fg-textures bg-textures])]
+                  (GL11/glDeleteTextures (int id))))
+              (GLFW/glfwDestroyWindow window)
+            (log/info "Exiting"))
+          (do
+            (when-not (= @current-video-mode @fullscreen)
+              (with-gl-context gl-lock window capabilities
+                (cond
+                  ;; fullscreen mode
+                  (pos? (get @fullscreen :monitor 0))
+                  (let [{:keys [width height refresh-rate monitor]} @fullscreen]
+                    (log/info "setting window monitor fullscreen" window monitor 0 0 width height refresh-rate)
+                    (GLFW/glfwSetWindowMonitor window
+                                               monitor
+                                               0
+                                               0
+                                               width
+                                               height
+                                               refresh-rate))
+                  ;; fullscren -> windowed mode
+                  (pos? (get @current-video-mode :monitor 0))
+                  (let [{:keys [width height]} @fullscreen]
+                    (log/info "setting window monitor windowed from fullscreen" window 0 0 0 width height 0)
+                    (GLFW/glfwSetWindowMonitor window
+                                               (long 0)
+                                               (int 0)
+                                               (int 0)
+                                               (int width)
+                                               (int height)
+                                               (int 0))
+                  :else
+                  (let [{:keys [width height]} @fullscreen]
+                    (log/info "setting window monitor windowed from windowed" window 0 0 0 width height 0)
+                    (GLFW/glfwSetWindowSize window width height)
+                    (GLFW/glfwSetWindowPos window (quot (- (.width primary-video-mode) screen-width) 2)
+                                                  (quot (- (.height primary-video-mode) screen-height) 2))
+                    (GLFW/glfwShowWindow window)))))
+                (reset! current-video-mode @fullscreen))
+            (GLFW/glfwWaitEvents)
+            (recur)))))))
       
