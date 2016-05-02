@@ -641,9 +641,7 @@
                      fg-image-data
                      bg-image-data]} :data
              :keys [p-matrix-buffer mv-matrix-buffer]} gl
-            [framebuffer-width framebuffer-height] @framebuffer-size
-            [display-width display-height] (let [mode (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor))]
-                                             [(.width mode) (.height mode)])]
+            [framebuffer-width framebuffer-height] @framebuffer-size]
         #_(log/info "drawing with" (mapv vec [glyph-textures fg-textures bg-textures glyph-image-data fg-image-data bg-image-data]))
         ;; Setup render to FBO
         (try
@@ -717,7 +715,7 @@
                 (log/info (vec line))))
             (try
               (log/info "y" (+ y-pos (- framebuffer-height (* rows character-height)) (- (/ framebuffer-height 2)))
-                y-pos framebuffer-height rows character-height)
+                "y-pos" y-pos "fb-h" framebuffer-height "rows" rows "ch-h" character-height)
               (GL20/glUniformMatrix4fv
                 u-MVMatrix
                 false
@@ -726,7 +724,7 @@
                    (+ y-pos (- framebuffer-height (* rows character-height)) (- (/ framebuffer-height 2)))
                    -1.0
                    0.0]
-                  [(* character-width columns) (* character-height rows) 1.0]
+                  [framebuffer-width framebuffer-height 1.0]
                   mv-matrix-buffer))
               (except-gl-errors (str "u-MVMatrix - glUniformMatrix4  " u-MVMatrix))
               ; Setup uniforms for glyph, fg, bg, textures
