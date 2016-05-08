@@ -1,7 +1,8 @@
 (ns zaffre.imageutil
   (:require [clojure.java.io :as jio]
             [taoensso.timbre :as log])
-  (:import (java.awt.image BufferedImage DataBufferByte)
+  (:import (java.lang AutoCloseable)
+           (java.awt.image BufferedImage DataBufferByte)
            (java.nio ByteBuffer)
            (org.apache.commons.io IOUtils)
            (org.lwjgl BufferUtils)
@@ -16,7 +17,10 @@
 (defrecord Image [width height channels byte-buffer]
   Dimensions
   (width [_] width)
-  (height [_] height))
+  (height [_] height)
+  AutoCloseable
+  (close [_]
+    (STBImage/stbi_image_free byte-buffer)))
 
 (defn image
   ([width height]
@@ -34,8 +38,12 @@
                       jio/input-stream
                       IOUtils/toByteArray
                       ByteBuffer/wrap)
-        byte-buffer (STBImage/stbi_load_from_memory buffer w h c 0)]
-    (->Image (.get w) (.get h) (.get c) byte-buffer)))
+        direct-buffer (ByteBuffer/allocateDirect (.limit buffer))]
+    (doto direct-buffer
+      (.put buffer)
+      (.flip))
+    (let [byte-buffer (STBImage/stbi_load_from_memory direct-buffer w h c 0)]
+      (->Image (.get w) (.get h) (.get c) byte-buffer))))
 
 (defn write-png [{:keys [width height channels byte-buffer] :as img} path]
   (STBImageWrite/stbi_write_png path width height channels byte-buffer 0)
