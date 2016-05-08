@@ -1,5 +1,6 @@
 ;; Functions for rendering state to screen
-(ns zaffre.terminal)
+(ns zaffre.terminal
+  (:require [clojure.core.async :refer [go-loop]]))
 
 (defprotocol Terminal
   "Methods suffixed with ! indicate a change of state within the terminal. refresh! and destroy! are not transaction-safe and must not be called from within a transaction."
@@ -21,7 +22,22 @@
   (set-fx-char! [this layer-id x y c] "Overrides the character on a layer.")
   (clear-fx! [this]
              [this layer-id] "Clears all of the fx overrides or just those for a layer.")
-  (destroy! [this] "Stops the terminal, and closes the window."))
+  (destroy! [this] "Stops the terminal, and closes the window.")
+  (destroyed? [this] "True if destroy! cas been called or the window closed."))
+
+
+(defmacro do-frame
+  ([t d & body]
+    `(let [terminal# ~t
+           sleep-time# ~d]
+       (go-loop []
+         (when-not (destroyed? terminal#)
+           (dosync
+             (clear! terminal#)
+             ~@body
+             (refresh! terminal#))
+           (Thread/sleep sleep-time#)
+           (recur))))))
 
 ;; namespace with only a protocol gets optimized out, causing missing dependencies.
 ;; add a dummp def to prevent this ns from being optimized away.
