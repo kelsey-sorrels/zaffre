@@ -3,7 +3,7 @@
   (:require [zaffre.terminal :as zat]
             [zaffre.font :as zfont]
             [zaffre.util :as zutil]
-            [zaffre.imageutil :as zimgutil]
+            [zaffre.imageutil :as zimg]
             [zaffre.keyboard :as zkeyboard]
             [nio.core :as nio]
             [taoensso.timbre :as log]
@@ -20,7 +20,6 @@
     (org.lwjgl.system Platform)
     (org.joml Matrix4f Vector3f)
     (java.io File FileInputStream FileOutputStream)
-    (java.awt.image BufferedImage)
     (zaffre.terminal Terminal)
     (zaffre.font CP437Font TTFFont))
   (:gen-class))
@@ -102,34 +101,29 @@
       (throw (Exception. error-string)))))
 
 (defn- texture-id-2d
-  ([^BufferedImage buffered-image]
-  (let [width          (.getWidth buffered-image)
-        height         (.getHeight buffered-image)
-        texture-id     (GL11/glGenTextures)
-        texture-buffer ^ByteBuffer (zimgutil/buffered-image-byte-buffer buffered-image)]
+  ([{:keys [width height byte-buffer]}]
+  (let [texture-id     (GL11/glGenTextures)]
      (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
      (GL11/glPixelStorei GL11/GL_UNPACK_ALIGNMENT 1)
      (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MIN_FILTER GL11/GL_NEAREST)
      (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
-     (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGBA width height 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE texture-buffer)
+     (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGBA width height 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE byte-buffer)
      (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
      (except-gl-errors "end of texture-id-2d")
      texture-id)))
 
 (defn- texture-id
-  ([^BufferedImage buffered-image]
-  (let [width  (.getWidth buffered-image)
-        height (.getHeight buffered-image)]
-    (texture-id width height 1 (zimgutil/buffered-image-byte-buffer buffered-image))))
+  ([{:keys [width height byte-buffer]}]
+    (texture-id width height 1 byte-buffer))
   ([width height layers]
    (texture-id width height layers (BufferUtils/createByteBuffer (* width height 4 layers))))
-  ([^long width ^long height ^long layers ^ByteBuffer texture-buffer]
+  ([^long width ^long height ^long layers ^ByteBuffer byte-buffer]
    (let [texture-id (GL11/glGenTextures)]
      (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY texture-id)
      (GL11/glPixelStorei GL11/GL_UNPACK_ALIGNMENT 1)
      (GL11/glTexParameteri GL30/GL_TEXTURE_2D_ARRAY GL11/GL_TEXTURE_MIN_FILTER GL11/GL_NEAREST)
      (GL11/glTexParameteri GL30/GL_TEXTURE_2D_ARRAY GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
-     (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL11/GL_RGBA width height layers 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE texture-buffer)
+     (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL11/GL_RGBA width height layers 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE byte-buffer)
      (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY 0)
      (except-gl-errors "end of texture-id")
      texture-id)))
@@ -213,53 +207,51 @@
       (System/setProperty "org.lwjgl.librarypath", (.getAbsolutePath (File. "natives/windows/x86_64"))))))
 
 (defn- init-display [title screen-width screen-height icon-paths gl-lock destroyed]
-  (let [icons         (when icon-paths
-                        (zimgutil/icons icon-paths))]
-     ;; init-natives must be called before the Display is created
-     (init-natives)
-     ;;(GLFW/glfwSetErrorCallback (GLFWErrorCallback/createPrint System/out))
-     (GLFW/glfwSetErrorCallback (proxy [GLFWErrorCallback] []
-                                           (invoke [error description] (log/error "GLFW error:" error description))))
-     ;(GLUtil/setupDebugMessageCallback System/out)
-     (when-not (= (GLFW/glfwInit) GLFW/GLFW_TRUE)
-       (assert "Unable to initialize GLFW"))
-     (GLFW/glfwDefaultWindowHints)
-     ;(GLFW/glfwWindowHint GLFW/GLFW_VISIBLE GLFW/GLFW_FALSE)
-     (GLFW/glfwWindowHint GLFW/GLFW_RESIZABLE GLFW/GLFW_TRUE)
-     
-     (GLFW/glfwWindowHint GLFW/GLFW_CONTEXT_VERSION_MAJOR 3)
-     (GLFW/glfwWindowHint GLFW/GLFW_CONTEXT_VERSION_MINOR 2)
-     (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_PROFILE GLFW/GLFW_OPENGL_CORE_PROFILE)
-     (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_FORWARD_COMPAT GLFW/GLFW_TRUE)
-     (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_DEBUG_CONTEXT GLFW/GLFW_TRUE)
-     (if-let [window (GLFW/glfwCreateWindow (int screen-width) (int screen-height) (str title) 0 0)]
-       (do
-         ; TODO: set window icons
-         (when icons
-           (log/info "Setting icons")
-           #_(GLFW/glfwSetWindowIcon window icons))
-         (log/info "byte-buffer" icons)
-         (let [vidmode      (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor))]
-           (GLFW/glfwSetWindowPos
-             window
-             (/ (- (.width vidmode) screen-width) 2)
-             (/ (- (.height vidmode) screen-height) 2))
-           (GLFW/glfwMakeContextCurrent window)
-           (GLFW/glfwSwapInterval 1)
-           (GLFW/glfwShowWindow window)
-           (let [capabilities (GL/createCapabilities)
-                 width-buffer (BufferUtils/createIntBuffer 1)
-                 height-buffer (BufferUtils/createIntBuffer 1)]
-             (GLFW/glfwGetFramebufferSize window width-buffer height-buffer)
-             (let [framebuffer-width (.get width-buffer)
-                   framebuffer-height (.get height-buffer)]
-               (GL11/glViewport 0 0 framebuffer-width framebuffer-height)
-               ;; Signal to parent that display has been created
-               [window
-                capabilities
-                framebuffer-width
-                framebuffer-height]))))
-     (throw (RuntimeException. "Failed to create the GLFW window")))))
+   ;; init-natives must be called before the Display is created
+   (init-natives)
+   ;;(GLFW/glfwSetErrorCallback (GLFWErrorCallback/createPrint System/out))
+   (GLFW/glfwSetErrorCallback (proxy [GLFWErrorCallback] []
+                                (invoke [error description]
+                                  (log/error "GLFW error:" error (GLFWErrorCallback/getDescription description)))))
+   ;(GLUtil/setupDebugMessageCallback System/out)
+   (when-not (= (GLFW/glfwInit) GLFW/GLFW_TRUE)
+     (assert "Unable to initialize GLFW"))
+   (GLFW/glfwDefaultWindowHints)
+   ;(GLFW/glfwWindowHint GLFW/GLFW_VISIBLE GLFW/GLFW_FALSE)
+   (GLFW/glfwWindowHint GLFW/GLFW_RESIZABLE GLFW/GLFW_TRUE)
+   
+   (GLFW/glfwWindowHint GLFW/GLFW_CONTEXT_VERSION_MAJOR 3)
+   (GLFW/glfwWindowHint GLFW/GLFW_CONTEXT_VERSION_MINOR 2)
+   (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_PROFILE GLFW/GLFW_OPENGL_CORE_PROFILE)
+   (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_FORWARD_COMPAT GLFW/GLFW_TRUE)
+   (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_DEBUG_CONTEXT GLFW/GLFW_TRUE)
+   (if-let [window (GLFW/glfwCreateWindow (int screen-width) (int screen-height) (str title) 0 0)]
+     (do
+       (let [vidmode (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor))
+             x       (/ (- (.width vidmode) screen-width) 2)
+             y       (/ (- (.height vidmode) screen-height) 2)]
+         (log/info "Setting window pos" x y)
+         ;(GLFW/glfwSetWindowPos window x y)
+         (log/info "1")
+         (GLFW/glfwMakeContextCurrent window)
+         (log/info "2")
+         (GLFW/glfwSwapInterval 1)
+         (log/info "3")
+         (GLFW/glfwShowWindow window)
+         (log/info "4")
+         (let [capabilities (GL/createCapabilities)
+               width-buffer (BufferUtils/createIntBuffer 1)
+               height-buffer (BufferUtils/createIntBuffer 1)]
+           (GLFW/glfwGetFramebufferSize window width-buffer height-buffer)
+           (let [framebuffer-width (.get width-buffer)
+                 framebuffer-height (.get height-buffer)]
+             (GL11/glViewport 0 0 framebuffer-width framebuffer-height)
+             ;; Signal to parent that display has been created
+             [window
+              capabilities
+              framebuffer-width
+              framebuffer-height]))))
+   (throw (RuntimeException. "Failed to create the GLFW window"))))
 
 
 (defn- video-modes [^GLFWVidMode$Buffer video-modes-buffer]

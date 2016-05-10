@@ -2,7 +2,6 @@
   (:require [clojure.java.io :as jio]
             [taoensso.timbre :as log])
   (:import (java.lang AutoCloseable)
-           (java.awt.image BufferedImage DataBufferByte)
            (java.nio ByteBuffer)
            (org.apache.commons.io IOUtils)
            (org.lwjgl BufferUtils)
@@ -21,7 +20,27 @@
   AutoCloseable
   (close [_]
     (STBImage/stbi_image_free byte-buffer)))
+  
+#_(defmacro close-> [x & forms]
+  (close-threaded `(-> ~x ~@forms)))
 
+#_(defn close-threaded
+  "Works like img-> but calls (.close) on the input image as well as
+   all intermediate images. The result is not automatically closed so
+   with-open should be used.
+   (with-open [img (load-image \"my.img\")]
+     (img-> img
+       (scale 2)
+       (copy-channel :green)
+       (write-png \"out.png\")))"
+  {:added "1.0"}
+  [f img-form & args]
+    (if 
+    (reduce (fn [forms form]
+      `(with-open [img# ~form]
+         ~@forms))
+      threaded)))
+              
 (defn image
   ([width height]
     (image width height 4))
@@ -38,7 +57,7 @@
                       jio/input-stream
                       IOUtils/toByteArray
                       ByteBuffer/wrap)
-        direct-buffer (ByteBuffer/allocateDirect (.limit buffer))]
+        direct-buffer (BufferUtils/createByteBuffer (.limit buffer))]
     (doto direct-buffer
       (.put buffer)
       (.flip))
@@ -50,10 +69,7 @@
   img)
 
 (defn scale [{:keys [width height channels byte-buffer]} ^long s]
-  (let [x            (BufferUtils/createIntBuffer 1)
-        y            (BufferUtils/createIntBuffer 1)
-        c            (BufferUtils/createIntBuffer 1)
-        scaled-bytes (BufferUtils/createByteBuffer (* (* s width)
+  (let [scaled-bytes (BufferUtils/createByteBuffer (* (* s width)
                                                       (* s height)
                                                       channels))]
     (when (zero?
