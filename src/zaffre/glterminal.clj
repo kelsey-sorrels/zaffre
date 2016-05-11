@@ -102,12 +102,13 @@
 
 (defn- texture-id-2d
   ([{:keys [width height byte-buffer]}]
-  (let [texture-id     (GL11/glGenTextures)]
+  (let [texture-id     (GL11/glGenTextures)
+        ^ByteBuffer byte-buffer byte-buffer]
      (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
      (GL11/glPixelStorei GL11/GL_UNPACK_ALIGNMENT 1)
      (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MIN_FILTER GL11/GL_NEAREST)
      (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
-     (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGBA width height 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE byte-buffer)
+     (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGBA (long width) (long height) 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE byte-buffer)
      (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
      (except-gl-errors "end of texture-id-2d")
      texture-id)))
@@ -224,21 +225,16 @@
    (GLFW/glfwWindowHint GLFW/GLFW_CONTEXT_VERSION_MINOR 2)
    (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_PROFILE GLFW/GLFW_OPENGL_CORE_PROFILE)
    (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_FORWARD_COMPAT GLFW/GLFW_TRUE)
-   (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_DEBUG_CONTEXT GLFW/GLFW_TRUE)
+   ;(GLFW/glfwWindowHint GLFW/GLFW_OPENGL_DEBUG_CONTEXT GLFW/GLFW_TRUE)
    (if-let [window (GLFW/glfwCreateWindow (int screen-width) (int screen-height) (str title) 0 0)]
      (do
        (let [vidmode (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor))
              x       (/ (- (.width vidmode) screen-width) 2)
              y       (/ (- (.height vidmode) screen-height) 2)]
-         (log/info "Setting window pos" x y)
-         ;(GLFW/glfwSetWindowPos window x y)
-         (log/info "1")
+         (GLFW/glfwSetWindowPos window x y)
          (GLFW/glfwMakeContextCurrent window)
-         (log/info "2")
          (GLFW/glfwSwapInterval 1)
-         (log/info "3")
          (GLFW/glfwShowWindow window)
-         (log/info "4")
          (let [capabilities (GL/createCapabilities)
                width-buffer (BufferUtils/createIntBuffer 1)
                height-buffer (BufferUtils/createIntBuffer 1)]

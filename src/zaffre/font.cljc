@@ -90,8 +90,8 @@
 
 (defn compact [^Image image tile-width tile-height margin]
   (if (pos? margin)
-    (let [cols                   (quot (get image :width) (+ tile-width margin))
-          rows                   (quot (get image :height) (+ tile-height margin))
+    (let [cols                   (quot (zimg/width image) (+ tile-width margin))
+          rows                   (quot (zimg/height image) (+ tile-height margin))
           compact-image (zimg/image (* cols tile-width) (* rows tile-height))]
       (log/info tile-width tile-height)
       (log/info "Copying cols" cols "rows" rows)
@@ -147,16 +147,21 @@
 
 (defmethod glyph-graphics CP437Font [font]
   {:post [(glyph-graphics? %)]}
-  (with-open [image-stream (zimg/load-image (get font :path-or-url))]
+  (let [img (-> (get font :path-or-url)
+              zimg/load-image
+              (zimg/mode :rgba))]
+    (log/info "img" img)
     (let [characters    (map char cp437-unicode)
-          font-image    (cond->
-                          (zimg/scale (get font :scale))
+          font-image    (cond-> img
+                          (> 1 (get font :scale))
+                            (zimg/scale (get font :scale))
                           (= (get font :alpha) :alpha)
                             (zimg/copy-channels (get font :alpha)))
-          width         (zutil/next-pow-2 (.getWidth font-image))
-          height        (zutil/next-pow-2 (.getHeight font-image))
-          cwidth        (/ (get font-image :width) 16)
-          cheight       (/ (get font-image :height) 16)
+          width         (zutil/next-pow-2 (zimg/width font-image))
+          height        (zutil/next-pow-2 (zimg/height font-image))
+          cwidth        (/ (zimg/width font-image) 16)
+          cheight       (/ (zimg/height font-image) 16)
+          _ (log/info "font-image" font-image)
           texture-image (zimg/resize font-image width height)
           character->col-row (zipmap
                              characters
@@ -165,6 +170,7 @@
                                [col row]))]
 
       (log/info "Using cp437 font image")
+      (log/info "texture-image" texture-image)
       ;(ImageIO/write font-image "png", (File. "font-texture.png"))
       {:font-texture-width width
        :font-texture-height height
@@ -186,8 +192,8 @@
     (STBTruetype/stbtt_MakeCodepointBitmap
       font-info
       (get img :byte-buffer)
-      (get img :width)
-      (get img :height)
+      (zimg/width img)
+      (zimg/height img)
       0
       scale
       scale
@@ -305,8 +311,8 @@
                          (if-not (= alpha :alpha)
                            (zimg/copy-channels font-image (get font :alpha))
                            font-image))))
-        width         (zutil/next-pow-2 (get font-image :width))
-        height        (zutil/next-pow-2 (get font-image :height))
+        width         (zutil/next-pow-2 (zimg/width font-image))
+        height        (zutil/next-pow-2 (zimg/height font-image))
         texture-image (zimg/resize font-image width height)]
     (zimg/write-png font-image "tileset-texture.png")
     {:font-texture-width width
