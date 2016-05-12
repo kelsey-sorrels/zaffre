@@ -152,11 +152,11 @@
               (zimg/mode :rgba))]
     (log/info "img" img)
     (let [characters    (map char cp437-unicode)
-          font-image    (cond-> img
+          font-image    (-> img
+                          (zimg/copy-channels (get font :alpha))
+                          (cond->
                           (> 1 (get font :scale))
-                            (zimg/scale (get font :scale))
-                          (= (get font :alpha) :alpha)
-                            (zimg/copy-channels (get font :alpha)))
+                            (zimg/scale (get font :scale))))
           width         (zutil/next-pow-2 (zimg/width font-image))
           height        (zutil/next-pow-2 (zimg/height font-image))
           cwidth        (/ (zimg/width font-image) 16)
@@ -171,7 +171,6 @@
 
       (log/info "Using cp437 font image")
       (log/info "texture-image" texture-image)
-      ;(ImageIO/write font-image "png", (File. "font-texture.png"))
       {:font-texture-width width
        :font-texture-height height
        :font-texture-image texture-image
