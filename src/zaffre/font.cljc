@@ -121,7 +121,7 @@
 (defn- advance-width [^STBTTFontinfo font-info codepoint]
   (let [advance-width (BufferUtils/createIntBuffer 1)
         left-side-bearing (BufferUtils/createIntBuffer 1)]
-    (STBTruetype/stbtt_GetCodepointHMetrics font-info codepoint advance-width left-side-bearing)
+    (STBTruetype/stbtt_GetCodepointHMetrics font-info (int codepoint) advance-width left-side-bearing)
     (.get advance-width)))
 
 (defrecord CP437Font [path-or-url alpha scale transparent])
@@ -155,7 +155,7 @@
           font-image    (-> img
                           (zimg/copy-channels (get font :alpha))
                           (cond->
-                          (> 1 (get font :scale))
+                          (> (get font :scale) 1)
                             (zimg/scale (get font :scale))))
           width         (zutil/next-pow-2 (zimg/width font-image))
           height        (zutil/next-pow-2 (zimg/height font-image))
@@ -227,6 +227,7 @@
       (doseq [[c col row]  char-idxs]
         (let [x  (* col char-width)
               y  (* (inc row) char-height)
+              y  (* row char-height)
               cx (+ 0 x)
               cy (- y 0 #_(.getDescent font-metrics))]
           ;(log/info s x y)
@@ -278,12 +279,13 @@
              glyphs glyphs]
         (if-let [glyph (first glyphs)]
           (let [image (get glyph :font-texture-image)]
+            (log/info "drawing to composite-image" 0 y)
             (zimg/draw-image composite-image image 0 y)
-            (log/info "merging" (get glyph :character->transparent))
+            ;;(log/info "merging" (get glyph :character->transparent))
             (recur
               (+ y (int (get glyph :font-texture-height)))
               (reduce-kv (fn [m k [col row]]
-                           (assoc m k [col (+ row (/ y character-height))]))
+                           (assoc m k [col (+ row (quot y character-height))]))
                          character->col-row
                          (get glyph :character->col-row))
               (merge character->transparent

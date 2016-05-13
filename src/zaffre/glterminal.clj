@@ -215,7 +215,7 @@
                                 (invoke [error description]
                                   (log/error "GLFW error:" error (GLFWErrorCallback/getDescription description)))))
    ;(GLUtil/setupDebugMessageCallback System/out)
-   (when-not (= (GLFW/glfwInit) GLFW/GLFW_TRUE)
+   (when-not (GLFW/glfwInit)
      (assert "Unable to initialize GLFW"))
    (GLFW/glfwDefaultWindowHints)
    ;(GLFW/glfwWindowHint GLFW/GLFW_VISIBLE GLFW/GLFW_FALSE)
@@ -252,7 +252,7 @@
 
 (defn- video-modes [^GLFWVidMode$Buffer video-modes-buffer]
   (mapv (fn [idx]
-          (let [^GLFWVidMode video-mode (.get video-modes-buffer idx)]
+          (let [^GLFWVidMode video-mode (.get video-modes-buffer (int idx))]
             {:width (.width video-mode)
              :height (.height video-mode)
              :refresh-rate (.refreshRate video-mode)}))
@@ -262,7 +262,7 @@
   (let [monitors (GLFW/glfwGetMonitors)]
     (vec
       (mapcat (fn [idx]
-                (let [monitor      (.get monitors idx)
+                (let [monitor      (.get monitors (int idx))
                       monitor-name (GLFW/glfwGetMonitorName monitor)]
                   (mapv (fn [video-mode]
                           (assoc video-mode :name monitor-name :monitor monitor))
@@ -273,7 +273,7 @@
   (let [monitor       (GLFW/glfwGetWindowMonitor window)
         width-buffer  (BufferUtils/createIntBuffer 1)
         height-buffer (BufferUtils/createIntBuffer 1)]
-    (GLFW/glfwGetFramebufferSize window width-buffer height-buffer)
+    (GLFW/glfwGetFramebufferSize (long window) width-buffer height-buffer)
     (cond->
       {:width (.get width-buffer)
        :height (.get height-buffer)
@@ -284,7 +284,7 @@
 (defn- glfw-framebuffer-size [window]
   (let [width-buffer (BufferUtils/createIntBuffer 1)
         height-buffer (BufferUtils/createIntBuffer 1)]
-    (GLFW/glfwGetFramebufferSize window width-buffer height-buffer)
+    (GLFW/glfwGetFramebufferSize (long window) width-buffer height-buffer)
     (let [framebuffer-width (.get width-buffer)
           framebuffer-height (.get height-buffer)]
       [framebuffer-width framebuffer-height])))
@@ -347,9 +347,9 @@
       (log/error "Error loading shaders"))))
 
 (defn ortho-matrix-buffer
-  ([viewport-width viewport-height]
+  (^FloatBuffer [viewport-width viewport-height]
     (ortho-matrix-buffer viewport-width viewport-height (BufferUtils/createFloatBuffer 16)))
-  ([viewport-width viewport-height ^FloatBuffer matrix-buffer]
+  (^FloatBuffer [viewport-width viewport-height ^FloatBuffer matrix-buffer]
     ; TODO: use simpler method to construct matrix
     #_(let [ortho-matrix (doto (Matrix4f.)
                              (.ortho2D 0 viewport-width 0 viewport-height))
@@ -375,9 +375,9 @@
       matrix-buffer)))
 
 (defn position-matrix-buffer
-  ([v s]
+  (^FloatBuffer [v s]
    (position-matrix-buffer v s (BufferUtils/createFloatBuffer 16)))
-  ([v s ^FloatBuffer matrix-buffer]
+  (^FloatBuffer [v s ^FloatBuffer matrix-buffer]
     (let [matrix (doto (Matrix4f.)
                        (.identity))]
       (.translate matrix (Vector3f. (get v 0) (get v 1) (get v 2)))
@@ -560,7 +560,7 @@
                           (assoc gg :font-texture font-texture)))
                  ; Free old texture
                  (log/info "Freeing texture" old-texture)
-                 (GL11/glDeleteTextures old-texture)
+                 (GL11/glDeleteTextures (long old-texture))
                  gg))]
        (async/put! term-chan (-> (select-keys gg [:font-texture-width
                                                   :font-texture-height 
@@ -644,7 +644,7 @@
           (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
           (except-gl-errors (str "glClear  " (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT)))
           (GL20/glUseProgram program-id)
-          (GL20/glUniformMatrix4fv u-PMatrix false (ortho-matrix-buffer framebuffer-width framebuffer-height p-matrix-buffer))
+          (GL20/glUniformMatrix4fv (long u-PMatrix) false (ortho-matrix-buffer framebuffer-width framebuffer-height p-matrix-buffer))
           (except-gl-errors (str "u-PMatrix - glUniformMatrix4  " u-PMatrix))
           ; Bind VAO
           (GL30/glBindVertexArray vao-id)
@@ -704,7 +704,7 @@
               #_(log/info "y" (+ y-pos #_(- framebuffer-height (* rows character-height)) (- (/ framebuffer-height 2)))
                 "y-pos" y-pos "fb-h" framebuffer-height "rows" rows "ch-h" character-height)
               (GL20/glUniformMatrix4fv
-                u-MVMatrix
+                (long u-MVMatrix)
                 false
                 (position-matrix-buffer
                   [(+ x-pos (- (/ framebuffer-width 2)))
@@ -772,10 +772,10 @@
           (GL11/glClearColor 0.0 0.0 0.0 0.0)
           (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
           (GL20/glUseProgram fb-program-id)
-          (GL20/glUniformMatrix4fv u-fb-PMatrix false (ortho-matrix-buffer framebuffer-width framebuffer-height p-matrix-buffer))
+          (GL20/glUniformMatrix4fv (long u-fb-PMatrix) false (ortho-matrix-buffer framebuffer-width framebuffer-height p-matrix-buffer))
           (except-gl-errors (str "u-fb-PMatrix - glUniformMatrix4  " u-fb-PMatrix))
           (GL20/glUniformMatrix4fv
-            u-fb-MVMatrix
+            (long u-fb-MVMatrix)
             false
             (position-matrix-buffer
               [(- (/ framebuffer-width 2)) (- (/ framebuffer-height 2)) -1.0 0.0]
@@ -1217,9 +1217,9 @@
           ;; Wait for main thread loop to start
           (.await latch)
           (f terminal))
-        (let [primary-video-mode (with-gl-context gl-lock window capabilities
+        (let [^GLFWVidMode primary-video-mode (with-gl-context gl-lock window capabilities
                                    (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor)))
-              current-video-mode (atom (with-gl-context gl-lock window capabilities
+              ^GLFWVidMode current-video-mode (atom (with-gl-context gl-lock window capabilities
                                          (glfw-current-monitor window)))]
           (log/info "current-video-mode" @current-video-mode)
           (reset! window-size @current-video-mode)
@@ -1286,7 +1286,7 @@
                           (reset! framebuffer-size fb-size)
                           (log/info "Changing size of fbo" fbo-texture)
                           (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
-                          (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB framebuffer-width framebuffer-height 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bbnil)
+                          (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB (int framebuffer-width) (int framebuffer-height) 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bbnil)
                           (GL11/glBindTexture GL11/GL_TEXTURE_2D 0))))
                     (reset! current-video-mode @window-size)))
                 (GLFW/glfwWaitEvents)
