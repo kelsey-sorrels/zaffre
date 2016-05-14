@@ -628,7 +628,8 @@
                      fg-image-data
                      bg-image-data]} :data
              :keys [p-matrix-buffer mv-matrix-buffer]} gl
-            [framebuffer-width framebuffer-height] @framebuffer-size]
+            [framebuffer-width framebuffer-height] @framebuffer-size
+            [screen-width screen-height] ((juxt :width :height) @window-size)]
         #_(log/info "drawing with" (mapv vec [glyph-textures fg-textures bg-textures glyph-image-data fg-image-data bg-image-data]))
         ;; Setup render to FBO
         (try
@@ -695,7 +696,18 @@
             (assert (not (nil? font-texture)) "font-texture nil")
             ;(log/info "rendering layers")
             ;(log/info character->transparent)
-            (fill-glyph-fg-bg-buffers (select-keys layer-character-map layers) character->col-row character->transparent texture-columns texture-rows rows layer-size cursor-xy glyph-image-data fg-image-data bg-image-data)
+            (fill-glyph-fg-bg-buffers
+              (select-keys layer-character-map layers)
+              character->col-row 
+              character->transparent 
+              texture-columns 
+              texture-rows 
+              rows 
+              layer-size 
+              cursor-xy 
+              glyph-image-data 
+              fg-image-data
+              bg-image-data)
             #_(doseq [layer (partition layer-size (vec (nio/buffer-seq glyph-image-data)))]
               (log/info "layer")
               (doseq [line (partition (* 4 texture-columns) layer)]
@@ -708,10 +720,12 @@
                 false
                 (position-matrix-buffer
                   [(+ x-pos (- (/ framebuffer-width 2)))
-                   (+ y-pos #_(- framebuffer-height (* rows character-height)) (- (/ framebuffer-height 2)))
+                   (+ y-pos (- framebuffer-height (* rows character-height)) (- (/ framebuffer-height 2)))
                    -1.0
                    0.0]
-                  [framebuffer-width framebuffer-height 1.0]
+                  [(* columns character-width (quot framebuffer-width screen-width))
+                   (* rows character-height (quot framebuffer-height screen-height))
+                   1.0]
                   mv-matrix-buffer))
               (except-gl-errors (str "u-MVMatrix - glUniformMatrix4  " u-MVMatrix))
               ; Setup uniforms for glyph, fg, bg, textures
