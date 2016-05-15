@@ -16,7 +16,9 @@
     (java.nio FloatBuffer ByteBuffer)
     (java.nio.charset Charset)
     (org.lwjgl.opengl GL GLUtil GL11 GL12 GL13 GL14 GL15 GL20 GL30 GL32)
-    (org.lwjgl.glfw GLFW GLFWVidMode GLFWVidMode$Buffer GLFWImage GLFWImage$Buffer GLFWErrorCallback GLFWCharCallback GLFWKeyCallback GLFWMouseButtonCallback GLFWCursorPosCallback)
+    (org.lwjgl.glfw GLFW GLFWVidMode GLFWVidMode$Buffer GLFWImage GLFWImage$Buffer
+      GLFWErrorCallback GLFWCharCallback GLFWKeyCallback GLFWMouseButtonCallback
+      GLFWCursorPosCallback GLFWFramebufferSizeCallback)
     (org.lwjgl.system Platform)
     (org.joml Matrix4f Vector3f)
     (java.io File FileInputStream FileOutputStream)
@@ -1140,6 +1142,18 @@
                                              {:type :mouse-enter :col col :row row :group-id group-id})
                                            entered-locations)
                                       false))))
+        framebuffer-size-callback
+                              (proxy [GLFWFramebufferSizeCallback] []
+                                (invoke [window framebuffer-width framebuffer-height]
+                                  (let [^ByteBuffer bbnil nil]
+                                    (with-gl-context gl-lock window capabilities
+                                      (log/info "Changing size of fbo" fbo-texture)
+                                      (log/info "framebuffer size changed" screen-width screen-height framebuffer-width framebuffer-height)
+                                      (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
+                                      (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB (int framebuffer-width) (int framebuffer-height) 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bbnil)
+                                      (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
+                                      (reset! framebuffer-size [framebuffer-width framebuffer-height])))))
+                                   
         gl                 {:p-matrix-buffer (ortho-matrix-buffer framebuffer-width framebuffer-height)
                             :mv-matrix-buffer (position-matrix-buffer [(- (/ framebuffer-width 2)) (- (/ framebuffer-height 2)) -1.0 0.0]
                                                                       [framebuffer-width framebuffer-height 1.0])
@@ -1227,6 +1241,7 @@
         (GLFW/glfwSetCharCallback window char-callback)
         (GLFW/glfwSetMouseButtonCallback window mouse-button-callback)
         (GLFW/glfwSetCursorPosCallback window cursor-pos-callback)
+        (GLFW/glfwSetFramebufferSizeCallback window framebuffer-size-callback)
         (future
           ;; Wait for main thread loop to start
           (.await latch)
@@ -1295,10 +1310,11 @@
                         (GLFW/glfwSetWindowSize window width height)
                         (GLFW/glfwSetWindowPos window (quot (- (.width primary-video-mode) screen-width) 2)
                                                       (quot (- (.height primary-video-mode) screen-height) 2))
-                        (let [[framebuffer-width framebuffer-height :as fb-size] (glfw-framebuffer-size window)
+                        #_(let [[framebuffer-width framebuffer-height :as fb-size] (glfw-framebuffer-size window)
                               ^ByteBuffer bbnil nil]
                           (reset! framebuffer-size fb-size)
                           (log/info "Changing size of fbo" fbo-texture)
+                          (log/info "window size changed" width height screen-width screen-height framebuffer-width framebuffer-height)
                           (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
                           (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB (int framebuffer-width) (int framebuffer-height) 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bbnil)
                           (GL11/glBindTexture GL11/GL_TEXTURE_2D 0))))
