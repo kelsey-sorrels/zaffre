@@ -95,8 +95,9 @@
 
 
 (defn copy-buffer-range! [dest src n]
-  (let [slice (.limit (.slice src) n)]
-    (.put dest slice)))
+  (when (pos? n)
+    (let [slice (.limit (.slice src) n)]
+      (.put dest slice))))
 
 (defn copy-sub-image [{dwidth :width dheight :height dchannels :channels dbytes :byte-buffer :as dimg}
                       {swidth :width sheight :height schannels :channels sbytes :byte-buffer :as simg}
@@ -105,7 +106,9 @@
   ;; for each line
   (doseq [y (range (- sy2 sy1))
           :let [sidx (* (+ sx1 (* (+ y sy1) swidth)) schannels)
-                didx (* (+ dx1 (* (+ y dy1) dwidth)) dchannels)]]
+                didx (* (+ dx1 (* (+ y dy1) dwidth)) dchannels)]
+          :when (and (< -1 didx (.limit dbytes))
+                     (< -1 sidx (.limit sbytes)))]
       (.position dbytes didx)
       (.position sbytes sidx)
       (copy-buffer-range! dbytes sbytes (* (- sx2 sx1) schannels)))
@@ -115,10 +118,33 @@
   (.flip dbytes)
   dimg)
 
-(defn draw-image [dest-img
-                  {:keys [width height] :as src-img}
+(defn clip [min-v v max-v]
+  (max min-v (min v max-v)))
+
+(defn draw-image [{dwidth :width dheight :height :as dest-img}
+                  {swidth :width sheight :height :as src-img}
                   x y]
-  (copy-sub-image dest-img src-img x y 0 0 width height))
+  (let [;; source corner in dest coord-space
+        sx1       (+ x swidth)
+        sy1       (+ y sheight)
+        ;; clip x and y to dest rect
+        clipped-x (clip 0 x dwidth)
+        clipped-y (clip 0 y dheight)
+        ;; convert clipped xy to src coords
+        sx0    (- clipped-x x)
+        sy0    (- clipped-y y)
+
+        ;; clip src corner
+        clipped-x1 (clip 0 sx1 dwidth)
+        clipped-y1 (clip 0 sy1 dheight)
+        ;; convert clipped corder to src coords
+        sx1    (- clipped-x1 x)
+        sy1    (- clipped-y1 y)
+        ;; find src width/height
+        width  (- x swidth)
+        height (- y sheight)]
+    (log/info "copying from [" sx0 sy0 "] [" sx1 sy1 "] to" x y)
+    (copy-sub-image dest-img src-img x y sx0 sy0 sx1 sy1)))
                       
 
 (defn resize [{swidth :width sheight :height :as img} width height]

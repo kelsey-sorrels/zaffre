@@ -122,31 +122,55 @@
       compact-image)
     image))
 
-(defn- advance-width [^STBTTFontinfo font-info codepoint]
+(defn- hmetrics [^STBTTFontinfo font-info codepoint]
   (let [advance-width (BufferUtils/createIntBuffer 1)
         left-side-bearing (BufferUtils/createIntBuffer 1)]
     (STBTruetype/stbtt_GetCodepointHMetrics font-info (int codepoint) advance-width left-side-bearing)
-    (.get advance-width)))
+    [(.get advance-width) (.get left-side-bearing)]))
 
-(defn- char-image [font-info size c]
-  (let [scale       (STBTruetype/stbtt_ScaleForPixelHeight
-                      font-info
-                      size)
-        char-width  (int (Math/ceil (* (advance-width font-info (int \M)) scale)))
-        char-height (int (Math/ceil size))
-        img         (zimg/image char-width char-height 1)]
+(defn- codepoint-bitmap-box [^STBTTFontinfo font-info scale codepoint]
+  (let [ix0 (BufferUtils/createIntBuffer 1)
+        iy0 (BufferUtils/createIntBuffer 1)
+        ix1 (BufferUtils/createIntBuffer 1)
+        iy1 (BufferUtils/createIntBuffer 1)]
+    (STBTruetype/stbtt_GetCodepointBitmapBox
+      font-info
+      (int codepoint)
+      (float scale)
+      (float scale)
+      ix0
+      iy0
+      ix1
+      iy1)
+    [(.get ix0) (.get iy0) (.get ix1) (.get iy1)]))
+
+(defn- char-image [font-info char-width char-height ascent scale codepoint]
+  (let [;scale 0.015625
+        [x0 y0 x1 y1]         (codepoint-bitmap-box font-info scale codepoint)
+        baseline              (* ascent scale)
+        [_ left-side-bearing] (map (partial * scale) (hmetrics font-info codepoint))
+        y                     (+ baseline y0)
+        img                   (zimg/image char-width char-height 1)
+        chr-img               (zimg/image char-width char-height 1)]
+    (log/info "char-width" (char codepoint) char-width char-height
+              "ascent" ascent "scale" scale "baseline" baseline
+              "left-side-bearing" left-side-bearing)
+    (log/info "x0" x0 "y0" y0 "x1" x1 "y1" y1)
     ;; draw greyscale font
-    (STBTruetype/stbtt_MakeCodepointBitmap
+    (STBTruetype/stbtt_MakeCodepointBitmapSubpixel
       font-info
       (get img :byte-buffer)
-      (zimg/width img)
-      (zimg/height img)
-      0
+      char-width 
+      char-height
+      char-width
       scale
       scale
-      (int c))
+      0.0
+      0.0
+      (int codepoint))
+    (zimg/draw-image chr-img img left-side-bearing (+ (int baseline) y0))
     ;; convert to rgba
-    (zimg/mode img :rgba)))
+    (zimg/mode chr-img :rgba)))
   
 (defn glyph-graphics? [m]
   (every?
@@ -203,16 +227,19 @@
   (glyph-graphics [this]
     #_{:post [(glyph-graphics? %)]}
     ;; Adjust canvas to fit character atlas size
-    (let [font-info                  (make-font name-or-path)
+    (let [^STBTTFontinfo font-info   (make-font name-or-path)
           scale                      (STBTruetype/stbtt_ScaleForPixelHeight
                                        font-info
                                        size)
+          [advance
+           left-side-bearing]        (map (partial * scale) (hmetrics font-info (int \M)))
           characters                 (displayable-characters font-info)
-          char-width                 (* (advance-width font-info (int \M)) scale)
+          char-width                 (int (Math/ceil advance))
           char-height                size
+          ascent                     (BufferUtils/createIntBuffer 1)
+          descent                    (BufferUtils/createIntBuffer 1)
+          line-gap                   (BufferUtils/createIntBuffer 1)
           _ (log/info "characters per line" (characters-per-line char-width (count characters)))
-          ;screen-width               (* columns char-width)
-          ;screen-height              (* rows char-height)
           cwidth     2048
           cheight    (zutil/next-pow-2 (* char-height (int (Math/ceil (/ (count characters)
                                                                    (characters-per-line char-width (count characters)))))))
@@ -220,25 +247,31 @@
           height     cheight ;(max cwidth cheight)
           antialias  true
           char-idxs   (character-idxs char-width characters)]
+      (STBTruetype/stbtt_GetFontVMetrics font-info ascent descent line-gap)
       (log/info "characters" (count characters) "cwidth" cwidth "cheight" cheight)
       (log/info "glyph image width" width "height" height)
+      (log/info "char-idxs" char-idxs)
       ;(log/info "characters" (vec characters))
       ;(log/info "character-idxs" (vec (character-idxs characters)))
-      (let [texture-image    (zimg/image width height)]
+      (let [texture-image (zimg/image width height)
+            ascent        (.get ascent)]
         ;; Loop through each character, drawing it
         (doseq [[c col row]  char-idxs]
           (let [x  (* col char-width)
-                y  (* (inc row) char-height)
-                y  (* row char-height)
-                cx (+ 0 x)
-                cy (- y 0 #_(.getDescent font-metrics))]
-            ;(log/info s x y)
+                y  (* row char-height)]
           (when (not= c \space)
             ;(println "drawing" s "@" x y "underline?" underline?)
-            (zimg/draw-image texture-image
-                             (char-image font-info size c)
+            (let [chr-img (char-image font-info char-width char-height ascent scale c)
+                  #_#_[x0 y0 x1 y1] (codepoint-bitmap-box font-info scale (int c))
+                  #_#_cy (int (+ y baseline y0))]
+              (when (< (int \^) (int c) (int \d))
+                (log/info "chr-img" chr-img)
+                (zimg/write-png chr-img (format "%c.png" c)))
+              (log/info "drawing" c "@" x y)
+              (zimg/draw-image texture-image
+                             chr-img
                              x
-                             y))))
+                             y)))))
         ;; cleanup texture resource
         (zimg/write-png texture-image "glyph-texture.png")
         {:font-texture-width width
