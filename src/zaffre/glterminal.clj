@@ -7,7 +7,7 @@
             [zaffre.keyboard :as zkeyboard]
             [nio.core :as nio]
             [taoensso.timbre :as log]
-            [clojure.core.async :as async :refer [go go-loop]]
+            [clojure.core.async :as async]
             [clojure-watch.core :as cwc]
             [clojure.test :refer [is]])
   (:import
@@ -723,8 +723,6 @@
               (doseq [line (partition (* 4 texture-columns) layer)]
                 (log/info (vec line))))
             (try
-              (log/info "y" (+ y-pos (- (/ framebuffer-height 2)) (quot (- framebuffer-height (* rows character-height)) 2))
-                "y-pos" y-pos "fb-h" framebuffer-height "rows" rows "ch-h" character-height)
               (GL20/glUniformMatrix4fv
                 (long u-MVMatrix)
                 false
@@ -884,7 +882,9 @@
                      cm)))))
   (destroy! [_]
     (reset! destroyed true)
-    (async/put! term-chan :close))
+    (async/put! term-chan :close)
+    (async/close! term-chan)
+    (shutdown-agents))
   (destroyed? [_]
     @destroyed))
 
@@ -1161,7 +1161,7 @@
                                       (let [[screen-width screen-height] ((juxt :width :height) @window-size)]
                                         (log/info "framebuffer size changed" screen-width screen-height fbo-texture-width fbo-texture-height))
                                       (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
-                                      (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB fbo-texture-width fbo-texture-height 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bbnil)
+                                      (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB (long fbo-texture-width) (long fbo-texture-height) 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bbnil)
                                       (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
                                       (reset! framebuffer-size [framebuffer-width framebuffer-height])))))
                                    
@@ -1256,7 +1256,8 @@
         (future
           ;; Wait for main thread loop to start
           (.await latch)
-          (f terminal))
+          (f terminal)
+          (log/info "done with use supplied fn"))
         (let [[monitor-width
                monitor-height] (with-gl-context gl-lock window capabilities
                                 (glfw-monitor-size))

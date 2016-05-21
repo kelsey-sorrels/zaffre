@@ -8,18 +8,6 @@
   (:import (zaffre.terminal Terminal)
            (zaffre.font CompositeFont CP437Font TileSet TTFFont)))
 
-(defn hsv->rgb [h s v]
-  (let [c (* v s)
-        x (* c (- 1.0 (Math/abs (double (dec (mod (/ h 60.0) 2.0))))))]
-    (mapv (comp int (partial * 255))
-      (cond
-        (< h  60) [c x 0]
-        (< h 120) [x c 0]
-        (< h 180) [0 c x]
-        (< h 240) [0 x c]
-        (< h 300) [x 0 c]
-        (< h 360) [c 0 x]))))
-
 (def one-bit-map [[:metal      :panels      :stone        :masonry         :dark-metal :dark-panels  :grass       :tree]
                   [:water-nw   :water-n     :water-ne     :column          :parapet    :parapet-flag :sign        :palm]
                   [:water-w    :water       :water-e      :fence           :gate       :dead-tree    :tombstone1  :tombstone2]

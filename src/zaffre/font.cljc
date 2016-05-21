@@ -343,6 +343,7 @@
   (glyph-graphics [this]
     #_{:post [(glyph-graphics? %)]}
     (let [font-image (-> (zimg/load-image path-or-url)
+                       (zimg/mode :rgba)
                        (compact tile-width
                                 tile-height
                                 margin)

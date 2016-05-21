@@ -3,11 +3,12 @@
             [clojure.core.async :as async :refer [go go-loop]]))
 
 (defn add-event-listener [terminal event-type f]
-  (let [event-chan (async/chan)
+  (let [event-chan    (async/chan)
         listener-chan (go-loop []
-                        (let [ev (async/<! event-chan)]
-                          (f ev)
-                          (recur)))]
+                        (when-not (zat/destroyed? terminal)
+                          (let [ev (async/<! event-chan)]
+                            (f ev)
+                            (recur))))]
     (async/sub (zat/pub terminal) event-type event-chan)
     event-chan))
 
