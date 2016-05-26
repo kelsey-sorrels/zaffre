@@ -6,8 +6,9 @@
             [taoensso.timbre :as log])
   (:import (zaffre.imageutil Image)
            (java.io File)
+           (java.net URL MalformedURLException)
            (java.nio ByteBuffer)
-           (java.nio.file Files)
+           (java.nio.file Files Path)
            (org.lwjgl BufferUtils)
            (org.lwjgl.stb STBTruetype STBTTFontinfo)
            (org.apache.commons.io IOUtils)))
@@ -51,7 +52,7 @@
 (defn- files [path]
   (file-seq (jio/file path)))
 
-(defn- font-files []
+(defn- font-paths []
   (let [extensions #{"ttf" "TTF"}
         font-paths (case (zlwjgl/platform)
                      :linux (linux-font-paths)
@@ -61,7 +62,11 @@
           ^File file (files path)
           :when (some (fn [extension] (.endsWith (.getAbsolutePath file)  extension))
                       extensions)]
-      file)))
+      (if (Files/isSymbolicLink (.toPath file))
+        (let [^Path link (Files/readSymbolicLink file)]
+          (when (-> link .toFile .exists))
+            (Files/readSymbolicLink link))
+        (.toPath file)))))
 
 (declare make-font)
 
@@ -69,55 +74,47 @@
   (delay
     (into {}
           (mapcat identity
-            (for [file (font-files)]
+            (for [path (font-paths)]
               (try
-                (let [font-info (make-font file)
-                      font-name (font-name font-info)
+                (let [file        (File. (str path))
+                      font-info   (make-font file)
+                      font-name   (font-name font-info)
                       font-family (font-family font-info)]
                   [[font-name file]
                    [font-family file]])
                 (catch Exception e
-                  (log/error "Error loading" file e))))))))
+                  (log/error "Error loading" path e))))))))
 
 (defn system-fonts []
   @system-fonts-map)
 
-(defn- as-font-file
+(defn- as-font-path
   [x]
-  (if (and (isa? (type x) File)
-           (.exists x))
-    x
-    (let [file (clojure.java.io/as-file x)]
-      (log/info x "," (type x) "," file "," (type file))
-      (cond
-        (.exists file)
-          file
-        (Files/isSymbolicLink (.toPath file))
-          (let [link (Files/readSymbolicLink file)]
-            (when (.exists link))
-              (Files/readSymbolicLink link))
-        :else
-          (get (system-fonts) x)))))
+  (try
+    (URL. x)
+    (catch MalformedURLException err
+      (let [file (File. x)]
+      (if (.exists file)
+        file
+        (get (system-fonts) x))))))
   
 (defn- make-font
   [x]
-  (if-let [font-file ^File (as-font-file x)]
+  (if-let [font-path (as-font-path x)]
     ;; Load font from file
-    (do
-      (log/info "Loading font from file" (.getAbsolutePath font-file))
-      (let [info         (STBTTFontinfo/calloc)
-            buffer       (-> font-file
-                           jio/input-stream
-                           IOUtils/toByteArray
-                           ByteBuffer/wrap)
-           direct-buffer (BufferUtils/createByteBuffer (.limit buffer))]
-        (doto direct-buffer
-          (.put buffer)
-          (.flip))
-        (when (zero? (STBTruetype/stbtt_InitFont info direct-buffer))
-          (throw (RuntimeException. "Error loading font")))
+    (let [info         (STBTTFontinfo/calloc)
+          buffer       (-> font-path
+                         jio/input-stream
+                         IOUtils/toByteArray
+                         ByteBuffer/wrap)
+         direct-buffer (BufferUtils/createByteBuffer (.limit buffer))]
+      (doto direct-buffer
+        (.put buffer)
+        (.flip))
+      (if (zero? (STBTruetype/stbtt_InitFont info direct-buffer))
+        (throw (RuntimeException. (str "Error loading font " x)))
         info))
-    (throw (RuntimeException. "Font does not exit"))))
+    (throw (RuntimeException. (str "Font " x " does not exist")))))
 
 (def cjk-blocks
   (set
@@ -349,16 +346,13 @@
             (let [chr-img (char-image font-info char-width char-height ascent scale c)
                   #_#_[x0 y0 x1 y1] (codepoint-bitmap-box font-info scale (int c))
                   #_#_cy (int (+ y baseline y0))]
-              (when (< (int \^) (int c) (int \d))
-                (log/info "chr-img" chr-img)
-                (zimg/write-png chr-img (format "%c.png" c)))
               (log/info "drawing" c "@" x y)
               (zimg/draw-image texture-image
                              chr-img
                              x
                              y)))))
         ;; cleanup texture resource
-        (zimg/write-png texture-image "glyph-texture.png")
+        #_(zimg/write-png texture-image "glyph-texture.png")
         {:font-texture-width width
          :font-texture-height height
          :font-texture-image texture-image

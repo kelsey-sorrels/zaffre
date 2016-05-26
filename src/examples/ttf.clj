@@ -8,7 +8,9 @@
             [clojure.core.async :as async :refer [<! <!! go-loop]])
   (:import (zaffre.font TTFFont)))
 
-(def font (TTFFont. "Ubuntu Mono" 16 true))
+;(def font (TTFFont. "Ubuntu Mono" 16 true))
+(def font (TTFFont. "https://github.com/aaron-santos/robinson/raw/master/fonts/Boxy/Boxy.ttf" 16 true))
+;(def font (TTFFont. "/home/santos/src/robinson/fonts/Boxy/Boxy.ttf" 16 true))
 (defn -main [& _]
   (zgl/create-terminal
     {:app {           ;; Setup a layer group `:app`
@@ -28,8 +30,12 @@
         (zat/do-frame terminal 33
           (let [key-in (or @last-key \?)]
             ;; Draw strings
-            (zutil/put-string terminal :text 0 0 "Hello world")
-            (zutil/put-string terminal :text 12 0 (str key-in))))
+            (zutil/put-string terminal :text 0 0 (str "Hello world " key-in))
+            (zutil/put-string terminal :text 2 1 "╔═════╗")
+            (zutil/put-string terminal :text 2 2 "║     ║")
+            (zutil/put-string terminal :text 2 3 "║     ║")
+            (zutil/put-string terminal :text 2 4 "║     ║")
+            (zutil/put-string terminal :text 2 5 "╚═════╝")))
         ;; Wire up terminal events to channels we read from
         (zevents/add-event-listener terminal :keypress
           (fn [new-key]
