@@ -99,7 +99,7 @@
   (let [error (GL11/glGetError)
         error-string (str "OpenGL Error(" error "):"
                           (gl-enum-name error) ": " msg " - "
-                          (GLUtil/getErrorString error))]
+                          (zlwjgl/gl-error-string error))]
     (if (not (zero? error))
       (throw (Exception. error-string)))))
 
