@@ -5,7 +5,7 @@
             :url "https://raw.githubusercontent.com/aaron-santos/zaffre/master/LICENSE"}
   :dependencies [[org.clojure/clojure "1.7.0"]
                  [org.clojure/core.async "0.2.374"]
-                 [aaron-santos/lwjgl "3.0.0b87"]
+                 [aaron-santos/lwjgl "3.0.0rc1"]
                  [commons-io/commons-io "2.5"]
                  ;[hello_lwjgl/lwjgl "3.0.0b1"]
                  [nio "1.0.3"]
@@ -20,4 +20,4 @@
                     (.toLowerCase)
                     (.contains "mac"))
               ["-XstartOnFirstThread" "-Dorg.lwjgl.opengl.Display.enableHighDPI=true"]
-              []))
+              [#_"-Dorg.lwjgl.system.allocator=system"]))

@@ -226,6 +226,7 @@
       iy1)
     [(.get ix0) (.get iy0) (.get ix1) (.get iy1)]))
 
+
 (defn- char-image [font-info char-width char-height ascent scale codepoint]
   (let [;scale 0.015625
         [x0 y0 x1 y1]         (codepoint-bitmap-box font-info scale codepoint)
@@ -234,10 +235,10 @@
         y                     (+ baseline y0)
         img                   (zimg/image char-width char-height 1)
         chr-img               (zimg/image char-width char-height 1)]
-    (log/info "char-width" (char codepoint) char-width char-height
+    (log/info "char-width" (char codepoint) "(" (int codepoint) ")" char-width char-height
               "ascent" ascent "scale" scale "baseline" baseline
-              "left-side-bearing" left-side-bearing)
-    (log/info "x0" x0 "y0" y0 "x1" x1 "y1" y1)
+              "left-side-bearing" left-side-bearing "y" y)
+    ;(log/info "x0" x0 "y0" y0 "x1" x1 "y1" y1)
     ;; draw greyscale font
     (STBTruetype/stbtt_MakeCodepointBitmapSubpixel
       font-info
@@ -250,7 +251,9 @@
       0.0
       0.0
       (int codepoint))
-    (zimg/draw-image chr-img img left-side-bearing (+ (int baseline) y0))
+    (zimg/draw-image chr-img img left-side-bearing (+ (int baseline) y))
+    (zimg/write-png chr-img (str "char-image/" (int codepoint) ".png"))
+    (zimg/write-png img (str "char-image/" (int codepoint) "-raw.png"))
     ;; convert to rgba
     (zimg/mode chr-img :rgba)))
   
@@ -338,19 +341,21 @@
       (let [texture-image (zimg/image width height)
             ascent        (.get ascent)]
         ;; Loop through each character, drawing it
-        (doseq [[c col row]  char-idxs]
-          (let [x  (* col char-width)
-                y  (* row char-height)]
-          (when (not= c \space)
-            ;(println "drawing" s "@" x y "underline?" underline?)
-            (let [chr-img (char-image font-info char-width char-height ascent scale c)
-                  #_#_[x0 y0 x1 y1] (codepoint-bitmap-box font-info scale (int c))
-                  #_#_cy (int (+ y baseline y0))]
+        (doseq [[c col row]  (reverse char-idxs)]
+          (try
+            (let [x  (* col char-width)
+                  y  (* row char-height)
+                  chr-img (char-image font-info char-width char-height ascent scale c)
+                    #_#_[x0 y0 x1 y1] (codepoint-bitmap-box font-info scale (int c))
+                    #_#_cy (int (+ y baseline y0))]
+              (log/info "thread" (-> (Thread/currentThread) .getName))
               (log/info "drawing" c "@" x y)
               (zimg/draw-image texture-image
                              chr-img
                              x
-                             y)))))
+                             y))
+              (catch Throwable t
+                (log/error t))))
         ;; cleanup texture resource
         #_(zimg/write-png texture-image "glyph-texture.png")
         {:font-texture-width width
