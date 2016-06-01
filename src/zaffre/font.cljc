@@ -5,7 +5,7 @@
             [clojure.java.io :as jio]
             [taoensso.timbre :as log])
   (:import (zaffre.imageutil Image)
-           (java.io File)
+           (java.io File IOException)
            (java.net URL MalformedURLException)
            (java.nio ByteBuffer)
            (java.nio.file Files Path)
@@ -15,6 +15,15 @@
 
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* true)
+
+(def calls (atom []))
+;(add-watch calls :persist
+;  (fn [_ _ _ calls]
+;    (spit "calls.log" calls)))
+    
+
+(defn log-call [method-name & args]
+  (swap! calls (fn [calls] (conj calls {:method-name method-name :args args}))))
 
 (defn- byte-buffer->str [^ByteBuffer buffer]
   (if buffer
@@ -58,15 +67,19 @@
                      :linux (linux-font-paths)
                      :macosx (macosx-font-paths)
                      :window (windows-font-paths))]
-    (for [path font-paths
-          ^File file (files path)
-          :when (some (fn [extension] (.endsWith (.getAbsolutePath file)  extension))
-                      extensions)]
-      (if (Files/isSymbolicLink (.toPath file))
-        (let [^Path link (Files/readSymbolicLink file)]
-          (when (-> link .toFile .exists))
-            (Files/readSymbolicLink link))
-        (.toPath file)))))
+    (remove nil?
+      (for [path font-paths
+            ^File file (files path)
+            :when (some (fn [extension] (.endsWith (.getAbsolutePath file)  extension))
+                        extensions)]
+        (let [^Path file-path (.toPath file)]
+          (if (Files/isSymbolicLink file-path)
+            (let [^Path link (Files/readSymbolicLink file-path)]
+              (try 
+                (Files/readSymbolicLink link)
+                (catch IOException e
+                  nil)))
+            (.toPath file)))))))
 
 (declare make-font)
 
@@ -76,29 +89,32 @@
           (mapcat identity
             (for [path (font-paths)]
               (try
-                (let [file        (File. (str path))
+                #_(log/info "type path" (type path))
+                (let [file        (.toFile path)
                       font-info   (make-font file)
                       font-name   (font-name font-info)
                       font-family (font-family font-info)]
                   [[font-name file]
                    [font-family file]])
                 (catch Exception e
-                  (log/error "Error loading" path e))))))))
+                  (log/error e "Error loading" path ))))))))
 
 (defn system-fonts []
   @system-fonts-map)
 
 (defn- as-font-path
   [x]
-  (try
-    (URL. x)
-    (catch MalformedURLException err
-      (let [file (File. x)]
-      (if (.exists file)
-        file
-        (get (system-fonts) x))))))
+  (if (= File (type x))
+    x
+    (try
+      (URL. x)
+      (catch MalformedURLException err
+          (let [file (File. x)]
+            (if (.exists file)
+              file
+              (get (system-fonts) x)))))))
   
-(defn- make-font
+(defn make-font
   [x]
   (if-let [font-path (as-font-path x)]
     ;; Load font from file
@@ -126,12 +142,18 @@
 
 ;; A sequence of [character underline?]
 (defn- displayable-characters [^STBTTFontinfo font]
-  (let [chars (map char
-                   (filter (fn [c]
-                             (and (pos? (STBTruetype/stbtt_FindGlyphIndex font (int c)))
-                                  (not (contains? cjk-blocks c))))
-                                (range 0x0000 0xFFFF)))]
-    chars))
+  "Returns a map from codepoint to glyph index"
+  (into {}
+    (reduce (fn [m codepoint]
+             (log-call "STBTruetype/stbtt_FindGlyphIndex" font (int codepoint))
+             (let [glyph-index (STBTruetype/stbtt_FindGlyphIndex font (int codepoint))]
+               (if  (and (pos? glyph-index)
+                         (not (contains? cjk-blocks codepoint)))
+                 (assoc m codepoint glyph-index)
+                 m)))
+          {}
+          (range 0x0000 0xFFFF))))
+  
 
 (defn- characters-per-line [char-width num-characters]
   (int (Math/floor (/ (Math/pow 2 11) char-width))))
@@ -140,7 +162,7 @@
 (defn character-idxs
   [char-width characters]
   (let [character-matrix (partition-all (characters-per-line char-width (count characters)) characters)]
-    (log/info "arranging character with" characters-per-line "per line")
+    #_(log/info "arranging character with" characters-per-line "per line")
     (mapcat concat
     (map-indexed (fn [row line]
                    (map-indexed (fn [col c]
@@ -204,20 +226,38 @@
       compact-image)
     image))
 
-(defn- hmetrics [^STBTTFontinfo font-info codepoint]
-  (let [advance-width (BufferUtils/createIntBuffer 1)
+(defn- hmetrics [^STBTTFontinfo font-info glyph-index]
+  (let [advance-width     (BufferUtils/createIntBuffer 1)
         left-side-bearing (BufferUtils/createIntBuffer 1)]
-    (STBTruetype/stbtt_GetCodepointHMetrics font-info (int codepoint) advance-width left-side-bearing)
+    (log-call "STBTruetype/stbtt_GetGlyphHMetrics" font-info (int glyph-index) advance-width left-side-bearing)
+    (STBTruetype/stbtt_GetGlyphHMetrics font-info (int glyph-index) advance-width left-side-bearing)
     [(.get advance-width) (.get left-side-bearing)]))
 
-(defn- codepoint-bitmap-box [^STBTTFontinfo font-info scale codepoint]
+(defn- vmetrics [^STBTTFontinfo font-info]
+  (let [ascent   (BufferUtils/createIntBuffer 1)
+        descent  (BufferUtils/createIntBuffer 1)
+        line-gap (BufferUtils/createIntBuffer 1)]
+    (log-call "STBTruetype/stbtt_GetFontVMetrics" font-info ascent descent line-gap)
+    (STBTruetype/stbtt_GetFontVMetrics font-info ascent descent line-gap)
+    [(.get ascent) (.get descent) (.get line-gap)]))
+
+(defn- glyph-bitmap-box [^STBTTFontinfo font-info scale glyph-index]
   (let [ix0 (BufferUtils/createIntBuffer 1)
         iy0 (BufferUtils/createIntBuffer 1)
         ix1 (BufferUtils/createIntBuffer 1)
         iy1 (BufferUtils/createIntBuffer 1)]
-    (STBTruetype/stbtt_GetCodepointBitmapBox
+    (log-call "STBTruetype/stbtt_GetGlyphBitmapBox"
       font-info
-      (int codepoint)
+      (int glyph-index)
+      (float scale)
+      (float scale)
+      ix0
+      iy0
+      ix1
+      iy1)
+    (STBTruetype/stbtt_GetGlyphBitmapBox
+      font-info
+      (int glyph-index)
       (float scale)
       (float scale)
       ix0
@@ -227,20 +267,20 @@
     [(.get ix0) (.get iy0) (.get ix1) (.get iy1)]))
 
 
-(defn- char-image [font-info char-width char-height ascent scale codepoint]
+(defn- char-image [font-info char-width char-height ascent scale codepoint glyph-index]
   (let [;scale 0.015625
-        [x0 y0 x1 y1]         (codepoint-bitmap-box font-info scale codepoint)
-        baseline              (* ascent scale)
-        [_ left-side-bearing] (map (partial * scale) (hmetrics font-info codepoint))
+        [x0 y0 x1 y1]         (glyph-bitmap-box font-info scale glyph-index)
+        baseline              (int (* ascent scale))
+        [_ left-side-bearing] (map (partial * scale) (hmetrics font-info glyph-index))
         y                     (+ baseline y0)
         img                   (zimg/image char-width char-height 1)
         chr-img               (zimg/image char-width char-height 1)]
-    (log/info "char-width" (char codepoint) "(" (int codepoint) ")" char-width char-height
-              "ascent" ascent "scale" scale "baseline" baseline
-              "left-side-bearing" left-side-bearing "y" y)
+    ;(log/info "char-width" (char codepoint) "(" (int codepoint) ")" char-width char-height
+    ;        "ascent" ascent "scale" scale "baseline" baseline
+    ;        "left-side-bearing" left-side-bearing "y" y)
     ;(log/info "x0" x0 "y0" y0 "x1" x1 "y1" y1)
     ;; draw greyscale font
-    (STBTruetype/stbtt_MakeCodepointBitmapSubpixel
+    (log-call "STBTruetype/stbtt_MakeGlyphBitmapSubpixel"
       font-info
       (get img :byte-buffer)
       char-width 
@@ -250,10 +290,21 @@
       scale
       0.0
       0.0
-      (int codepoint))
-    (zimg/draw-image chr-img img left-side-bearing (+ (int baseline) y))
-    (zimg/write-png chr-img (str "char-image/" (int codepoint) ".png"))
-    (zimg/write-png img (str "char-image/" (int codepoint) "-raw.png"))
+      (int glyph-index))
+    (STBTruetype/stbtt_MakeGlyphBitmapSubpixel
+      font-info
+      (get img :byte-buffer)
+      char-width 
+      char-height
+      char-width
+      scale
+      scale
+      0.0
+      0.0
+      (int glyph-index))
+    (zimg/draw-image chr-img img left-side-bearing y)
+    ;(zimg/write-png chr-img (str "char-image/" (int codepoint) ".png"))
+    ;(zimg/write-png img (str "char-image/" (int codepoint) "-raw.png"))
     ;; convert to rgba
     (zimg/mode chr-img :rgba)))
   
@@ -310,20 +361,23 @@
 (defrecord TTFFont [name-or-path size transparent]
   GlyphGraphics
   (glyph-graphics [this]
-    #_{:post [(glyph-graphics? %)]}
     ;; Adjust canvas to fit character atlas size
     (let [^STBTTFontinfo font-info   (make-font name-or-path)
           scale                      (STBTruetype/stbtt_ScaleForPixelHeight
                                        font-info
                                        size)
           [advance
-           left-side-bearing]        (map (partial * scale) (hmetrics font-info (int \M)))
+           left-side-bearing]        (map (partial * scale)
+                                       (hmetrics font-info
+                                                 (STBTruetype/stbtt_FindGlyphIndex
+                                                   font-info
+                                                   (int \M))))
           characters                 (displayable-characters font-info)
           char-width                 (int (Math/ceil advance))
           char-height                size
-          ascent                     (BufferUtils/createIntBuffer 1)
-          descent                    (BufferUtils/createIntBuffer 1)
-          line-gap                   (BufferUtils/createIntBuffer 1)
+          [ascent
+           descent
+           line-gap]                 (vmetrics font-info)
           _ (log/info "characters per line" (characters-per-line char-width (count characters)))
           cwidth     2048
           cheight    (zutil/next-pow-2 (* char-height (int (Math/ceil (/ (count characters)
@@ -332,24 +386,20 @@
           height     cheight ;(max cwidth cheight)
           antialias  true
           char-idxs   (character-idxs char-width characters)]
-      (STBTruetype/stbtt_GetFontVMetrics font-info ascent descent line-gap)
-      (log/info "characters" (count characters) "cwidth" cwidth "cheight" cheight)
-      (log/info "glyph image width" width "height" height)
-      (log/info "char-idxs" char-idxs)
+      (log/info characters)
+      #_(log/info "characters" (count characters) "cwidth" cwidth "cheight" cheight)
+      #_(log/info "glyph image width" width "height" height)
+      #_(log/info "char-idxs" char-idxs)
       ;(log/info "characters" (vec characters))
       ;(log/info "character-idxs" (vec (character-idxs characters)))
-      (let [texture-image (zimg/image width height)
-            ascent        (.get ascent)]
+      (let [texture-image (zimg/image width height)]
         ;; Loop through each character, drawing it
-        (doseq [[c col row]  (reverse char-idxs)]
+        (doseq [[[codepoint glyph-index] col row]  (reverse char-idxs)]
           (try
             (let [x  (* col char-width)
                   y  (* row char-height)
-                  chr-img (char-image font-info char-width char-height ascent scale c)
-                    #_#_[x0 y0 x1 y1] (codepoint-bitmap-box font-info scale (int c))
-                    #_#_cy (int (+ y baseline y0))]
-              (log/info "thread" (-> (Thread/currentThread) .getName))
-              (log/info "drawing" c "@" x y)
+                  chr-img (char-image font-info char-width char-height ascent scale codepoint glyph-index)]
+              #_(log/info "drawing" codepoint "@" x y)
               (zimg/draw-image texture-image
                              chr-img
                              x
@@ -357,7 +407,7 @@
               (catch Throwable t
                 (log/error t))))
         ;; cleanup texture resource
-        #_(zimg/write-png texture-image "glyph-texture.png")
+        (zimg/write-png texture-image "glyph-texture.png")
         {:font-texture-width width
          :font-texture-height height
          :font-texture-image texture-image
