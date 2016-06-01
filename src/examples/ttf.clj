@@ -5,11 +5,11 @@
             [zaffre.font :as zfont]
             [zaffre.tilesets :as ztiles]
             [zaffre.util :as zutil]
-            [clojure.core.async :as async :refer [<! <!! go-loop]])
+            [taoensso.timbre :as log])
   (:import (zaffre.font TTFFont)))
 
 ;(def font (TTFFont. "Ubuntu Mono" 16 true))
-(def font (TTFFont. "https://github.com/aaron-santos/robinson/raw/master/fonts/Boxy/Boxy.ttf" 16 true))
+(def font (zfont/construct (TTFFont. "https://github.com/aaron-santos/robinson/raw/master/fonts/Boxy/Boxy.ttf" 16 true)))
 ;(def font (TTFFont. "/home/santos/src/robinson/fonts/Boxy/Boxy.ttf" 16 true))
 (defn -main [& _]
   (zgl/create-terminal
@@ -29,8 +29,9 @@
         ;; Every 33ms, draw a full frame
         (zat/do-frame terminal 33
           (let [key-in (or @last-key \?)]
+            ;(log/info "rendering frame")
             ;; Draw strings
-            (zutil/put-string terminal :text 0 0 (str "Hello world " key-in))
+            ;(zutil/put-string terminal :text 0 0 (str "Hello world " key-in))
             (zutil/put-string terminal :text 2 1 "╔═════╗")
             (zutil/put-string terminal :text 2 2 "║     ║")
             (zutil/put-string terminal :text 2 3 "║     ║")
