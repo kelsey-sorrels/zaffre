@@ -151,7 +151,6 @@
             (range 0xF900 0xFAFF))))
 
 
-;; A sequence of [character underline?]
 (defn- displayable-characters [^STBTTFontinfo font]
   "Returns a map from codepoint to glyph index"
   (into {}
@@ -170,13 +169,13 @@
 
 ;; A sequence of [\character col row] where [col row] is the column,row in the character atlas.
 (defn character-idxs
-  [char-width characters]
-  (let [character-matrix (partition-all (characters-per-line char-width (count characters)) characters)]
+  [char-width codepoint->glyph-index]
+  (let [character-matrix (partition-all (characters-per-line char-width (count codepoint->glyph-index)) codepoint->glyph-index)]
     #_(log/info "arranging character with" characters-per-line "per line")
     (mapcat concat
     (map-indexed (fn [row line]
-                   (map-indexed (fn [col c]
-                                  [c col row])
+                   (map-indexed (fn [col [codepoint glyph-index]]
+                                  [codepoint glyph-index col row])
                                 line))
                  character-matrix))))
 
@@ -184,8 +183,8 @@
 ;; Map \character to [col row]
 (defn character->col-row
   [character-idxs]
-  (reduce (fn [m [c x y]]
-            (assoc m c [x y]))
+  (reduce (fn [m [codepoint _ col row]]
+            (assoc m (char codepoint) [col row]))
           {}
           character-idxs))
 
@@ -269,9 +268,9 @@
 (defn- char-image [ms font-info char-width char-height ascent scale codepoint glyph-index]
   (let [;scale 0.015625
         [x0 y0 x1 y1]         (glyph-bitmap-box ms font-info scale glyph-index)
-        baseline              (int (* ascent scale))
+        baseline              (* ascent scale)
         [_ left-side-bearing] (map (partial * scale) (hmetrics ms font-info glyph-index))
-        y                     (+ baseline y0)
+        y                     (int (Math/ceil (+ baseline y0)))
         img                   (zimg/image char-width char-height 1)
         chr-img               (zimg/image char-width char-height 1)]
     ;(log/info "char-width" (char codepoint) "(" (int codepoint) ")" char-width char-height
@@ -291,11 +290,10 @@
       0.0
       (int glyph-index))
     (zimg/draw-image chr-img img left-side-bearing y)
-    ;(zimg/write-png chr-img (str "char-image/" (int codepoint) ".png"))
-    ;(zimg/write-png img (str "char-image/" (int codepoint) "-raw.png"))
+    (zimg/write-png chr-img (str "char-image/" (int codepoint) ".png"))
+    (zimg/write-png img (str "char-image/" (int codepoint) "-raw.png"))
     ;; convert to rgba
-    (zimg/mode chr-img :rgba)
-    #_(zimg/image char-width char-height 4)))
+    (zimg/mode chr-img :rgba)))
   
 (defn glyph-graphics? [m]
   (every?
@@ -347,13 +345,17 @@
          :character->col-row character->col-row
          :character->transparent (zipmap characters (repeat transparent))}))))
 
+
+;; TODO: find a better way to keep font data around for the lifetime of STBTTFontinfo
+(def font-data-buffer(atom nil))
 (defrecord TTFFont [name-or-path size transparent]
   GlyphGraphics
   (glyph-graphics [this]
+    (reset! font-data-buffer (font-data name-or-path))
     ;; Adjust canvas to fit character atlas size
     (let [ms (MemoryStack/create)
-          font-data                  (font-data name-or-path)
-          ^STBTTFontinfo font-info   (make-font font-data)
+          ^STBTTFontinfo font-info   (make-font @font-data-buffer)
+          ;_ (System/gc)
           scale                      (STBTruetype/stbtt_ScaleForPixelHeight
                                        font-info
                                        size)
@@ -364,29 +366,28 @@
                                                  (STBTruetype/stbtt_FindGlyphIndex
                                                    font-info
                                                    (int \M))))
-          characters                 (displayable-characters font-info)
+          codepoint->glyph-index     (displayable-characters font-info)
           char-width                 (int (Math/ceil advance))
           char-height                size
           [ascent
            descent
            line-gap]                 (vmetrics ms font-info)
-          _ (log/info "characters per line" (characters-per-line char-width (count characters)))
+          _ (log/info "characters per line" (characters-per-line char-width (count codepoint->glyph-index)))
           cwidth     2048
-          cheight    (zutil/next-pow-2 (* char-height (int (Math/ceil (/ (count characters)
-                                                                   (characters-per-line char-width (count characters)))))))
+          cheight    (zutil/next-pow-2 (* char-height (int (Math/ceil (/ (count codepoint->glyph-index)
+                                                                   (characters-per-line char-width (count codepoint->glyph-index)))))))
           width      cwidth ;(max cwidth cheight)
           height     cheight ;(max cwidth cheight)
           antialias  true
-          char-idxs   (character-idxs char-width characters)]
-      (log/info characters)
-      #_(log/info "characters" (count characters) "cwidth" cwidth "cheight" cheight)
+          char-idxs   (character-idxs char-width codepoint->glyph-index)]
+      #_(log/info "characters" (count codepoint->glyph-index) "cwidth" cwidth "cheight" cheight)
       #_(log/info "glyph image width" width "height" height)
       #_(log/info "char-idxs" char-idxs)
       ;(log/info "characters" (vec characters))
-      ;(log/info "character-idxs" (vec (character-idxs characters)))
+      (log/info "character-idxs" (vec char-idxs))
       (let [texture-image (zimg/image width height)]
         ;; Loop through each character, drawing it
-        (doseq [[[codepoint glyph-index] col row] char-idxs]
+        (doseq [[codepoint glyph-index col row] char-idxs]
           (try
             (let [x  (* col char-width)
                   y  (* row char-height)
@@ -406,7 +407,7 @@
          :character-width char-width
          :character-height char-height
          :character->col-row (character->col-row char-idxs)
-         :character->transparent (zipmap characters (repeat transparent))}))))
+         :character->transparent (zipmap (map char (keys codepoint->glyph-index)) (repeat transparent))}))))
 
 (defrecord CompositeFont [fonts]
   GlyphGraphics

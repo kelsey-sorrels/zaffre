@@ -46,7 +46,7 @@
   ([width height]
     (image width height 4))
   ([width height channels]
-    (log/info "Creating buffer" width height channels)
+    #_(log/info "Creating buffer" width height channels)
     (->Image width height channels (BufferUtils/createByteBuffer (* width height channels)))))
 
 (defn load-image [location]
@@ -146,7 +146,7 @@
             sy0 (- y4 y)
             sx1 (- x5 x)
             sy1 (- y5 y)]
-        (log/info "copying from [" sx0 sy0 "] [" sx1 sy1 "] to" x y)
+        #_(log/info "copying from [" sx0 sy0 "] [" sx1 sy1 "] to" x y)
         (copy-sub-image dest-img src-img x y sx0 sy0 sx1 sy1)))))
                       
 
