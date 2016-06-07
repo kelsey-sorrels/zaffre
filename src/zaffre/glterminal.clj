@@ -889,21 +889,23 @@
     @destroyed))
 
 (defn group-locations
-  ([_ _]
+  ([_ _ _ _]
    [])
-  ([group-map group->font-texture xpos ypos]
+  ([group-map group->font-texture framebuffer-width framebuffer-height xpos ypos]
    (set
      (remove (fn [[group-id col row]] (and (nil? col) (nil? row)))
              (map (fn [[group-id group]]
                     (let [{:keys [pos columns rows]
                            [pos-x pos-y] :pos} @group
-                          {:keys [character-width character-height]} (-> group->font-texture group-id deref)]
+                          {:keys [character-width character-height]} (-> group->font-texture group-id deref)
+                          width  (* character-width columns)
+                          height (* character-height rows)]
                       ;; determine if the mouse is in the bounds of the layer group
                       (when (and (<= pos-x xpos (+ (* columns character-width) pos-x))
                                (<= pos-y ypos (+ (* rows character-height) pos-y)))
                         ;; determine which col/row the mouse is in the group
-                        (let [col (int (quot (- xpos pos-x) character-width))
-                              row (int (quot (- ypos pos-y) character-height))]
+                        (let [col (int (quot (- xpos pos-x (quot (- framebuffer-width width) 2)) character-width))
+                              row (int (quot (- ypos pos-y (quot (- framebuffer-height height) 2)) character-height))]
                           [group-id col row]))))
                    group-map)))))
 
@@ -1112,7 +1114,8 @@
                                   (let [state  (condp = (int action)
                                                  GLFW/GLFW_PRESS :mouse-down
                                                  GLFW/GLFW_RELEASE :mouse-up)
-                                        new-group-locations (apply group-locations group-map group->font-texture @mouse-xy)
+                                        new-group-locations (apply group-locations group-map group->font-texture
+                                                                   framebuffer-width framebuffer-height @mouse-xy)
                                         button (get [:left :right :middle] (int button))]
                                     (async/onto-chan
                                       term-chan
@@ -1129,12 +1132,16 @@
                                                {:type :click :button button :col col :row row :group-id group-id})
                                              (clojure.set/intersection
                                                new-group-locations
-                                               (apply group-locations group-map group->font-texture @mousedown-xy)))
+                                               (apply group-locations group-map group->font-texture
+                                                      framebuffer-width framebuffer-height @mousedown-xy)))
                                         false)))))
         cursor-pos-callback   (proxy [GLFWCursorPosCallback] []
                                 (invoke [window xpos ypos]
-                                  (let [new-group-locations (group-locations group-map group->font-texture xpos ypos)
-                                        old-group-locations (apply group-locations group-map group->font-texture @mouse-xy)
+                                  (let [new-group-locations (group-locations group-map group->font-texture
+                                                                             framebuffer-width framebuffer-height
+                                                                             xpos ypos)
+                                        old-group-locations (apply group-locations group-map group->font-texture
+                                                                   framebuffer-width framebuffer-height @mouse-xy)
                                         entered-locations   (clojure.set/difference new-group-locations old-group-locations)
                                         left-locations      (clojure.set/difference old-group-locations new-group-locations)]
                                     (reset! mouse-xy [xpos ypos])
