@@ -57,75 +57,69 @@
             last-size   (atom :medium)
             last-key    (atom nil)
             swidth      (atom (* 16 16))
-            sheight     (atom (* 16 16))
+            sheight     (atom (* 16 16))]
             ;; Every 10ms, set the "Rainbow" text to have a random fg color
-            fx-chan     (go-loop []
-                          (dosync
-                            (doseq [x (range (count "Rainbow"))
-                                    :let [rgb (hsv->rgb (double (rand 360)) 1.0 1.0)]]
-                                (zat/set-fx-fg! terminal :rainbow (inc x) 1 rgb)))
-                            (zat/refresh! terminal)
-                          (Thread/sleep 10)
-                          (recur))
             ;; Every 33ms, draw a full frame
-            render-chan (go-loop []
-                          (dosync
-                            (let [key-in (or @last-key \?)]
-                              (zat/clear! terminal)
-                              (zutil/put-string terminal :text 0 0 "Hello world")
-                              (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
-                                (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
-                              (zutil/put-string terminal :text 12 0 (str key-in))
-                              (zutil/put-string terminal :rainbow 1 1 "Rainbow")
-                              (zat/refresh! terminal)))
-                              ;; ~30fps
-                            (Thread/sleep 33)
-                            (recur))]
-    (log/info "Fullscreen sizes" fullscreen-sizes)
-    (zevents/add-event-listener terminal :font-change
-      (fn [{:keys [character-width character-height] :as ev}]
-        (log/info "Got :font-change" character-width character-height ev)
-        #_(zat/set-window-size! terminal {:width (* @srows 16)  :height (* @scols 16)})
-        #_(zat/set-window-size! terminal {:width  (size->width @last-size)
-                                        :height (size->height @last-size)})))
-    ;; get key presses in fg thread
-    (zevents/add-event-listener terminal :keypress
-      (fn [new-key]
-        (reset! last-key new-key)
-        (log/info "got key" (or (str @last-key) "nil"))
-        ;; change font size on s/m/l keypress
-        ;; \w for windowed mode, and \f for fullscreen
-        (case new-key
-          \s (do
-               (reset! last-size :small)
-               (zat/alter-group-font! terminal :app
-                 small-font-fn))
-          \m (do
-               (reset! last-size :medium)
-               (zat/alter-group-font! terminal :app
-                  medium-font-fn))
-          \l (do
-               (reset! last-size :large)
-               (zat/alter-group-font! terminal :app
-                 large-font-fn))
-          \+ (do
-               (swap! swidth (partial + 16))
-               (swap! sheight (partial + 16))
-               (zat/set-window-size! terminal {:width @swidth  :height @sheight}))
-          \- (do
-               (swap! swidth (partial + -16))
-               (swap! sheight (partial + -16))
-               (zat/set-window-size! terminal {:width @swidth  :height @sheight}))
-          \] (do
-               (swap! swidth inc)
-               (swap! sheight inc)
-               (zat/set-window-size! terminal {:width @swidth  :height @sheight}))
-          \[ (do
-               (swap! swidth dec)
-               (swap! sheight dec)
-               (zat/set-window-size! terminal {:width @swidth  :height @sheight}))
-          \f (zat/set-window-size! terminal (last fullscreen-sizes))
-          \w (zat/set-window-size! terminal {:width (size->width @last-size)
-                                             :height (size->height @last-size)})
-          \q (zat/destroy! terminal)
-          nil)))))))
+        (zat/do-frame terminal 33
+          (let [key-in (or @last-key \?)]
+            (zutil/put-string terminal :text 0 0 "Hello world")
+            (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
+              (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
+            (zutil/put-string terminal :text 12 0 (str key-in))
+            (zutil/put-string terminal :rainbow 1 1 "Rainbow")))
+        (go-loop []
+          (dosync
+            (doseq [x (range (count "Rainbow"))
+                    :let [rgb (hsv->rgb (double (rand 360)) 1.0 1.0)]]
+                (zat/set-fx-fg! terminal :rainbow (inc x) 1 rgb)))
+            (zat/refresh! terminal)
+          (Thread/sleep 10)
+          (recur))
+        (log/info "Fullscreen sizes" fullscreen-sizes)
+        (zevents/add-event-listener terminal :font-change
+          (fn [{:keys [character-width character-height] :as ev}]
+            (log/info "Got :font-change" character-width character-height ev)
+            #_(zat/set-window-size! terminal {:width (* @srows 16)  :height (* @scols 16)})
+            #_(zat/set-window-size! terminal {:width  (size->width @last-size)
+                                            :height (size->height @last-size)})))
+        ;; get key presses in fg thread
+        (zevents/add-event-listener terminal :keypress
+          (fn [new-key]
+            (reset! last-key new-key)
+            (log/info "got key" (or (str @last-key) "nil"))
+            ;; change font size on s/m/l keypress
+            ;; \w for windowed mode, and \f for fullscreen
+            (case new-key
+              \s (do
+                   (reset! last-size :small)
+                   (zat/alter-group-font! terminal :app
+                     small-font-fn))
+              \m (do
+                   (reset! last-size :medium)
+                   (zat/alter-group-font! terminal :app
+                      medium-font-fn))
+              \l (do
+                   (reset! last-size :large)
+                   (zat/alter-group-font! terminal :app
+                     large-font-fn))
+              \+ (do
+                   (swap! swidth (partial + 16))
+                   (swap! sheight (partial + 16))
+                   (zat/set-window-size! terminal {:width @swidth  :height @sheight}))
+              \- (do
+                   (swap! swidth (partial + -16))
+                   (swap! sheight (partial + -16))
+                   (zat/set-window-size! terminal {:width @swidth  :height @sheight}))
+              \] (do
+                   (swap! swidth inc)
+                   (swap! sheight inc)
+                   (zat/set-window-size! terminal {:width @swidth  :height @sheight}))
+              \[ (do
+                   (swap! swidth dec)
+                   (swap! sheight dec)
+                   (zat/set-window-size! terminal {:width @swidth  :height @sheight}))
+              \f (zat/set-window-size! terminal (last fullscreen-sizes))
+              \w (zat/set-window-size! terminal {:width (size->width @last-size)
+                                                 :height (size->height @last-size)})
+              \q (zat/destroy! terminal)
+              nil)))))))
