@@ -4,8 +4,7 @@
             [zaffre.events :as zevents]
             [zaffre.font :as zfont]
             [zaffre.tilesets :as ztiles]
-            [zaffre.util :as zutil]
-            [clojure.core.async :as async :refer [<! <!! go-loop]])
+            [zaffre.util :as zutil])
   (:import (zaffre.font CompositeFont)))
 
 (def font (CompositeFont. [ztiles/pastiche-16x16
