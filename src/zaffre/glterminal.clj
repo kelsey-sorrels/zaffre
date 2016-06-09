@@ -816,8 +816,11 @@
           ;;; Set fx uniforms
           ;(log/info "fx-uniforms" (vec fx-uniforms))
           (doseq [[uniform-name [value-atom location]] fx-uniforms]
-            (when-not (neg? location)
-              (GL20/glUniform1f location (-> value-atom deref float))))
+            (if location
+              (if-not (neg? location)
+                (GL20/glUniform1f location (-> value-atom deref float))
+                (assert false (str "Could not find uniform " uniform-name)))
+              (assert false (str "Nil location " uniform-name))))
           ;; Draw fx shaded terminal
           (GL11/glDrawArrays GL11/GL_TRIANGLE_STRIP 0 vertices-count)
           ;;;; clean up
@@ -1085,10 +1088,10 @@
                                   "uPMatrix"])
         ;; map from uniform name (string) to [value atom, uniform location]
         fx-uniforms        (reduce (fn [uniforms [uniform-name value]]
+                                     (log/info "getting location of uniform" uniform-name)
                                      (assoc uniforms
                                             uniform-name
                                             [(atom value)
-                                             (log/info "getting location of uniform" uniform-name)
                                              (let [location (GL20/glGetUniformLocation fb-pgm-id (str uniform-name))]
                                                (assert (not (neg? location)) (str "Could not find location for uniform " uniform-name location))
                                                (log/info "got location of uniform" uniform-name location)
