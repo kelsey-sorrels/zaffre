@@ -553,6 +553,8 @@
   zat/Terminal
   (args [_]
     term-args)
+  (groups [_]
+     (into {} (map (fn [[id ref]] [id @ref]) group-map)))
   (alter-group-pos! [_ group-id pos-fn]
     (alter (get group-map group-id) (fn [group] (update group :pos (fn [pos] (mapv int (pos-fn pos)))))))
   (alter-group-font! [_ group-id font-fn]

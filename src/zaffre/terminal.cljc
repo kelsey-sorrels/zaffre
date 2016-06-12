@@ -1,10 +1,10 @@
 ;; Functions for rendering state to screen
-(ns zaffre.terminal
-  (:require [clojure.core.async :refer [go-loop]]))
+(ns zaffre.terminal)
 
 (defprotocol Terminal
   "Methods suffixed with ! indicate a change of state within the terminal. refresh! and destroy! are not transaction-safe and must not be called from within a transaction."
-  (args [this] "Returns the arguments passed to create-terminal.")
+  (args [this] "Returns the option arguments passed to create-terminal.")
+  (groups [this] "Returns the groups argument passed to create-terminal.")
   (alter-group-pos! [this group-id pos-fn] "Change the [x y] position of a layer group. `x` and `y` are mesured in pixels from the upper left corner of the screen.")
   (alter-group-font! [this group-id font-fn] "Changes the font for a layer group. `font-fn` is a function that takes one argument: one of :linux :macosx or :windows, and returns a font.")
   (put-chars! [this layer-id characters] "Changes the characters in a layer. `characters` is a sequence where each element is a map and must have these keys: :c - a character or keyword, :x int, column, :y int row, :fg [r g b], :bg [r g b] where r,g,b are ints from 0-255.")
