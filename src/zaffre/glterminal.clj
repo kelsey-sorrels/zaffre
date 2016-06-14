@@ -1268,7 +1268,10 @@
         (future
           ;; Wait for main thread loop to start
           (.await latch)
-          (f terminal)
+          (try
+            (f terminal)
+            (catch Throwable t
+              (log/error t "Error executing terminal fn")))
           (log/info "done with use supplied fn"))
         (let [[monitor-width
                monitor-height] (with-gl-context gl-lock window capabilities
