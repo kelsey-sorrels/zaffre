@@ -36,32 +36,32 @@
      :screen-height (* 16 16)
      :default-fg-color [250 250 250]
      :default-bg-color [5 5 8]}
-     (fn [terminal]
-       (let [last-key    (atom nil)]
-         ;; Every 10ms, set the "Rainbow" text to have a random fg color
-         (go-loop []
-           (dosync
-             (doseq [x (range (count "Rainbow"))
-                     :let [rgb (hsv->rgb (double (rand 360)) 1.0 1.0)]]
-                 (zat/set-fx-fg! terminal :rainbow (inc x) 1 rgb)))
-             (zat/refresh! terminal)
-           (Thread/sleep 10)
-           (recur))
-             ;; Every 33ms, draw a full frame
-         (zat/do-frame terminal 33
-           (let [key-in (or @last-key \?)]
-             (zutil/put-string terminal :text 0 0 "Hello world")
-             (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
-               (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
-             (zutil/put-string terminal :text 12 0 (str key-in))
-             (zutil/put-string terminal :rainbow 1 1 "Rainbow")))
-       ;; get key presses in fg thread
-       (zevents/add-event-listener terminal :keypress
-         (fn [new-key]
-           (reset! last-key new-key)
-           (case new-key
-             ;; quit on \q keypress
-             \q (zat/destroy! terminal)
-             nil)))))))
+    (fn [terminal]
+      (let [last-key    (atom nil)]
+        ;; Every 10ms, set the "Rainbow" text to have a random fg color
+        (go-loop []
+          (dosync
+            (doseq [x (range (count "Rainbow"))
+                    :let [rgb (hsv->rgb (double (rand 360)) 1.0 1.0)]]
+                (zat/set-fx-fg! terminal :rainbow (inc x) 1 rgb)))
+            (zat/refresh! terminal)
+          (Thread/sleep 10)
+          (recur))
+            ;; Every 33ms, draw a full frame
+        (zat/do-frame terminal 33
+          (let [key-in (or @last-key \?)]
+            (zutil/put-string terminal :text 0 0 "Hello world")
+            (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
+              (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
+            (zutil/put-string terminal :text 12 0 (str key-in))
+            (zutil/put-string terminal :rainbow 1 1 "Rainbow")))
+      ;; get key presses in fg thread
+      (zevents/add-event-listener terminal :keypress
+        (fn [new-key]
+          (reset! last-key new-key)
+          (case new-key
+            ;; quit on \q keypress
+            \q (zat/destroy! terminal)
+            nil)))))))
 
 
