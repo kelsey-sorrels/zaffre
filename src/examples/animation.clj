@@ -23,7 +23,7 @@
      :screen-width (* 16 16)  ;; Screen dimentions in pixels
      :screen-height (* 16 16)
      :filters []
-     :effect-gen-fns []} ;; Since our font is 16x16 and our layer group
+     :effect-gen-fns [(partial zaw/make-rain-effect :text)]} ;; Since our font is 16x16 and our layer group
                                ;; is also 16x16
     (fn [terminal]     ;; Receive the terminal in a callback
       ;; Save the last key press in an atom
