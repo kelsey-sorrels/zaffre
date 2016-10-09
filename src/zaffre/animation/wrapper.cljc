@@ -34,7 +34,6 @@
 ;; util/helper fns
 (defn nil-grid [terminal]
   (let [[vw vh] (size terminal)]
-    (println "vw vh" vw vh)
     (repeat vh (vec (repeat vw nil)))))
 
 (defn lantern-flicker [opts x y fg]
@@ -189,8 +188,8 @@
   AMask
   (swap-mask! [this f]
     (swap! mask f)
-    (log/info "=====================")
-    (doseq [line @mask]
+    #_(log/info "=====================")
+    #_(doseq [line @mask]
       (log/info (mapv (fn [v] (if v 1 0)) line)))
     this)
   (reset-mask! [this new-mask]
@@ -222,10 +221,10 @@
     (let [path (zutil/line-segment-fast-without-endpoints (get transform :from-xy) (get transform :to-xy))
           n    (int (/ @frame-count 1))]
       (when (< n (count path))
-        (println "n" n "count path" (count path))
+        #_(log/info "n" n "count path" (count path))
         (let [[vx vy] path #_(rv/world-xy->screen-xy state (nth path n))]
           (when (or true (get-in mask [vy vx]))
-            (println "drawing * @ " vx vy)
+            #_(println "drawing * @ " vx vy)
             (zat/set-fx-char! terminal :fx vx vy \*)
             (zat/set-fx-fg! terminal :fx vx vy (zcolor/color->rgb :white))
             (zat/set-fx-bg! terminal :fx vx vy (zcolor/color->rgb :black))))))))
@@ -267,10 +266,10 @@
 (defn blink [terminal state blinks]
   ;(prinln (format "drawing %d blinks" (count blinks)))
   (doseq [blink blinks]
-    (println @frame-count (mod @frame-count 15))
+    #_(println @frame-count (mod @frame-count 15))
     (when (< (mod @frame-count 15) 7)
       (let [[vx vy] (get blink :xy)]
-          (println "drawing * @ " vx vy)
+          #_(println "drawing * @ " vx vy)
           (zat/set-fx-char! terminal :fx vx vy \space)))))
 
 (defrecord BlinkEffect
@@ -399,7 +398,7 @@
   (alter-group-pos! [_ group-id pos-fn] (zat/alter-group-pos! terminal group-id pos-fn))
   (alter-group-font! [_ group-id font-fn] (zat/alter-group-font! terminal group-id font-fn))
   (put-chars! [this layer-id characters]
-    (println "put-chars!" layer-id characters)
+    #_(log/debug "put-chars!" layer-id characters)
     (swap! opts
            (fn [opts]
              (reduce (fn [opts [y y-characters]]
@@ -419,7 +418,7 @@
     (zat/clear-fx! terminal)
     (doseq [effect @effects]
       (zaat/apply-effect! effect terminal))
-    (log/info "done applying effects")
+    #_(log/info "done applying effects")
     (zat/refresh! terminal))
   (clear! [this]
     (reset! opts (nil-grid terminal))
@@ -470,7 +469,7 @@
 
 (defn create-animated-terminal
   [terminal-fn group-map opts f]
-  (println "create-animated-terminal")
+  #_(log/debug "create-animated-terminal")
   (terminal-fn
     group-map
     opts
@@ -482,10 +481,10 @@
             opts            (atom (nil-grid terminal))
             effects         (atom (mapv (fn [effect-gen-fn] (effect-gen-fn terminal opts)) effects-gen-fns))
             filters         (atom filters)
-            _ (println "making atat pool")
+            #_#__ (println "making atat pool")
             schedule-pool   (atat/mk-pool)]
-        (log/info "overriding terminal")
-        (log/info "effects" @effects "filters" @filters)
+        #_(log/info "overriding terminal")
+        #_(log/info "effects" @effects "filters" @filters)
         (let [animated-terminal (->WrappedAnimatedTerminal terminal
                                                            started
                                                            opts
