@@ -84,14 +84,16 @@
 (defn- get-fields [#^Class static-class]
   (.getFields static-class))
 
+(def gl-classes [GL11 GL12 GL13 GL14 GL15 GL20 GL30])
+
 (defn- gl-enum-name
-  "Takes the numeric value of a gl constant (i.e. GL_LINEAR), and gives the name"
+  "Takes the numeric value of a gl constant (i.e. GL_LINEAR), and gives the name as a string."
   [enum-value]
   (if (zero? enum-value)
     "NONE"
     (.getName #^Field (some
                        #(when (= enum-value (.get #^Field % nil)) %)
-                       (mapcat get-fields [GL11 GL12 GL13 GL15 GL20 GL30])))))
+                       (mapcat get-fields gl-classes)))))
 
 (defn- except-gl-errors
   [msg]
@@ -102,6 +104,19 @@
                           (zlwjgl/gl-error-string error))]
     (if (not (zero? error))
       (throw (Exception. error-string)))))
+
+(defn-memoized gl-enum-value
+  ;;"Takes a gl enum value as a keyword and returns the value, eg: :gl-one -> GL11/GL_ONE."
+  [gl-keyword]
+  (let [field-name (clojure.string/upper-case (clojure.string/replace (name gl-keyword) "-" "_"))]
+    (some (fn [#^Class static-class]
+            (try
+              (.get #^Field (.getField static-class field-name) static-class)
+              (catch Throwable t
+                nil)))
+          gl-classes)))
+    
+  
 
 (defn- texture-id-2d
   ([{:keys [width height byte-buffer]}]
@@ -455,11 +470,11 @@
           (let [chr        (or (get c :fx-character) (get c :character))
                 highlight  (= @cursor-xy [col (- rows row 1)])
                 [fg-r fg-g fg-b] (if highlight
-                                   (or (get c :fx-bg-color)  (get c :bg-color))
-                                   (or (get c :fx-fg-color)  (get c :fg-color)))
+                                   (get c :bg-color)
+                                   (get c :fg-color))
                 [bg-r bg-g bg-b] (if highlight
-                                   (or (get c :fx-fg-color)  (get c :fg-color))
-                                   (or (get c :fx-bg-color)  (get c :bg-color)))
+                                   (get c :fg-color)
+                                   (get c :bg-color))
                 ;s         (str (get c :character))
                 style     (get c :style)
                 i         (+ (* 4 (+ (* texture-columns row) col)) (* layer-size layer))
@@ -521,16 +536,14 @@
 ;; it is not performant to memoize records because hashCode values are not cached and are recalculated
 ;; each time.
 
-(defrecord GLCharacter [character fg-color bg-color style fx-character fx-fg-color fg-bg-color]
+(defrecord GLCharacter [character fg-color bg-color style]
   Object
   (toString [this]
     (pr-str this)))
 
 (defn make-terminal-character
   ([character fg-color bg-color style]
-   (make-terminal-character character fg-color bg-color style nil nil nil))
-  ([character fg-color bg-color style fx-character fx-fg-color fg-bg-color]
-   (GLCharacter. character fg-color bg-color style fx-character fx-fg-color fg-bg-color)))
+   (GLCharacter. character fg-color bg-color style)))
 
 (defrecord OpenGlTerminal [term-args
                            window-size
@@ -622,7 +635,7 @@
            (is (= (count bg) 3) "bg must have 3 elements")
            (is (every? number? bg) "bg elements must be numbers")
            (is (get layer-character-map layer-id) (format "Invalid layer-id %s" layer-id))]}
-      (alter (get layer-character-map)
+      (alter (get layer-character-map layer-id)
              (fn [cm] (assoc-in cm [y x :bg-color] bg))))
   (assoc-shader-param! [_ k v]
     (-> fx-uniforms (get k) first (reset! v)))
@@ -648,8 +661,6 @@
           (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER, fbo-id)
           (GL11/glEnable GL11/GL_BLEND)
           (GL11/glDisable GL11/GL_DEPTH_TEST)
-          (GL14/glBlendEquation GL14/GL_FUNC_ADD)
-          (GL11/glBlendFunc GL11/GL_ONE GL11/GL_ONE_MINUS_SRC_ALPHA)
           ;(log/info "glViewport" 0 0 framebuffer-width framebuffer-height)
           (GL11/glViewport 0 0 framebuffer-width framebuffer-height)
           (except-gl-errors (str "glViewport " framebuffer-width framebuffer-height))
@@ -675,7 +686,7 @@
            (log/error "OpenGL error:" e)))
         ;; Render each layer to FBO
         (dosync
-          (doseq [[{:keys [group-id columns rows layers] [x-pos y-pos] :pos}
+          (doseq [[{:keys [group-id columns rows layers gl-blend-func gl-blend-equation] [x-pos y-pos] :pos}
                    glyph-texture
                    fg-texture
                    bg-texture
@@ -708,6 +719,9 @@
             (assert (not (nil? font-texture-height)) "font-texture-height")
             (assert (not (nil? font-texture)) "font-texture nil")
             ;(log/info character->transparent)
+            (GL14/glBlendEquation (gl-enum-value gl-blend-equation))
+            (GL11/glBlendFunc (gl-enum-value (first gl-blend-func))
+                              (gl-enum-value (second gl-blend-func)))
             (fill-glyph-fg-bg-buffers
               (select-keys layer-character-map layers)
               character->col-row 
@@ -795,6 +809,9 @@
           (GL11/glViewport 0 0 framebuffer-width framebuffer-height)
           (GL11/glClearColor 0.0 0.0 0.0 0.0)
           (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
+          (GL14/glBlendEquation (gl-enum-value :gl-func-add))
+          (GL11/glBlendFunc (gl-enum-value :gl-one)
+                            (gl-enum-value :gl-one-minus-src-alpha))
           (GL20/glUseProgram fb-program-id)
           (GL20/glUniformMatrix4fv (long u-fb-PMatrix) false (ortho-matrix-buffer framebuffer-width framebuffer-height p-matrix-buffer))
           (except-gl-errors (str "u-fb-PMatrix - glUniformMatrix4  " u-fb-PMatrix))
@@ -845,46 +862,6 @@
     (reset! window-size v))
   (fullscreen-sizes [_]
     monitor-fullscreen-sizes)
-  (set-fx-fg! [_ layer-id x y fg]
-    {:pre [(is (vector? fg) "fg not a vector")
-           (is (= (count fg) 3) "fg must have 3 elements")
-           (is (every? number? fg) "fg elements must be numbers")
-           (is (get layer-character-map layer-id) (format "Invalid layer-id %s" layer-id))]}
-      (alter (get layer-character-map layer-id)
-             (fn [cm] (assoc-in cm [y x :fx-fg-color] fg))))
-  (set-fx-bg! [_ layer-id x y bg]
-    {:pre [(is (vector? bg) "bg not a vector")
-           (is (= (count bg) 3) "bg must have 3 elements")
-           (is (every? number? bg) "bg elements must be numbers")
-           (is (get layer-character-map layer-id) (format "Invalid layer-id %s" layer-id))]}
-      (alter (get layer-character-map layer-id)
-             (fn [cm] (assoc-in cm [y x :fx-bg-color] bg))))
-  (set-fx-char! [_ layer-id x y c]
-    {:pre [(is (not (nil? (get layer-character-map layer-id))) (format "Invalid layer-id %s" layer-id))]}
-    (alter (get layer-character-map layer-id)
-           (fn [cm] (assoc-in cm [y x :fx-character] c))))
-  (clear-fx! [_ layer-id]
-    {:pre [(is (not (nil? (get layer-character-map layer-id))) (format "Invalid layer-id %s" layer-id))]}
-    (alter (get layer-character-map layer-id)
-           (fn [cm]
-             (mapv (fn [line]
-                     (mapv (fn [c]
-                             (assoc c :fx-fg-color nil
-                                      :fx-bg-color nil
-                                      :fx-character nil))
-                           line))
-                   cm))))
-  (clear-fx! [_]
-    (doseq [[_ character-map] layer-character-map]
-      (alter character-map
-             (fn [cm]
-               (mapv (fn [line]
-                       (mapv (fn [c]
-                               (assoc c :fx-fg-color nil
-                                        :fx-bg-color nil
-                                        :fx-character nil))
-                             line))
-                     cm)))))
   (destroy! [_]
     (reset! destroyed true)
     (async/put! term-chan :close)
@@ -933,10 +910,12 @@
          fx-shader        {:name "passthrough.fs"}} :as opts}
    f]
   (let [term-args           [group-map opts]
+        default-blend      {:gl-blend-equation :gl-func-add
+                            :gl-blend-func [:gl-one :gl-one-minus-src-alpha]}
         group-map           (into {}
                               (map (fn [[k v]]
-                                     (is (every? v #{:layers :columns :rows :pos :font}))
-                                     [k (ref v)])
+                                     (is (every? v #{:layers :columns :rows :pos :font :gl-blend-equation :gl-blend-func}))
+                                     [k (ref (merge default-blend v))])
                                    group-map))
         layer-id->group     (->> group-map
                                (mapcat (fn [[id layer-group]]

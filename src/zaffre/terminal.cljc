@@ -20,11 +20,6 @@
           [this layer-id] "Clears all layers or just a specific layer.")
   (set-window-size! [this v] "Changes the terminal to fullscreen mode if v is a value returned by fullscreen-sizes. If false is supplied the terminal will revert to windowed mode.")
   (fullscreen-sizes [this] "Returns a list of fullscreen values.")
-  (set-fx-fg! [this layer-id x y fg] "Overrides the forecround color of a character.")
-  (set-fx-bg! [this layer-id x y bg] "Overrides the background color of a character.")
-  (set-fx-char! [this layer-id x y c] "Overrides the character on a layer.")
-  (clear-fx! [this]
-             [this layer-id] "Clears all of the fx overrides or just those for a layer.")
   (destroy! [this] "Stops the terminal, and closes the window.")
   (destroyed? [this] "True if destroy! cas been called or the window closed."))
 
