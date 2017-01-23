@@ -1,12 +1,11 @@
 ;; Functions for animating state to screen
 (ns zaffre.animation.wrapper
   (:require 
-            ;[robinson.override :as ro :refer [override]]
+            [clojure.core.async :refer :all :exclude [map]]
             [zaffre.color :as zcolor]
             ;[robinson.viewport :as rv]
             [zaffre.terminal :as zat]
             [zaffre.animation.animatedterminal :as zaat]
-            [zaffre.override :as zo]
             [zaffre.util :as zutil]
             [taoensso.timbre :as log]
             [overtone.at-at :as atat])
@@ -86,53 +85,92 @@
     :else
     nil))
 
+(defn rain-cell-char
+  [x y cell] 
+  (case cell
+    :drop
+      {:c \|
+       :x x :y y
+       :fg (zcolor/color->rgb :blue)
+       :bg (zcolor/color->rgb :black)}
+    :splash1
+      {:c  \*
+       :x x :y y
+       :fg (zcolor/color->rgb :blue)
+       :bg (zcolor/color->rgb :black)}
+    :splash2
+      {:c  \o
+       :x x :y y
+       :fg (zcolor/color->rgb :blue)
+       :bg (zcolor/color->rgb :black)}
+    :splash3
+      {:c  \°
+       :x x :y y
+       :fg  (zcolor/color->rgb :blue)
+       :bg  (zcolor/color->rgb :black)}
+    :splash4
+      {:c  \'
+       :x x :y y
+       :fg  (zcolor/color->rgb :blue)
+       :bg  (zcolor/color->rgb :black)}
+    nil))
+
 (defn render-rain-cell
   [terminal layer-id x y cell] 
   (case cell
     :drop
       (do
-        (zat/set-fx-char! terminal layer-id x y \|)
-        (zat/set-fx-fg! terminal layer-id x y (zcolor/color->rgb :blue))
-        (zat/set-fx-bg! terminal layer-id x y (zcolor/color->rgb :black)))
+        (zat/put-chars! terminal layer-id [
+          {:c \|
+           :x x :y y
+           :fg (zcolor/color->rgb :blue)
+           :bg (zcolor/color->rgb :black)}]))
     :splash1
       (do
-        (zat/set-fx-char! terminal layer-id x y \*)
-        (zat/set-fx-fg! terminal layer-id x y (zcolor/color->rgb :blue))
-        (zat/set-fx-bg! terminal layer-id x y (zcolor/color->rgb :black)))
+        (zat/put-chars! terminal layer-id [
+          {:c  \*
+           :x x :y y
+           :fg (zcolor/color->rgb :blue)
+           :bg (zcolor/color->rgb :black)}]))
     :splash2
       (do
-        (zat/set-fx-char! terminal layer-id x y \o)
-        (zat/set-fx-fg! terminal layer-id x y (zcolor/color->rgb :blue))
-        (zat/set-fx-bg! terminal layer-id x y (zcolor/color->rgb :black)))
+        (zat/put-chars! terminal layer-id [
+          {:c  \o
+           :x x :y y
+           :fg (zcolor/color->rgb :blue)
+           :bg (zcolor/color->rgb :black)}]))
     :splash3
       (do
-        (zat/set-fx-char! terminal layer-id x y \°)
-        (zat/set-fx-fg! terminal layer-id x y (zcolor/color->rgb :blue))
-        (zat/set-fx-bg! terminal layer-id x y (zcolor/color->rgb :black)))
+        (zat/put-chars! terminal layer-id [
+          {:c  \°
+           :x x :y y
+           :fg  (zcolor/color->rgb :blue)
+           :bg  (zcolor/color->rgb :black)}]))
     :splash4
       (do
-        (zat/set-fx-char! terminal layer-id x y \·)
-        (zat/set-fx-fg! terminal layer-id x y (zcolor/color->rgb :blue))
-        (zat/set-fx-bg! terminal layer-id x y (zcolor/color->rgb :black)))
+        (zat/put-chars! terminal layer-id [
+          {:c  \
+           :x x :y y
+           :fg  (zcolor/color->rgb :blue)
+           :bg  (zcolor/color->rgb :black)}]))
     nil))
 
-(defn step-rain!
+(defn step-rain
   [rain-state vw vh]
   ;; update rain
   ;(println "------------------------------------------------------")
-  (swap! rain-state (fn [rain]
-                     (vec  (for [[y advanced-line old-line] (map vector (range)
-                                                                        (concat [(repeat vw nil)] (butlast rain))
-                                                                        rain)]
-                        (do
-                        ;(println (mapv (fn [v] (if v 1 0)) line))
-                        ;; prev-cell is the value above `cell`.
-                        (vec (for [[x advanced-cell old-cell] (map vector (range) advanced-line old-line)]
-                          (if (zero? y)
-                            (if (> (rand) *rain-rate*)
-                              :drop
-                              nil)
-                            (rain-transition advanced-cell old-cell))))))))))
+  (vec  (for [[y advanced-line old-line] (map vector (range)
+                                                     (concat [(repeat vw nil)] (butlast rain-state))
+                                                     rain-state)]
+     (do
+     ;(println (mapv (fn [v] (if v 1 0)) old-line))
+     ;; prev-cell is the value above `cell`.
+     (vec (for [[x advanced-cell old-cell] (map vector (range) advanced-line old-line)]
+       (if (zero? y)
+         (if (> (rand) *rain-rate*)
+           :drop
+           nil)
+         (rain-transition advanced-cell old-cell))))))))
 
 (defn render-rand-fg
   [terminal layer-id x y cell-opts cell-palette palette]
@@ -144,7 +182,7 @@
                     (lantern-flicker cell-opts x y)
                     (vignette cell-opts x y)
                     (night-tint cell-opts x y))]
-    (zat/set-fx-fg! terminal layer-id x y fg-rgb)))
+    (zat/set-fg! terminal layer-id x y fg-rgb)))
 
 (defrecord RandFgEffect
   [terminal mask opts palette]
@@ -171,6 +209,9 @@
         palette   (atom {})]
     (RandFgEffect. terminal mask opts palette)))
 
+(defprotocol ACmdStream
+  (stream [this]))
+
 (defrecord RainEffect
   [terminal layer-id mask rain-state]
   AId
@@ -180,11 +221,32 @@
   (apply-effect! [this terminal]
     (let [[vw vh]    (size terminal)]
       (dosync
-        (step-rain! rain-state vw vh)
+        #_(step-rain! rain-state vw vh)
         (doseq [[y line mask-line] (map vector (range) @rain-state @mask)
                 [x cell mask?] (map vector (range) line mask-line)
                 :when mask?]
           (render-rain-cell terminal layer-id x y cell)))))
+  ACmdStream
+  (stream [this]
+    (let [dt      33
+          [vw vh] (size terminal)]
+      (go-loop [rain-state rain-state]
+        (log/info "RainEffect/stream" layer-id)
+        (<! (timeout dt))
+        (log/info "RainEffect/clear!")
+        (zat/clear! terminal layer-id)
+        (log/info "RainEffect/put-chars!")
+        (let [chrs (for [[y line] (map-indexed vector rain-state)
+                         [x cell] (map-indexed vector line)
+                         :when cell]
+                     (rain-cell-char x y cell))]
+          (log/info "RainEffect/chrs" (vec chrs))
+          (zat/put-chars!
+             terminal
+             layer-id
+             chrs)
+          (log/info "RainEffect/recur")
+          (recur (step-rain rain-state vw vh))))))
   AMask
   (swap-mask! [this f]
     (swap! mask f)
@@ -197,11 +259,10 @@
     this))
 
 (defn make-rain-effect
-  [layer-id terminal cell-opts]
-  (let [[vw vh]    (size terminal)
-        mask       (atom (repeat vh (repeat vw true)))
-        rain-state (atom (repeat vh (vec (repeat vw nil))))]
-    (RainEffect. terminal layer-id mask rain-state)))
+  [layer-id vw vh]
+  (let [rain-state (repeat vh (vec (repeat vw nil)))]
+    (fn [terminal]
+      (RainEffect. terminal layer-id nil rain-state))))
 
 (defn swap-rain-mask! [terminal f]
   (zaat/swap-matching-effect-or-filter! terminal
@@ -225,9 +286,9 @@
         (let [[vx vy] path #_(rv/world-xy->screen-xy state (nth path n))]
           (when (or true (get-in mask [vy vx]))
             #_(println "drawing * @ " vx vy)
-            (zat/set-fx-char! terminal :fx vx vy \*)
-            (zat/set-fx-fg! terminal :fx vx vy (zcolor/color->rgb :white))
-            (zat/set-fx-bg! terminal :fx vx vy (zcolor/color->rgb :black))))))))
+            ;(zat/set-char! terminal :fx vx vy \*)
+            (zat/set-fg! terminal :fx vx vy (zcolor/color->rgb :white))
+            (zat/set-bg! terminal :fx vx vy (zcolor/color->rgb :black))))))))
   
 (defrecord TransformEffect
   [terminal mask state]
@@ -270,7 +331,7 @@
     (when (< (mod @frame-count 15) 7)
       (let [[vx vy] (get blink :xy)]
           #_(println "drawing * @ " vx vy)
-          (zat/set-fx-char! terminal :fx vx vy \space)))))
+          (zat/put-chars! terminal :fx [{:x vx :y vy :c \space}])))))
 
 (defrecord BlinkEffect
   [terminal state]
@@ -307,12 +368,12 @@
                                          (get instant :time)))
                               last)]
         ;(println "drawing instant" instant)
-        (when-let [ch (get instant :ch)]
-          (zat/set-fx-char! terminal :fx vx vy ch))
+        #_(when-let [ch (get instant :ch)]
+          (zat/set-char! terminal :fx vx vy ch))
         (when-let [fg (get instant :fg)]
-          (zat/set-fx-fg! terminal :fx vx vy fg))
+          (zat/set-fg! terminal :fx vx vy fg))
         (when-let [bg (get instant :bg)]
-          (zat/set-fx-bg! terminal :fx vx vy bg))))))
+          (zat/set-bg! terminal :fx vx vy bg))))))
     
 (defrecord BlipEffect
   [terminal state]
@@ -389,143 +450,58 @@
           ch
           fx-filters))
 
-;;; Animated Terminal
-(defrecord WrappedAnimatedTerminal [terminal started opts effects filters schedule-pool]
+;;; Queue cmds in a chan and foreard them to dst-chan on `(refresh)`.
+(defrecord WrappedAnimatedTerminal [terminal cmds dst-chan]
   zat/Terminal
   ;; pass Terminal methods through to terminal
   (args [_] (zat/args terminal))
   (groups [_] (zat/groups terminal))
-  (alter-group-pos! [_ group-id pos-fn] (zat/alter-group-pos! terminal group-id pos-fn))
-  (alter-group-font! [_ group-id font-fn] (zat/alter-group-font! terminal group-id font-fn))
-  (put-chars! [this layer-id characters]
-    #_(log/debug "put-chars!" layer-id characters)
-    (swap! opts
-           (fn [opts]
-             (reduce (fn [opts [y y-characters]]
-                       (update opts y (fn [line]
-                                             (apply assoc (vec line) (interleave (map :x y-characters)
-                                                                                 (map :opts y-characters))))))
-                     (vec opts)
-                     (group-by :y characters))))
-    (let [characters (mapv (fn [ch] (apply-filters (get ch :opts {})  ch @filters)) characters)]
-      (zat/put-chars! terminal layer-id characters)))
-  (set-fg! [_ layer-id x y fg] (zat/set-fg! terminal layer-id x y fg))
-  (set-bg! [_ layer-id x y bg] (zat/set-bg! terminal layer-id x y bg))
-  (assoc-shader-param! [_ k v] (zat/assoc-shader-param! terminal k v))
+  (alter-group-pos! [_ group-id pos-fn] (>!! cmds (list zat/alter-group-pos! terminal group-id pos-fn)))
+  (alter-group-font! [_ group-id font-fn] (>!! cmds (list zat/alter-group-font! terminal group-id font-fn)))
+  (put-chars! [_ layer-id characters] (log/info "put-chars!") (>!! cmds (list zat/put-chars! terminal layer-id characters)))
+  (set-fg! [_ layer-id x y fg] (>!! cmds (list zat/set-fg! terminal layer-id x y fg)))
+  (set-bg! [_ layer-id x y bg] (>!! cmds (list zat/set-bg! terminal layer-id x y bg)))
+  (assoc-shader-param! [_ k v] (>!! cmds (list zat/assoc-shader-param! terminal k v)))
   (pub [_] (zat/pub terminal))
-  (refresh! [this]
-    (reset! frame-count 0)
-    (zat/clear-fx! terminal)
-    (doseq [effect @effects]
-      (zaat/apply-effect! effect terminal))
-    #_(log/info "done applying effects")
-    (zat/refresh! terminal))
-  (clear! [this]
-    (reset! opts (nil-grid terminal))
-    (zat/clear! terminal))
-  (clear! [_ layer-id] (zat/clear! terminal layer-id))
-  (set-window-size! [_ v] (zat/set-window-size! terminal v))
+  (refresh! [_]
+    (log/info "refresh!")
+    (>!! cmds (list zat/refresh! terminal))
+    (pipe cmds dst-chan false))
+  (clear! [_]
+    (log/info "clear!")
+    (>!! cmds (list zat/clear! terminal)))
+  (clear! [_ layer-id] (>!! cmds (list zat/clear! terminal layer-id)))
+  (set-window-size! [_ v] (>!! cmds (list zat/set-window-size! terminal v)))
   (fullscreen-sizes [_] (zat/fullscreen-sizes terminal))
-  (set-fx-fg! [_ layer-id x y fg] (zat/set-fx-fg! terminal layer-id x y fg))
-  (set-fx-bg! [_ layer-id x y bg] (zat/set-fx-bg! terminal layer-id x y bg))
-  (set-fx-char! [_ layer-id x y c] (zat/set-fx-char! terminal layer-id x y c))
-  (clear-fx! [_ layer-id] (zat/clear-fx! terminal layer-id))
-  (clear-fx! [_] (zat/clear-fx! terminal))
   (destroy! [_] (zat/destroy! terminal))
-  (destroyed? [_] (zat/destroyed? terminal))
-  AAnimatedTerminal
-  (swap-effect-seq! [this f] (swap! effects f))
-  (swap-matching-effect-or-filter!
-    [this p f]
-    (swap! effects (fn [effects]
-                     (reduce (fn [effects effect]
-                               (conj effects (if (p effect)
-                                               (f effect)
-                                               effect)))
-                             []
-                             effects)))
-    (swap! filters (fn [filters]
-                     (reduce (fn [filters fx-filter]
-                               (conj filters (if (p fx-filter)
-                                               (f fx-filter)
-                                               fx-filter)))
-                             []
-                             filters))))
-  (start! [this fps]
-    (dosync
-      (when-not @started
-        (reset! started true)
-        (atat/every (/ 1000 fps)
-                    (fn []
-                      (dosync
-                        (swap! frame-count inc)
-                        (zat/clear-fx! terminal)
-                        (doseq [effect @effects]
-                          (zaat/apply-effect! effect terminal))
-                        (zat/assoc-shader-param! terminal "time" (swap! frame-count inc))
-                        (zat/refresh! terminal)))
-                    schedule-pool)))
-    this))
+  (destroyed? [_] (zat/destroyed? terminal)))
 
 (defn create-animated-terminal
   [terminal-fn group-map opts f]
-  #_(log/debug "create-animated-terminal")
   (terminal-fn
     group-map
     opts
     (fn [terminal]
-      (let [effects-gen-fns (get opts :effect-gen-fns)
-            filters         (get opts :filters)
+      (let [effects-gen-fns (get opts :effects)
             started         (atom false)
             ;; grid of cell-opts
-            opts            (atom (nil-grid terminal))
-            effects         (atom (mapv (fn [effect-gen-fn] (effect-gen-fn terminal opts)) effects-gen-fns))
-            filters         (atom filters)
-            #_#__ (println "making atat pool")
-            schedule-pool   (atat/mk-pool)]
+            cmd-queue-chan  (chan 1000)
+            cmd-chan        (chan 1000)
+            wrapped-term    (WrappedAnimatedTerminal. terminal cmd-queue-chan cmd-chan)
+            effects         (atom [((make-rain-effect :fx 16 16) wrapped-term)])]
         #_(log/info "overriding terminal")
         #_(log/info "effects" @effects "filters" @filters)
-        (let [animated-terminal (->WrappedAnimatedTerminal terminal
-                                                           started
-                                                           opts
-                                                           effects
-                                                           filters
-                                                           schedule-pool)]
-         (f animated-terminal)
-         #_(zaat/start! animated-terminal 30))))))
+        (log/info "got state chan" chan)
+        ;; start effects
+        (doseq [effect @effects]
+          (stream effect))
+        ;; start a background loop that renders events
+        (go-loop [cmd (<! cmd-chan)]
+           ;(log/info "rendering s from state chan. keys" cmds)
+           (dosync
+             ;(doseq [cmd cmds]
+               (log/info "invoking" (first cmd) (nnext cmd))
+               (apply (first cmd) (rest cmd)))
+             (recur (<! cmd-chan)))
+         (f wrapped-term)))))
 
-(defn set-mask! [terminal mask-ids xys v] 
-  {:pre [(set? mask-ids)
-         (coll? xys)
-         (contains? #{true false} v)]}
-  (zaat/swap-matching-effect-or-filter!
-    terminal
-    (fn [fx] (and (instance? AMask fx)
-                  (contains? mask-ids (zaat/id fx))))
-    (fn [effect]
-      (zaat/swap-mask! effect
-                       (fn [mask]
-                         (reduce (fn [mask [y xys]]
-                                   (update mask y (fn [line]
-                                                    (apply assoc (vec line) (interleave (map first xys)
-                                                                                        (repeat v))))))
-                                 (vec mask)
-                                        (group-by second xys)))))))
-                                                                             
-
-(defn set-palette! [terminal new-palette]
-  {:pre [(map? new-palette)]}
-  (zaat/swap-matching-effect-or-filter!
-    terminal
-    (fn [fx] (instance? APalette fx))
-    (fn [effect]
-      (zaat/update-palette! effect (fn [palette] new-palette)))))
-
-(defn reset-state! [terminal new-state]
-  ;{:pre [(get new-state :fx)]}
-  (zaat/swap-matching-effect-or-filter!
-    terminal
-    (fn [fx] (instance? ARequiresState fx))
-    (fn [effect]
-      (zaat/reset-state! effect new-state))))
- 
