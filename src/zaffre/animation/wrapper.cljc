@@ -1,7 +1,7 @@
 ;; Functions for animating state to screen
 (ns zaffre.animation.wrapper
   (:require 
-            [clojure.core.async :refer :all :as async :exclude [map into]]
+            [clojure.core.async :refer :all :as async :exclude [into map take]]
             [zaffre.color :as zcolor]
             [zaffre.terminal :as zat]
             [zaffre.util :as zutil]
@@ -216,26 +216,6 @@
   ([s & ss] (filter-events (merge-events-helper (cons s ss)))))
 
 ;;; Effects
-(defrecord RainEffect
-  [terminal layer-id rain-state]
-  ACmdStream
-  (stream [this]
-    (let [dt      33
-          [vw vh] (size terminal)]
-      (go-loop [rain-state rain-state]
-        (<! (timeout dt))
-        (zat/clear! terminal layer-id)
-        (let [chrs (for [[y line] (map-indexed vector rain-state)
-                         [x cell] (map-indexed vector line)
-                         :when cell]
-                     (rain-cell-char x y cell))]
-          (zat/put-chars!
-             terminal
-             layer-id
-             chrs)
-          (zat/refresh! terminal)
-          (recur (step-rain rain-state vw vh)))))))
-
 (defn make-rain-effect
   [layer-id vw vh]
   (let [rain-state (repeat vh (vec (repeat vw nil)))]
@@ -246,40 +226,16 @@
                                   :when cell]
                               (rain-cell-char x y cell))}])
          (iterate #(step-rain % vw vh) rain-state))))
-    #_(fn [terminal]
-      (RainEffect. terminal layer-id rain-state))
-
-(defrecord TransformEffect
-  [terminal layer-id ch from to duration]
-  ACmdStream
-  (stream [this]
-    (let [path (zutil/line-segment-fast-without-endpoints from to)
-          dt   (* 1000 (/ duration (count path)))]
-      (go-loop [[x y] (first path) xys (next path)]
-        (zat/clear! terminal layer-id)
-        (zat/put-chars! terminal layer-id [(assoc ch :x x :y y)])
-        (zat/refresh! terminal)
-        (<! (timeout dt))
-        (if xys
-          (recur (first xys) (next xys)))))))
 
 (defn make-transform-effect
-  [terminal layer-id ch from to duration]
-    (fn [terminal]
-      (TransformEffect. terminal layer-id ch from to duration)))
-
-(defrecord BlinkEffect
-  [terminal layer-id characters initial intervals]
-  ACmdStream
-  (stream [this]
-    (let [dt 1000]
-      (go-loop [state initial]
-        (zat/clear! terminal layer-id)
-        (when state
-          (zat/put-chars! terminal layer-id characters))
-        (zat/refresh! terminal)
-        (<! (timeout dt))
-        (recur (not state))))))
+  [layer-id ch from to duration]
+    (let [path (zutil/line-segment-fast-without-endpoints from to)
+          dt   (* 1000 (/ duration (count path)))]
+      (map (fn [[x y]]
+             [dt {:layer-id layer-id
+                  :characters [(assoc ch :x x :y y)]}])
+           path)
+    #_(TransformEffect. terminal layer-id ch from to duration)))
 
 (defn make-blink-effect
   ([layer-id characters]
@@ -287,13 +243,13 @@
   ([layer-id characters initial]
     (make-blink-effect layer-id characters initial (repeat 1000)))
   ([layer-id characters initial intervals]
-    (map vector intervals (interleave (repeat {:layer-id layer-id :characters []})
-                                      (repeat {:layer-id layer-id :characters characters})))))
-    ;(BlinkEffect. terminal layer-id characters initial intervals))))
+    (drop (if initial 1 0)
+          (map vector intervals (interleave (repeat {:layer-id layer-id :characters []})
+                                            (repeat {:layer-id layer-id :characters characters}))))))
 
 (defn make-blip-effect
   [layer-id characters duration]
-  (make-blink-effect layer-id characters [duration]))
+  (take 2 (make-blink-effect layer-id characters true (repeat duration))))
 
 ;;; Queue cmds in a chan and foreard them to dst-chan on `(refresh)`.
 (defrecord WrappedAnimatedTerminal [terminal cmds dst-chan]
@@ -335,7 +291,9 @@
             effects-term    (WrappedAnimatedTerminal. terminal (atom []) cmd-chan)
             ;effects         (atom [((make-rain-effect :fx 16 16) effects-term)])]
             effects         (atom [(->SeqEffect effects-term
-                                                (make-rain-effect :fx 16 16)
+                                                #_(make-transform-effect :fx {:c \@ :fg [255 255 255] :bg [0 0 0]} [0 8] [16 8] 5)
+                                                #_(make-rain-effect :fx 16 16)
+                                                (make-blip-effect :fx [{:x 8 :y 8 :c \* :fg [128 128 0] :bg [0 0 0]}] 1000)
                                                 #_(make-blink-effect :fx [{:x 8 :y 8 :c \* :fg [128 128 0] :bg [0 0 0]}] true))])]
         #_(log/info "overriding terminal")
         #_(log/info "effects" @effects "filters" @filters)
