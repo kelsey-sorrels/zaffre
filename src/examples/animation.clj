@@ -30,7 +30,7 @@
       ;; Save the last key press in an atom
       (let [last-key (atom nil)]
         ;; Every 33ms, draw a full frame
-        (zat/do-frame terminal 33 [:text]
+        (zat/do-frame terminal 33 []
           (let [key-in (or @last-key \?)]
             ;; Draw strings
             (zat/put-chars! terminal :text (zutil/mk-string 0 0 "Hello world"))
