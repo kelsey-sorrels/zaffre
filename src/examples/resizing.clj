@@ -40,12 +40,12 @@
 (defn -main [& _]
   ;; render in background thread
   (zgl/create-terminal
-    {:app {
+    [{:id :app
        :layers [:text :rainbow]
        :columns 16
        :rows 16
        :pos [0 0]
-       :font medium-font-fn}}
+       :font medium-font-fn}]
     {:title "Zaffre demo"
      :screen-width (size->width :medium)
      :screen-height (size->height :medium)
@@ -60,7 +60,7 @@
             sheight     (atom (* 16 16))]
             ;; Every 10ms, set the "Rainbow" text to have a random fg color
             ;; Every 33ms, draw a full frame
-        (zat/do-frame terminal 33
+        (zat/do-frame terminal 33 [:text :rainbow]
           (let [key-in (or @last-key \?)]
             (zutil/put-string terminal :text 0 0 "Hello world")
             (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
@@ -71,7 +71,7 @@
           (dosync
             (doseq [x (range (count "Rainbow"))
                     :let [rgb (hsv->rgb (double (rand 360)) 1.0 1.0)]]
-                (zat/set-fx-fg! terminal :rainbow (inc x) 1 rgb)))
+                (zat/set-fg! terminal :rainbow (inc x) 1 rgb)))
             (zat/refresh! terminal)
           (Thread/sleep 10)
           (recur))

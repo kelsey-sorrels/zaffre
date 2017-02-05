@@ -30,12 +30,12 @@
          time          (atom 0.0)
          noise         (atom 0.0016)]
      (zgl/create-terminal
-       {:app {
+       [{:id :app
           :layers [:text :rainbow]
           :columns 16
           :rows 16
           :pos [0 0]
-          :font (constantly font)}}
+          :font (constantly font)}]
        {:title "Zaffre demo"
         :screen-width (* 16 16)
         :screen-height (* 16 16)
@@ -61,7 +61,7 @@
              (dosync
                (doseq [x (range (count "Rainbow"))
                        :let [rgb (hsv->rgb (double (rand 360)) 1.0 1.0)]]
-                   (zat/set-fx-fg! terminal :rainbow (inc x) 1 rgb)))
+                   nil #_(zat/set-fx-fg! terminal :rainbow (inc x) 1 rgb)))
                (zat/assoc-shader-param! terminal "time" (swap! time inc))
                (zat/refresh! terminal)
              (Thread/sleep 10)

@@ -9,16 +9,16 @@
   (:import (zaffre.font TTFFont)))
 
 ;(def font (TTFFont. "Ubuntu Mono" 16 true))
-;(def font (zfont/construct (TTFFont. "https://github.com/aaron-santos/robinson/raw/master/fonts/Boxy/Boxy.ttf" 16 true)))
-(def font (TTFFont. "/home/santos/src/robinson/fonts/Boxy/Boxy.ttf" 16 true))
+(def font (zfont/construct (TTFFont. "https://github.com/aaron-santos/robinson/raw/master/fonts/Boxy/Boxy.ttf" 16 true)))
+;(def font (TTFFont. "/home/santos/src/robinson/fonts/Boxy/Boxy.ttf" 16 true))
 (defn -main [& _]
   (zgl/create-terminal
-    {:app {           ;; Setup a layer group `:app`
+    [{:id :app        ;; Setup a layer group `:app`
       :layers [:text] ;; With one layer `:text`
       :columns 16     ;; 16 characters wide
       :rows 16        ;; 16 characters tall
       :pos [0 0]      ;; With no position offset
-      :font (constantly font)}} ;; Give the group a nice font
+      :font (constantly font)}] ;; Give the group a nice font
     {:title "Zaffre demo"     ;; Set the window title
      :screen-width (* 16 16)  ;; Screen dimentions in pixels
      :screen-height (* 16 16)} ;; Since our font is 16x16 and our layer group
