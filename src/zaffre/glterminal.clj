@@ -288,6 +288,14 @@
           framebuffer-height (.get height-buffer)]
       [framebuffer-width framebuffer-height])))
 
+(defn- glfw-window-size [window]
+  (let [width-buffer (BufferUtils/createIntBuffer 1)
+        height-buffer (BufferUtils/createIntBuffer 1)]
+    (GLFW/glfwGetWindowSize (long window) width-buffer height-buffer)
+    (let [window-width (.get width-buffer)
+          window-height (.get height-buffer)]
+      [window-width window-height])))
+
 (defn- glfw-monitor-size
   []
   (let [monitor  (GLFW/glfwGetPrimaryMonitor)
@@ -298,7 +306,7 @@
 (defn- glfw-window-video-mode
   [window]
   (let [monitor        (GLFW/glfwGetWindowMonitor window) 
-        [width height] (glfw-framebuffer-size window)]
+        [width height] (glfw-window-size window)]
   (log/info "glfw-monitor-video-mode" window monitor)
   (cond->
     {:width width
@@ -747,8 +755,8 @@
                 (long u-MVMatrix)
                 false
                 (position-matrix-buffer
-                  [(+ x-pos (- (/ framebuffer-width 2)) (quot (- framebuffer-width (* columns character-width)) 2))
-                   (+ y-pos (- (/ framebuffer-height 2)) (quot (- framebuffer-height (* rows character-height)) 2))
+                  [(+ x-pos (- (/ framebuffer-width 2)) (quot (- screen-width (* columns character-width)) 2))
+                   (+ y-pos (- (/ framebuffer-height 2)) (quot (- screen-height (* rows character-height)) 2))
                    -1.0
                    0.0]
                   [(* columns character-width (/ framebuffer-width screen-width))
@@ -946,6 +954,7 @@
          framebuffer-height ]
                             (init-display title screen-width screen-height icon-paths gl-lock destroyed)
         _                   (log/info "window" window "capabilities" capabilities)
+        _                   (log/info "screen size" screen-width "x" screen-height)
         _                   (log/info "framebuffer size" framebuffer-width "x" framebuffer-height)
         framebuffer-size    (atom [framebuffer-width framebuffer-height])
         monitor-fullscreen-sizes (glfw-fullscreen-sizes)

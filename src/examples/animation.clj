@@ -82,8 +82,8 @@
       :pos [0 0]
       :font (constantly font)}]
     {:title "Zaffre demo"     ;; Set the window title
-     :screen-width (* width 8)  ;; Screen dimentions in pixels
-     :screen-height (* height 8)
+     :screen-width (* width 16)  ;; Screen dimentions in pixels
+     :screen-height (* height 16)
      :effects [
        (zaw/make-lighting-effect :lighting width height [
          {:x 16 :y 8  :z 50  :intensity 400 :color [ 25  25 255]}
