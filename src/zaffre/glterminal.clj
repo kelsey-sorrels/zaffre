@@ -873,6 +873,7 @@
     (shutdown-agents))
   (destroyed? [_]
     @destroyed))
+(defmethod zat/do-frame-clear OpenGlTerminal [terminal] (zat/clear! terminal))
 
 (defn group-locations
   ([_ _ _ _]

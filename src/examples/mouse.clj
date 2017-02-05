@@ -15,12 +15,12 @@
 (defn -main [& _]
   ;; render in background thread
    (zgl/create-terminal
-     {:app {
+     [{:id :app
         :layers [:text]
         :columns 16
         :rows 16
         :pos [0 0]
-        :font (constantly font)}}
+        :font (constantly font)}]
      {:title "Zaffre demo"
       :screen-width (* 16 16)
       :screen-height (* 16 16)
