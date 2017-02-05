@@ -25,18 +25,15 @@
 
 
 (defmacro do-frame
-  ([t d layer-ids & body]
+  ([t d & body]
     `(let [terminal# ~t
-           sleep-time# ~d
-           clear-layer-ids# ~layer-ids]
+           sleep-time# ~d]
        (future
          (-> (Thread/currentThread) (.setName (str "render-thread-" sleep-time#)))
          (try
            (loop []
              (when-not (destroyed? terminal#)
                (dosync
-                 (doseq [layer-id# clear-layer-ids#]
-                   (clear! terminal# layer-id#))
                  ~@body
                  (refresh! terminal#))
                (Thread/sleep sleep-time#)
