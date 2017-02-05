@@ -468,7 +468,9 @@
       (loop-with-index row [line (reverse @character-map)]
         (loop-with-index col [c line]
           (let [chr        (or (get c :fx-character) (get c :character))
-                highlight  (= @cursor-xy [col (- rows row 1)])
+                style      (get c :style)
+                highlight  (or (= @cursor-xy [col (- rows row 1)]) (contains? style :fg-bg))
+                ;highlight  (= @cursor-xy [col (- rows row 1)])
                 [fg-r fg-g fg-b] (if highlight
                                    (get c :bg-color)
                                    (get c :fg-color))
@@ -476,10 +478,9 @@
                                    (get c :fg-color)
                                    (get c :bg-color))
                 ;s         (str (get c :character))
-                style     (get c :style)
                 i         (+ (* 4 (+ (* texture-columns row) col)) (* layer-size layer))
                 [x y]     (get character->col-row chr)
-                transparent (get character->transparent chr)]
+                transparent (and (get character->transparent chr) (not (contains? style :fg-bg)))]
             #_(log/info "Drawing " layer-id "at col row" col row "character from atlas col row" x y c "(index=" i ") transparent" transparent )
             (when (zero? col)
               ;(log/info "glyph texture" glyph-texture-width glyph-texture-height)
@@ -552,6 +553,7 @@
                            layer-character-map-cleared
                            layer-character-map
                            group-map
+                           group-order
                            group->font-texture
                            layer-id->group
                            cursor-xy
@@ -612,9 +614,10 @@
                                    (if (< -1 (get c :x) columns)
                                      (let [fg        (get c :fg)
                                            bg        (get c :bg)
+                                           style     (get c :style #{})
                                            fg-color  fg
                                            bg-color  bg
-                                           character (make-terminal-character (get c :c) fg-color bg-color #{})]
+                                           character (make-terminal-character (get c :c) fg-color bg-color style)]
                                        (assoc! line (int (get c :x)) character))
                                      line))
                                  (transient (get cm (int row)))
@@ -686,7 +689,7 @@
            (log/error "OpenGL error:" e)))
         ;; Render each layer to FBO
         (dosync
-          (doseq [[{:keys [group-id columns rows layers gl-blend-func gl-blend-equation] [x-pos y-pos] :pos}
+          (doseq [[{:keys [id columns rows layers gl-blend-func gl-blend-equation] [x-pos y-pos] :pos}
                    glyph-texture
                    fg-texture
                    bg-texture
@@ -694,14 +697,15 @@
                    fg-image-data
                    bg-image-data] (map
                                     vector
-                                    (map (fn [[group-id group-ref]] (assoc @group-ref :group-id group-id)) group-map)
+                                    (map (fn [group-id] (deref (get group-map group-id))) group-order)
                                     glyph-textures
                                     fg-textures
                                     bg-textures
                                     glyph-image-data
                                     fg-image-data
                                     bg-image-data)
-                  :let [{:keys [character-width
+                  :let [group-id id
+                        {:keys [character-width
                                 character-height
                                 character->col-row
                                 character->transparent
@@ -820,7 +824,7 @@
             false
             (position-matrix-buffer
               [(- (/ framebuffer-width 2)) (- (/ framebuffer-height 2)) -1.0 0.0]
-              [screen-width screen-height 1.0]
+              [framebuffer-width framebuffer-height 1.0]
               mv-matrix-buffer))
           (except-gl-errors (str "u-fb-MVMatrix - glUniformMatrix4  " u-fb-MVMatrix))
           (GL20/glEnableVertexAttribArray 0);pos-vertex-attribute
@@ -892,15 +896,15 @@
                    group-map)))))
 
 (defn create-terminal
-  [group-map {:keys [title
-                     screen-width 
-                     screen-height 
-                     default-fg-color 
-                     default-bg-color 
-                     on-key-fn 
-                     fullscreen
-                     icon-paths
-                     fx-shader]
+  [groups {:keys [title
+                  screen-width 
+                  screen-height 
+                  default-fg-color 
+                  default-bg-color 
+                  on-key-fn 
+                  fullscreen
+                  icon-paths
+                  fx-shader]
     :or {title "Zaffre"
          default-fg-color [255 255 255]
          default-bg-color [0 0 0]
@@ -909,14 +913,15 @@
          icon-paths       nil
          fx-shader        {:name "passthrough.fs"}} :as opts}
    f]
-  (let [term-args           [group-map opts]
+  (let [term-args           [groups opts]
         default-blend      {:gl-blend-equation :gl-func-add
                             :gl-blend-func [:gl-one :gl-one-minus-src-alpha]}
         group-map           (into {}
-                              (map (fn [[k v]]
-                                     (is (every? v #{:layers :columns :rows :pos :font :gl-blend-equation :gl-blend-func}))
-                                     [k (ref (merge default-blend v))])
-                                   group-map))
+                              (map (fn [group]
+                                     (is (every? group #{:id :layers :columns :rows :pos :font :gl-blend-equation :gl-blend-func}))
+                                     [(get group :id) (ref (merge default-blend group))])
+                                   groups))
+        group-order         (map :id groups)
         layer-id->group     (->> group-map
                                (mapcat (fn [[id layer-group]]
                                          (map (fn [layer-id]
@@ -1207,6 +1212,7 @@
                                             layer-character-map-cleared
                                             layer-character-map
                                             group-map
+                                            group-order
                                             group->font-texture
                                             layer-id->group
                                             cursor-xy

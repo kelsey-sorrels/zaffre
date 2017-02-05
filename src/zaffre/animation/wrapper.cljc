@@ -1,7 +1,7 @@
 ;; Functions for animating state to screen
 (ns zaffre.animation.wrapper
   (:require 
-            [clojure.core.async :refer :all :as async :exclude [into map take]]
+            [clojure.core.async :refer :all :as async :exclude [into map reduce take]]
             [zaffre.color :as zcolor]
             [zaffre.terminal :as zat]
             [zaffre.util :as zutil]
@@ -71,27 +71,27 @@
     :drop
       {:c \|
        :x x :y y
-       :fg (zcolor/color->rgb :blue)
+       :fg (zcolor/color->rgb :white)
        :bg (zcolor/color->rgb :black)}
     :splash1
       {:c  \*
        :x x :y y
-       :fg (zcolor/color->rgb :blue)
+       :fg (zcolor/color->rgb :white)
        :bg (zcolor/color->rgb :black)}
     :splash2
       {:c  \o
        :x x :y y
-       :fg (zcolor/color->rgb :blue)
+       :fg (zcolor/color->rgb :white)
        :bg (zcolor/color->rgb :black)}
     :splash3
       {:c  \°
        :x x :y y
-       :fg  (zcolor/color->rgb :blue)
+       :fg  (zcolor/color->rgb :white)
        :bg  (zcolor/color->rgb :black)}
     :splash4
       {:c  \'
        :x x :y y
-       :fg  (zcolor/color->rgb :blue)
+       :fg  (zcolor/color->rgb :white)
        :bg  (zcolor/color->rgb :black)}
     nil))
 
@@ -251,6 +251,34 @@
   [layer-id characters duration]
   (take 2 (make-blink-effect layer-id characters true (repeat duration))))
 
+(defn make-lighting-effect
+  "Take a layer-id width hight and lights and returns an event stream
+   where each light looks like {:x x :y y :z z :color [r g b]}.
+   Additionally each light may include an :intensity float param. If
+   not supplies a default value of 1.0 will be used."
+  [layer-id width height lights]
+  (repeat
+    [0 {:layer-id layer-id
+        :characters
+          (for [x (range width)
+                y (range height)]
+            {:x x
+             :y y
+             :c \█
+             :bg [0 0 0]
+             :fg (mapv int
+                   (reduce
+                     (fn [color1 color2]
+                       (map + color1 color2))
+                     [0 0 0]
+                     (map (fn [{lx :x ly :y lz :z intensity :intensity color :color}]
+                            (let [dx (- x lx)
+                                  dy (- y ly)
+                                  dz lz
+                                  i  (* (or intensity 1) (zutil/light-intensity dx dy dz))]
+                              (map (partial * i) color)))
+                           lights)))})}]))
+                  
 ;;; Queue cmds in a chan and foreard them to last-cmds on `(refresh)`.
 (defrecord BufferedTerminal [terminal cmds last-cmds]
   zat/Terminal
@@ -285,16 +313,15 @@
     (fn [terminal]
       (let [effects-gen-fns   (get opts :effects)
             dt                33
-            cmd-chan          (chan 1000)
-            effects-cmd-chan  (chan 1000)
             wrapped-term-cmds (atom [])
-            wrapped-term      (->BufferedTerminal terminal (atom []) (atom []))
+            wrapped-term      (->BufferedTerminal terminal (atom []) wrapped-term-cmds)
             ;effects           (atom [((make-rain-effect :fx 16 16) effects-term)])]
             ; seq [effect cmds-atom]
             effects           (map (fn [effect]
                                      (let [effect-cmds (atom nil)]
                                        [(->SeqEffect (->BufferedTerminal terminal (atom []) effect-cmds) effect) effect-cmds]))
-                                   [(make-transform-effect :fx {:c \@ :fg [255 255 255] :bg [0 0 0]} [0 8] [16 8] 5)
+                                   (get opts :effects)
+                                   #_[(make-transform-effect :fx {:c \@ :fg [255 255 255] :bg [0 0 0]} [0 8] [16 8] 5)
                                     (make-rain-effect :fx 16 16)
                                     (make-blip-effect :fx [{:x 8 :y 8 :c \* :fg [128 128 0] :bg [0 0 0]}] 1000)
                                     (make-blink-effect :fx [{:x 4 :y 4 :c \* :fg [255 128 0] :bg [0 0 0]}] false)
@@ -309,6 +336,8 @@
           #_(log/info "rendering" (count cmds) "cmds")
           (dosync
             (zat/clear! terminal)
+            (doseq [cmd @wrapped-term-cmds]
+              (apply (first cmd) (rest cmd)))
             (doseq [[_ cmds] effects
                     cmd      @cmds]
               #_(log/info "invoking" (first cmd) (rest (rest cmd)))
