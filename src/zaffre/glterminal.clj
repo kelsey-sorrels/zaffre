@@ -605,7 +605,13 @@
   ;; characters is a list of {:c \character :x col :y row :fg [r g b] :bg [r g b]}
   (put-chars! [_ layer-id characters]
     {:pre [(is (not (nil? (get layer-id->group layer-id))) (format "Invalid layer-id %s" layer-id))
-           (is (not (nil? (get layer-character-map layer-id))) (format "Invalid layer-id %s" layer-id))]}
+           (is (not (nil? (get layer-character-map layer-id))) (format "Invalid layer-id %s" layer-id))
+           (is (coll? characters) "characters must be a collection")
+           (every? true? (map (fn [character]
+                                (is (every? character #{:x :y :c :fg :bg}) (str character "missing required keys"))
+                                (is number? (get character :x))
+                                (is number? (get character :y)))
+                              characters))]}
     #_(log/info "characters" (str characters))
     (let [columns (-> layer-id layer-id->group deref :columns)
           rows    (-> layer-id layer-id->group deref :rows)]
