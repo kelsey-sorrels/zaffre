@@ -162,15 +162,17 @@
   [terminal s]
   ACmdStream
   (stream [this]
-    (go-loop [x (first s) xs (next s)]
-      (let [[_ {:keys [layer-id]}] x]
-        #_(zat/clear! terminal layer-id))
-      (let [[dt {:keys [layer-id characters]}] x]
-        (zat/put-chars! terminal layer-id characters)
-        (zat/refresh! terminal)
-        (<! (timeout dt))
-        (when xs
-          (recur (first xs) (next xs)))))))
+    (when (and (coll? s) (not (empty? s)))
+      (go-loop [x (first s) xs (next s)]
+        #_(let [[_ {:keys [layer-id]}] x]
+          (zat/clear! terminal layer-id))
+        (when x
+          (let [[dt {:keys [layer-id characters]}] x]
+            (zat/put-chars! terminal layer-id characters)
+            (zat/refresh! terminal)
+            (<! (timeout dt))
+            (when xs
+              (recur (first xs) (next xs)))))))))
 
 (defn effect-from-events
   [s]
@@ -234,8 +236,7 @@
       (map (fn [[x y]]
              [dt {:layer-id layer-id
                   :characters [(assoc ch :x x :y y)]}])
-           path)
-    #_(TransformEffect. terminal layer-id ch from to duration)))
+           path)))
 
 (defn make-blink-effect
   ([layer-id characters]
