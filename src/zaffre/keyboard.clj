@@ -1,6 +1,19 @@
 (ns zaffre.keyboard
   (:import (org.lwjgl.glfw GLFW)))
 
+(defn is-keypress? [v]
+  (or (and (char? v)
+           (contains? (set (range (int \!) (int \~))) (int v)))
+      (and (keyword? v)
+           (contains? #{:enter :escape :space :backspace
+                        :f1 :f2 :f3 :f4 :f5
+                        :f6 :f7 :f8 :f9 :f10 :f11 :f12
+                        :up :down :left :right
+                        :numpad0 :numpad1 :numpad2 :numpad3
+                        :numpad4 :numpad5 :numpad6 :numpad7
+                        :numpad8 :numpad9 :numlock :numpadenter :numpadequal
+                        :tab :lcontrol :lshift} v))))
+
 (defn convert-key-code [event-key event-scancode event-action event-mod]
   ;; Cond instead of case. For an unknown reason, case does not match event-key to GLFW/* constants.
   ;; Instead it always drops to the default case
