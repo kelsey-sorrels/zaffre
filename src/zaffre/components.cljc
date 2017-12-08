@@ -32,19 +32,18 @@
 ;;; Component methods
 
 ;; Find the dimensions of a component
-(defmulti dimensions (fn [type props]
-  (if (string? type)
-    :string
-    type)))
-(defmethod dimensions :string [type props]
-  [(count type) 1])
-
+(defmulti dimensions (fn [component]
+  (if (string? component)
+    :raw-string
+    (first component))))
 ;; Given [type prop], render a component
 (defmulti render-comp (fn [type props]
   (cond
     (string? type) :raw-string
-    (keyword? type) type
-    :default (assert false (format "render-comp expected string or keyword found %s" type)))))
+    (keyword? type) type)))
+
+(defmethod render-comp :default [type props]
+  (assert false (format "render-comp expected string or keyword found %s" type)))
 
 (defmulti should-component-update?
   (fn [env _]
@@ -56,18 +55,44 @@
   true)
     ;(contains? render-state [(env-path env) (get env :env/props)]))
 
-;; String
+;; Raw-String
+(defmethod dimensions :raw-string [component]
+  [(count component) 1])
 (defmethod render-comp :raw-string [type props]
+
+;; String
+(defmethod dimensions :string [component]
+  (let [type (first component)]
+    [(count type) 1]))
   [:string {} type])
 (defmethod render-comp :string [type props]
   [type props])
 
+;; View
+(defmethod dimensions :view [component]
+  (let [type (first component)
+        children (drop 2 component)
+        child-dimensions (map dimensions children)]
+    [(reduce + 0 (map first child-dimensions))
+     (reduce max (map second child-dimensions))]))
+
 ;; Label
+(defmethod dimensions :label [component]
+  (let [type (first component)
+        children (drop 2 component)
+        child-dimensions (map dimensions children)]
+    [(reduce + 0 (map first child-dimensions))
+     (reduce max (map second child-dimensions))]))
 (defmethod render-comp :label [type props]
-  (let [{:keys [x y fg bg children]} props]
-    [:view
-      {:x x :y y :fg fg :bg bg}
-      children]))
+  (let [{:keys [children]} props]
+    (with-children
+      :view
+      props
+      (let [offsets (cons 0 (reductions + (map (fn [child] (first (dimensions child))) children)))]
+        (map (fn child-render [x child]
+               [:view {:x x} child])
+             offsets
+             children)))))
         
 ;; Border
 (def single-border
@@ -86,6 +111,11 @@
    :bottom-left  \u255A
    :bottom-right \u255D})
 
+(defmethod dimensions :border [component]
+  (let [children (drop 2 component)
+        child-dimensions (map dimensions children)]
+    [(reduce + 0 (map first child-dimensions))
+     (reduce max (map second child-dimensions))]))
 (defmethod render-comp :border [type props]
   (let [{:keys [width height style children]} props
         {:keys [horizontal
@@ -119,6 +149,11 @@
           [bottom-right])]))
 
 ;; List view
+(defmethod dimensions :list-view [component]
+  (let [children (drop 2 component)
+        child-dimensions (map dimensions children)]
+    [(reduce max 0 (map first child-dimensions))
+     (reduce + (map second child-dimensions))]))
 (defmethod render-comp :list-view [type props]
   (let [{:keys [width height children]} props]
     (cons
@@ -130,6 +165,11 @@
           children)))))
 
 ;; Input
+(defmethod dimensions :input [component]
+  (let [children (drop 2 component)
+        child-dimensions (map dimensions children)]
+    [(reduce + 0 (map first child-dimensions))
+     (reduce max (map second child-dimensions))]))
 (defmethod render-comp :input [type props]
   (let [{:keys [value]} props]
     [:label props value]))
