@@ -105,25 +105,47 @@
 (defn merge-envs [env other]
   {:fg (or (get other :fg) (get env :fg))
    :bg (or (get other :bg) (get env :bg))
-   :x  (+ (get env :x 0) (get other :x 0))
-   :y  (+ (get env :y 0) (get other :y 0))})
+   :left  (+ (get env :left 0) (get other :left 0))
+   :top  (+ (get env :top 0) (get other :top 0))})
 
 (defn render-string-into-container [target env s]
-  (let [{:keys [x y fg bg]} env]
-    (when (< y (count target))
-      (let [target-line (aget target y)
+  (let [{:keys [top left fg bg]} env]
+    (when (< top (count target))
+      (let [target-line (aget target top)
             max-x (count target-line)]
       (log/trace "render-string-into-container" env s)
       (loop [index 0 s s]
-        (let [target-index (+ x index)]
+        (let [target-index (+ left index)]
           (when (and (seq s) (< target-index max-x))
             (aset target-line target-index {:c (first s) :fg fg :bg bg})
             (recur (inc index) (rest s)))))))))
 
+(def default-style
+  {:left 0
+   :top 0
+   :fg [255 255 255 255]
+   :bg [0 0 0 255]
+
+   :width nil
+   :height nil
+   :margin-left 0
+   :margin-top 0
+   :margin-Right 0
+   :margin-bottom 0
+   :padding-left 0
+   :padding-top 0
+   :padding-right 0
+   :padding-bottom 0
+   :border-left 0
+   :border-top 0
+   :border-right 0
+   :border-bottom 0
+   :flex-direction :column
+})
+
 (defn render-layer-into-container
   ([target layer]
-    (let [default-style {:x 0 :y 0 :fg [255 255 255 255] :bg [0 0 0 255]}
-          [_ {:keys [children]}] layer]
+    (let [[_ {:keys [children]}] layer]
       (doseq [child children]
         (render-layer-into-container target default-style child))))
   ([target env component]

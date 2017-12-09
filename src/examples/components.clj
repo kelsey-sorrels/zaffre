@@ -43,7 +43,7 @@
             ;; Draw components
             (zcr/render-into-container terminal render-state
               [:ui {}
-                [:label {:x 5 :y 1}
+                [:label {:left 5 :top 1}
                   "he"
                   [:label {:fg [255 0 0 255]} "llo"]
                   [:label {:fg [255 128 0 255]} "wor"]
