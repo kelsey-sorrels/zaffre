@@ -3,7 +3,7 @@
   :url "https://github.com/aaron-santos/zaffre"
   :license {:name "The MIT License (MIT)"
             :url "https://raw.githubusercontent.com/aaron-santos/zaffre/master/LICENSE"}
-  :dependencies [[org.clojure/clojure "1.7.0"]
+  :dependencies [[org.clojure/clojure "1.9.0"]
                  [org.clojure/core.async "0.2.374"]
                  [aaron-santos/lwjgl "3.0.0rc1"]
                  [commons-io/commons-io "2.5"]

@@ -43,11 +43,12 @@
             ;; Draw components
             (zcr/render-into-container terminal render-state
               [:ui {}
-                [:label {:left 5 :top 1}
-                  "he"
-                  [:label {:fg [255 0 0 255]} "llo"]
-                  [:label {:fg [255 128 0 255]} "wor"]
-                  [:label {:fg [255 255 0 255]} "ld"]]])))
+                [:view {:left 5 :top 1}
+                  [:text {}
+                    [:text {} "he"]
+                    #_[:text {:fg [255 0 0 255]} "llo"]
+                    #_[:text {:fg [255 128 0 255]} "wor"]
+                    #_[:text {:fg [255 255 0 255]} "ld"]]]])))
         ;; Wire up terminal events to channels we read from
         (zevents/add-event-listener terminal :keypress
            (fn [new-key]

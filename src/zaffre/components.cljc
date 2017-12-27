@@ -60,7 +60,7 @@
   [(count component) 1])
 (defmethod render-comp :raw-string [type props]
 
-;; String
+;; Text
 (defmethod dimensions :text [component]
   (let [type (first component)]
     [(count type) 1]))
