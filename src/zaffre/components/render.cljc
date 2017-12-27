@@ -116,8 +116,10 @@
   (lazy-seq
     (if (string? element)
       (let [words (clojure.string/split (clojure.string/trim element) #"\s+")]
-        (map (fn [word] [:text (assoc parent-style :children [word])])
-          words))
+        (interpose 
+          [:text (assoc parent-style :children [" "])]
+          (map (fn [word] [:text (assoc parent-style :children [word])])
+            words)))
       (let [[type {:keys [style children]}] element]
         (if (= type :text)
           (mapcat (partial flatten-text (merge parent-style style)) children)
@@ -126,6 +128,10 @@
 (defn text-length [text-element]
   (println "text-length" text-element)
   (-> text-element second :children first count))
+
+(defn space? [text-element]
+  (= " " (-> text-element second :children first)))
+
 ;; Adapted frmo https://www.rosettacode.org/wiki/Word_wrap#Clojure
 (defn wrap-lines [size style text]
   "Text elements may only contain child text elements"
@@ -134,13 +140,15 @@
                    [[:text {:children [""]}]])]
     (log/info "wrap-lines words" left style (vec words))
     (if-let [word (first words)]
-      (let [wlen (text-length word)
-            spacing (if (== left size) "" " ")
-            alen (+ (count spacing) wlen)]
-        (log/info "wlen" wlen "spacing" spacing "alen" alen)
-        (if (<= alen left)
-          (recur (- left alen) (conj line word) lines (next words))
-          (recur (- size wlen) [word] (conj lines line) (next words))))
+      (if (and (= left size) (space? word))
+        (recur size [] lines (next words))
+        (let [wlen (text-length word)
+              spacing (if (== left size) "" " ")
+              alen (+ (count spacing) wlen)]
+          (log/info "wlen" wlen "spacing" spacing "alen" alen)
+          (if (<= alen left)
+            (recur (- left alen) (conj line word) lines (next words))
+            (recur (- size wlen) [word] (conj lines line) (next words)))))
       (if (seq line)
         (conj lines line)
         words))))
@@ -167,9 +175,9 @@
                           text)]
     (log/info "render-text-into-container lines" lines)
     (doseq [[index line] (map-indexed vector lines)]
-      (let [offsets (cons 0 (reductions + (map (fn [word] (inc (count (last word)))) line)))]
-        (doseq [[offset {:keys [fg bg text]}] (map vector offsets line)]
-          (render-string-into-container target (+ left offset) (+ top index) fg bg text))))))
+      (let [offsets (cons 0 (reductions + (map (fn [word] (text-length word)) line)))]
+        (doseq [[offset [_ {:keys [style children]}]] (map vector offsets line)]
+          (render-string-into-container target (+ left offset) (+ top index) fg bg (first children)))))))
 
 (def default-style
   {:left 0
