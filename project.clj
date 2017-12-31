@@ -14,6 +14,8 @@
                  [org.lwjgl/lwjgl-glfw "3.1.5" :classifier "natives-macos"]
                  [org.lwjgl/lwjgl-stb "3.1.5"]
                  [org.lwjgl/lwjgl-stb "3.1.5" :classifier "natives-macos"]
+                 [org.lwjgl/lwjgl-yoga "3.1.5"]
+                 [org.lwjgl/lwjgl-yoga "3.1.5" :classifier "natives-macos"]
                  [commons-io/commons-io "2.5"]
                  [overtone/at-at "1.2.0"]
                  [aaron-santos/tinter "0.1.1-SNAPSHOT"]
