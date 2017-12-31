@@ -5,9 +5,16 @@
             :url "https://raw.githubusercontent.com/aaron-santos/zaffre/master/LICENSE"}
   :dependencies [[org.clojure/clojure "1.9.0"]
                  [org.clojure/core.async "0.2.374"]
-                 [aaron-santos/lwjgl "3.0.0rc1"]
+                 ;[aaron-santos/lwjgl "3.0.0rc1"]
+                 [org.lwjgl/lwjgl"3.1.5"]
+                 [org.lwjgl/lwjgl"3.1.5" :classifier "natives-macos"]
+                 [org.lwjgl/lwjgl-opengl "3.1.5"]
+                 [org.lwjgl/lwjgl-opengl "3.1.5" :classifier "natives-macos"]
+                 [org.lwjgl/lwjgl-glfw "3.1.5"]
+                 [org.lwjgl/lwjgl-glfw "3.1.5" :classifier "natives-macos"]
+                 [org.lwjgl/lwjgl-stb "3.1.5"]
+                 [org.lwjgl/lwjgl-stb "3.1.5" :classifier "natives-macos"]
                  [commons-io/commons-io "2.5"]
-                 ;[hello_lwjgl/lwjgl "3.0.0b1"]
                  [overtone/at-at "1.2.0"]
                  [aaron-santos/tinter "0.1.1-SNAPSHOT"]
                  [nio "1.0.3"]
@@ -21,5 +28,7 @@
   :jvm-opts ~(if (-> (System/getProperty "os.name")
                     (.toLowerCase)
                     (.contains "mac"))
-              ["-XstartOnFirstThread" "-Dorg.lwjgl.opengl.Display.enableHighDPI=true"]
+              ["-XstartOnFirstThread"
+               "-Dorg.lwjgl.opengl.Display.enableHighDPI=true"
+               "-Djava.library.path=native/"]
               [#_"-Dorg.lwjgl.system.allocator=system"]))
