@@ -11,4 +11,22 @@
             :layout-x 0.0
             :layout-y 0.0
             :layout-width 0.0
+            :layout-height 0.0}]
+
+    ;; nested test
+    [:layer {:layer-id :main
+             :children [
+               [:text {:children ["16"]}]
+               [:view {:left 1
+                       :top 1
+                       :width 16
+                       :children [
+                         [:text {:children [
+                           [:text {:children ["Lorem ipsum dolor sit amet"]}]]}]]}]]}]
+
+    [:text {:children []
+            :layout-x 0.0
+            :layout-y 0.0
+            :layout-width 0.0
             :layout-height 0.0}]))
+
