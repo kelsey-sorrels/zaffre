@@ -13,6 +13,7 @@
     [:text {:children ["hello world"]}]
     [
       [:text {:children ["hello"]}]
+      [:text {:children [" "]}]
       [:text {:children ["world"]}]]))
 
 (deftest wrap-lines-test
@@ -27,14 +28,19 @@
     ;; split words
     (zcr/wrap-lines 20 {} [:text {:children ["hello world"]}])
     [[[:text {:children ["hello"]}]
+      [:text {:children [" "]}]
       [:text {:children ["world"]}]]]
 
     ;; wrap line
     (zcr/wrap-lines 11 {} [:text {:children ["hello world foo bar baz qux"]}])
     [[[:text {:children ["hello"]}]
-      [:text {:children ["world"]}]]
-     [[:text {:children ["foo"]}]
-      [:text {:children ["bar"]}]
-      [:text {:children ["baz"]}]]
+      [:text {:children [" "]}]]
+     [[:text {:children ["world"]}]
+      [:text {:children [" "]}]
+      [:text {:children ["foo"]}]]
+     [[:text {:children ["bar"]}]
+      [:text {:children [" "]}]
+      [:text {:children ["baz"]}]
+      [:text {:children [" "]}]]
      [[:text {:children ["qux"]}]]]
 ))
