@@ -48,7 +48,7 @@
             (zcr/render-into-container terminal render-state
               [:ui {}
                 [:text {} (str @width)]
-                [:view {:left 1 :top 1 :width @width}
+                [:view {:zaffre/style {:left 1 :top 1 :width @width}}
                   [:text {}
                     [:text {} text]
                     #_[:text {:fg [255 0 0 255]} "llo"]

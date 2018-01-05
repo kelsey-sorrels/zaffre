@@ -173,3 +173,139 @@
                                        :width 50.0
                                        :height 15.0}}]]}]]}]))
 
+(deftest border-test
+  (are [in out] (= out (zcl/layout-element in))
+    ;; test_border_center_child 
+    [:root {:zaffre/style { :justify :center
+              :align-items :center
+              :border-start 10
+              :border-end 20
+              :border-bottom 20
+              :width 100
+              :height 100}
+            :zaffre/children [
+              [:child {:zaffre/style {
+                        :width 10
+                        :height 10}}]]}]
+
+    [:root {:zaffre/style {
+              :justify :center
+              :align-items :center
+              :border-start 10
+              :border-end 20
+              :border-bottom 20
+              :width 100
+              :height 100}
+            :zaffre/layout {
+              :x 0.0
+              :y 0.0
+              :width 100.0
+              :height 100.0}
+            :zaffre/children [
+              [:child {:zaffre/style {
+                        :width 10
+                        :height 10}
+                       :zaffre/layout {
+                        :x 40.0
+                        :y 35.0
+                        :width 10.0
+                        :height 10.0}}]]}]))
+
+(deftest border-test
+  (are [in out] (= out (zcl/layout-element in))
+    ;; test_flex_direction_row_reverse
+    [:root {:zaffre/style {
+              :direction :ltr
+              :flex-direction :row-reverse
+              :width 100
+              :height 100}
+            :zaffre/children [
+              [:child0 {:zaffre/style {
+                        :width 10}}]
+              [:child1 {:zaffre/style {
+                        :width 10}}]
+              [:child2 {:zaffre/style {
+                        :width 10}}]]}]
+
+    [:root {:zaffre/style {
+              :direction :ltr
+              :flex-direction :row-reverse
+              :width 100
+              :height 100}
+            :zaffre/layout {
+              :x 0.0
+              :y 0.0
+              :width 100.0
+              :height 100.0}
+            :zaffre/children [
+              [:child0 {:zaffre/style {
+                          :width 10}
+                        :zaffre/layout {
+                          :x 90.0
+                          :y 0.0
+                          :width 10.0
+                          :height 100.0}}]
+              [:child1 {:zaffre/style {
+                         :width 10}
+                        :zaffre/layout {
+                          :x 80.0
+                          :y 0.0
+                          :width 10.0
+                          :height 100.0}}]
+              [:child2 {:zaffre/style {
+                         :width 10}
+                        :zaffre/layout {
+                          :x 70.0
+                          :y 0.0
+                          :width 10.0
+                          :height 100.0}}]]}]))
+
+(deftest margin-test
+  (are [in out] (= out (zcl/layout-element in))
+    ;; test_margin_auto_left_stretching_child
+    [:root {:zaffre/style {
+              :align-items :center
+              :direction :ltr
+              :width 200
+              :height 200}
+            :zaffre/children [
+              [:child0 {:zaffre/style {
+                        :flex-grow 1
+                        :flex-shrink 1
+                        :flex-basis "0%"
+                        :margin-left :auto}}]
+              [:child1 {:zaffre/style {
+                        :width 50
+                        :height 50}}]]}]
+
+    [:root {:zaffre/style {
+              :align-items :center
+              :direction :ltr
+              :width 200
+              :height 200}
+            :zaffre/layout {
+              :x 0.0
+              :y 0.0
+              :width 200.0
+              :height 200.0}
+            :zaffre/children [
+              [:child0 {:zaffre/style {
+                          :flex-grow 1
+                          :flex-shrink 1
+                          :flex-basis "0%"
+                          :margin-left :auto}
+                        :zaffre/layout {
+                          :x 200.0
+                          :y 0.0
+                          :width 0.0
+                          :height 150.0}}]
+              [:child1 {:zaffre/style {
+                          :width 50
+                          :height 50}
+                        :zaffre/layout {
+                          :x 75.0
+                          :y 150.0
+                          :width 50.0
+                          :height 50.0}}]]}]))
+
+
