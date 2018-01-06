@@ -110,10 +110,10 @@
           (assert false (format "found non-text element %s" type)))))))
 
 (defn text-length [text-element]
-  (-> text-element second :children first count))
+  (-> text-element second :zaffre/children first count))
 
 (defn space? [text-element]
-  (= " " (-> text-element second :children first)))
+  (= " " (-> text-element second :zaffre/children first)))
 
 ;; Adapted from https://www.rosettacode.org/wiki/Word_wrap#Clojure
 (defn wrap-lines [size style text]
