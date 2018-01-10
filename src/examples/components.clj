@@ -15,7 +15,7 @@
   [:terminal {}
     [:group {:group-id :ui}
       (zc/with-children :layer {:layer-id :main}
-        (get props :children))]])
+        (get props :zaffre/children))]])
 
 (def font ztiles/pastiche-16x16)
 

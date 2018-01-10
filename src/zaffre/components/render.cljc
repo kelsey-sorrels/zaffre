@@ -57,7 +57,6 @@
   (caching-render component render-state
     (if (string? component)
       component
-      #_[:text {:children [component]}]
       (let [[type props & children] component
             wrapped-env (wrap-env env component type)]
         [type
@@ -87,7 +86,7 @@
 
 (defn render
   [env render-state component]
-  (log/trace "render" (env-path->str env) component)
+  (log/info "render" (env-path->str env) component)
   (let [env (wrap-env env component (first component))]
     (caching-render component render-state
       ;; render the component
@@ -120,7 +119,7 @@
   "Text elements may only contain child text elements"
   (loop [left size line [] lines []
          words (or (flatten-text style text)
-                   [[:text {:children [""]}]])]
+                   [[:text {:zaffre/children [""]}]])]
     (log/trace "wrap-lines words" left style (vec words))
     (if-let [word (first words)]
       (let [wlen (text-length word)
@@ -220,19 +219,22 @@
   [target render-state component]
   (let [group-info (zt/groups target)
         layer-info (layer-info group-info)
-        [type {:keys [children]} :as terminal-element] (render {:style default-style}
-                                                               render-state
-                                                               component)
+        [type {:keys [zaffre/children]} :as terminal-element]
+          (render
+            {:style default-style}
+            render-state
+            component)
         groups children]
     (log/trace "render-into-container" terminal-element)
     (assert (= type :terminal)
             (format "Root component not :terminal found %s instead" type))
     ;; for each group in terminal
-    (doseq [[type {:keys [group-id pos children]}] groups
+    (doseq [[type {:keys [group-id pos zaffre/children]}] groups
             :let [layers children
                   {:keys [columns rows]} (get group-info group-id)]]
       (assert (= type :group)
               (format "Expected :group found %s instead" type))
+      (log/info "rendering group" group-id)
       ;; update group pos
       (when pos
         (zt/alter-group-pos! target group-id pos))
@@ -247,6 +249,7 @@
               style (merge style {:width columns :height rows})]
           (doseq [i (range rows)]
             (aset layer-container i (object-array columns)))
+          (log/info "render-into-container - layer" layer-id)
           ;; render layer into layer-container
           (render-layer-into-container layer-container  (assoc-in layer [1 :zaffre/style] style))
           ;; replace chars in layer

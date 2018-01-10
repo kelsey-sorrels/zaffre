@@ -17,7 +17,7 @@
     :env/key key
     :env/child child
     :env/props (assoc (second child)
-                      :children (drop 2 child))
+                      :zaffre/children (drop 2 child))
     :env/parent parent
   })
 
@@ -34,10 +34,10 @@
 (defn walk-elements-indexed [parent-fn child-fn element]
   "Walks an element tree applying parent-fn to the root, and then calling (child-fn root index child) to each child
    replacing them."
-  (let [[type {:keys [children] :as props} :as new-element] (parent-fn element)]
+  (let [[type {:keys [zaffre/children] :as props} :as new-element] (parent-fn element)]
     (assoc element
       0 type
-      1 (assoc props :children
+      1 (assoc props :zaffre/children
           (map-indexed (fn [index child]
             (if (seq? child)
               (walk-elements-indexed parent-fn child-fn (child-fn new-element index child))
@@ -109,7 +109,7 @@
     [(reduce + 0 (map first child-dimensions))
      (reduce max (map second child-dimensions))]))
 (defmethod render-comp :label [type props]
-  (let [{:keys [children]} props]
+  (let [{:keys [zaffre/children]} props]
     (with-children
       :view
       props
@@ -142,7 +142,7 @@
     [(reduce + 0 (map first child-dimensions))
      (reduce max (map second child-dimensions))]))
 (defmethod render-comp :border [type props]
-  (let [{:keys [width height style children]} props
+  (let [{:keys [width height style zaffre/children]} props
         {:keys [horizontal
                 vertical
                 top-left
@@ -180,7 +180,7 @@
     [(reduce max 0 (map first child-dimensions))
      (reduce + (map second child-dimensions))]))
 (defmethod render-comp :list-view [type props]
-  (let [{:keys [width height children]} props]
+  (let [{:keys [width height zaffre/children]} props]
     (cons
       :view
       (cons {:left 0 :top 0 :width width :height height}
