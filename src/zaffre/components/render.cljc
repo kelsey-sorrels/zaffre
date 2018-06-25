@@ -138,7 +138,13 @@
   {:pre [(zc/element? element)]
    :post [(zc/component-instance? %)]}
   (log/debug "constructing component instance" (str element))
-  (let [{:keys [type props state]} element
+  (let [{:keys [type props]} element
+        state (or (zc/get-state zc/*updater* element)
+                  (when (zc/component? type)
+                    (let [s (get type :initial-state)]
+                      (zc/enqueue-set-state! zc/*updater* element s nil)
+                      (zc/update-state! zc/*updater*)
+                      s)))
         _ (log/debug "construct-component element type" (str type))
         instance (if (fn? type)
                    (zc/create-instance (assoc (zc/fn->component type) :props props))
@@ -153,11 +159,8 @@
    (= (get (zc/element-without-children element) :props)
       (get (zc/element-without-children existing) :props)))
 
-(defn state-match? [existing element]
-   (= (when-let [s (get element :state)]
-        @s)
-      (when-let [s (get existing :state)]
-        @s)))
+(defn state-changed? [element]
+   (not (zc/element-state-changed? zc/*updater* element)))
 
 ;; render a single element if needed
 (defn render [existing parent element]
@@ -168,29 +171,29 @@
    (log/debug "props-without-children-match? true")
    (log/debug "props-without-children-mismatch" (get (zc/element-without-children existing) :props)
                                                (get (zc/element-without-children element) :props)))
-  (if (state-match? existing element)
-    (log/debug "state-match? true")
-    (log/debug "state-mismatch" (get existing :state) (get element :state)))
+  (if (state-changed? element)
+    (log/debug "state-changed" (get existing :state) (get element :state))
+    (log/debug "state-changed? false"))
   ;; if element = existing, no-op return element
   (cond
     ;; identical to existing element. do nothing
     (and (type-match? existing element)
          (props-without-children-match? existing element)
-         (state-match? existing element))
+         (not (state-changed? element)))
       (do (log/debug "identical returning existing")
       existing)
     ;; same type, new props?
     (and (type-match? existing element)
          (or
            (not (props-without-children-match? existing element))
-           (not (state-match? existing element))))
+           (state-changed? element)))
       ;; updating
       (let [_ (log/debug "same type, different-props")
             instance (construct-instance element)
             prev-props (get existing :props)
             next-props (get element :props)
-            prev-state (get existing :state)
-            next-state (get element :state)
+            prev-state (zc/get-prev-state zc/*updater* element)
+            next-state (zc/get-state zc/*updater* element)
             ;; only call when props have changed
             _ (when-not (props-without-children-match? existing element)
                 (zc/component-will-receive-props instance next-props))]
@@ -206,7 +209,7 @@
           instance (construct-instance element)
           _ (log/debug "constructed component")
         _ (zc/component-will-mount instance)
-        _ (log/debug "rendering component" instance)
+        _ (log/debug "rendering component" (str instance))
         next-element (zc/render instance)
         _ (zc/component-did-mount instance)]
       next-element)))
@@ -225,50 +228,54 @@
     (dissoc v :type)
     v))
 
-(defn render-recursively [existing parent element]
-  (log/debug "render-recursively existing" (display-name (get existing :type)) (without-type existing))
-  (log/debug "render-recursively element" (display-name (get element :type)) (without-type element))
-  (cond
-    (nil? element)
-      element
-    (string? element)
-      (do (log/debug "rendering string")
-      element)
-    ;; built-in?
-    (keyword? (get element :type))
-      (let [_ (log/debug "rendering element")
-            _ (log/debug "rendered element" (get element :type))
-            rendered-children (zc/map-children (fn [child existing-child]
-                                                 (log/debug "mapped child" child)
-                                                 (log/debug "mapped existing-child" existing-child)
-                                                 (render-recursively existing-child element child))
-                                               element
-                                               existing)]
-        (if (and existing
-              ;; identical to existing element. do nothing
-              (type-match? existing element)
-              (props-without-children-match? existing element)
-              (state-match? existing element))
-          (zc/clone (zc/assoc-children existing rendered-children))
-          (zc/clone (zc/assoc-children element rendered-children))))
-    :default
-      (let [_ (log/debug "rendering element")
-            ;; Render one level
-            rendered-element (render existing parent element)]
-        (log/debug "rendered element" (get rendered-element :type))
-        (zc/clone
-          (if existing
+(defn render-recursively 
+  ([element]
+    (render-recursively nil element))
+  ([existing element]
+    (render-recursively existing nil element))
+  ([existing parent element]
+    (log/debug "render-recursively existing" (display-name (get existing :type)) (without-type existing))
+    (log/debug "render-recursively element" (display-name (get element :type)) (without-type element))
+    (cond
+      (nil? element)
+        element
+      (string? element)
+        (do (log/debug "rendering string")
+        element)
+      ;; built-in?
+      (keyword? (get element :type))
+        (let [_ (log/debug "rendering element")
+              _ (log/debug "rendered element" (get element :type))
+              rendered-children (zc/map-children (fn [child existing-child]
+                                                   (log/debug "mapped child" child)
+                                                   (log/debug "mapped existing-child" existing-child)
+                                                   (render-recursively existing-child element child))
+                                                 element
+                                                 existing)]
+          (if (and existing
+                ;; identical to existing element. do nothing
+                (type-match? existing element)
+                (props-without-children-match? existing element)
+                (not (state-changed? element)))
+            (zc/assoc-children existing rendered-children)
+            (zc/assoc-children element rendered-children)))
+      :default
+        (let [_ (log/debug "rendering element")
+              ;; Render one level
+              rendered-element (render existing parent element)]
+          (log/debug "rendered element" (str (get rendered-element :type)))
+          (if false #_existing
             (zc/assoc-children rendered-element (zc/map-children (fn [child existing-child]
-                                                                   (log/debug "mapped child" child)
-                                                                   (log/debug "mapped existing-child" existing-child)
+                                                                   (log/debug "mapped child" (str child))
+                                                                   (log/debug "mapped existing-child" (str existing-child))
                                                                    (render-recursively existing-child element child))
                                                                  rendered-element
                                                                  existing))
             ; take the rendered element and assign it as the child to `element`.
             ; render recursively, the rendered-element 
-            (zc/assoc-children rendered-element [(render-recursively existing
-                                                                     element
-                                                                     rendered-element)]))))))
+            (zc/assoc-children element [(render-recursively existing
+                                                            element
+                                                            rendered-element)]))))))
 
 (defn extract-native-elements [element]
   (cond
