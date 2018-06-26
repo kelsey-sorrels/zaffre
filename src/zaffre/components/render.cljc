@@ -172,7 +172,7 @@
    (log/debug "props-without-children-mismatch" (get (zc/element-without-children existing) :props)
                                                (get (zc/element-without-children element) :props)))
   (if (state-changed? element)
-    (log/debug "state-changed" (get existing :state) (get element :state))
+    (log/debug "state-changed" (zc/get-state zc/*updater* existing) (zc/get-state zc/*updater* element))
     (log/debug "state-changed? false"))
   ;; if element = existing, no-op return element
   (cond
@@ -181,7 +181,7 @@
          (props-without-children-match? existing element)
          (not (state-changed? element)))
       (do (log/debug "identical returning existing")
-      existing)
+      (get-in existing [:props :children 0]))
     ;; same type, new props?
     (and (type-match? existing element)
          (or
@@ -234,8 +234,8 @@
   ([existing element]
     (render-recursively existing nil element))
   ([existing parent element]
-    (log/debug "render-recursively existing" (display-name (get existing :type)) (without-type existing))
-    (log/debug "render-recursively element" (display-name (get element :type)) (without-type element))
+    (log/debug "render-recursively existing" (display-name (get existing :type)) #_(without-type existing))
+    (log/debug "render-recursively element" (display-name (get element :type)) #_(without-type element))
     (cond
       (nil? element)
         element
