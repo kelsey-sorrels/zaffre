@@ -141,10 +141,11 @@
   (let [{:keys [type props]} element
         state (or (zc/get-state zc/*updater* element)
                   (when (zc/component? type)
-                    (let [s (get type :initial-state)]
-                      (zc/enqueue-set-state! zc/*updater* element s nil)
-                      (zc/update-state! zc/*updater*)
-                      s)))
+                    (let [s ((get type :get-initial-state))]
+                      (-> zc/*updater*
+                        (zc/enqueue-set-state! element s nil)
+                        zc/update-state!
+                        (zc/get-state element)))))
         _ (log/debug "construct-component element type" (str type))
         instance (if (fn? type)
                    (zc/create-instance (assoc (zc/fn->component type) :props props))
@@ -208,10 +209,18 @@
     (let [_ (log/debug "initial-render")
           instance (construct-instance element)
           _ (log/debug "constructed component")
-        _ (zc/component-will-mount instance)
-        _ (log/debug "rendering component" (str instance))
-        next-element (zc/render instance)
-        _ (zc/component-did-mount instance)]
+          ;; derive state from props
+          derived-state (let [next-props (get element :props)
+                              prev-state (zc/get-state zc/*updater* element)]
+                          (zc/get-derived-state-from-props instance next-props prev-state))
+          _ (-> zc/*updater*
+              (zc/enqueue-set-state! element derived-state nil)
+              zc/update-state!
+              (zc/get-state element))
+          _ (zc/component-will-mount instance)
+          _ (log/debug "rendering component" (str instance))
+          next-element (zc/render instance)
+          _ (zc/component-did-mount instance)]
       next-element)))
 
 (defn- display-name [element-type]
