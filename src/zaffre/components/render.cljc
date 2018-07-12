@@ -53,7 +53,7 @@
               (+ x dx) (+ y dy)
               (or fg (get default-style :fg))
               (or bg (get default-style :bg))
-              s)))))))
+              (clojure.string/trim s))))))))
 
 
 (defn element-seq [element]
@@ -90,18 +90,18 @@
 (defmethod render-component-into-container :view
   [target [type {:keys [style zaffre/layout]}]]
     (let [{:keys [x y width height]} layout
-          {:keys [fg bg border]} style]
+          {:keys [fg bg border-style]} style]
       ;; render background when set
       (when bg
         (doseq [dy (range height)
                 :let [fg (or fg (get default-style :fg))]]
           (render-string-into-container target x (+ y dy) fg bg (repeat width " "))))
       ; render border when set
-      (when border
-        (let [{:keys [fg bg border]} (merge default-style style)
-              border (case border
-                        1 single-border
-                        2 double-border)]
+      (when border-style
+        (let [{:keys [fg bg border-style]} (merge default-style style)
+              border (case border-style
+                        :single single-border
+                        :double double-border)]
           ; render top
           (render-string-into-container target x y fg bg
             (str (get border :top-left) (apply str (repeat (- width 2) (get border :horizontal))) (get border :top-right)))

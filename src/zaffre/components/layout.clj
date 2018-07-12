@@ -158,7 +158,7 @@
           (keys style)))
 
 (defn border-keys [style]
-  (style-keys "border" style))
+  (remove #{:border-style} (style-keys "border" style)))
          
 (defn margin-keys [style]
   (style-keys "margin" style))
@@ -287,21 +287,23 @@
     (when parent
       (Yoga/YGNodeInsertChild parent node index))
  
-    (when (and (= type :text) (every? string? children))
-      (Yoga/YGNodeSetMeasureFunc node (text-measure-func (first children))))
+    (when (= type :text)
+      (Yoga/YGNodeSetMeasureFunc node (text-measure-func (last children))))
 
     (log/trace "node" node)
-    [type
-     props
-     (if children
-         ;; force eager evaluation so that entire tree is created
-         (vec (map-indexed (fn [index child]
-           (if (sequential? child)
-             (build-yoga-tree node index child)
-             child))
-           children))
-       [])
-     node]))
+    (if (= type :text)
+      [type props children node]
+      [type
+       props
+       (if children
+           ;; force eager evaluation so that entire tree is created
+           (vec (map-indexed (fn [index child]
+             (if (sequential? child)
+               (build-yoga-tree node index child)
+               child))
+             children))
+         [])
+       node])))
 
 (defn transfer-layout
   "Traverses the yoga tree updating the element portion with

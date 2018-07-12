@@ -29,14 +29,14 @@
               [:text {} [(str fps)]]]]
             [:view {} [
               [:text {} [(if a "A" "Not A")]]]]
-            [:view {:style {:border 1}} [
+            [:view {:style {:border 1 :border-style :single}} [
               [:text {} [
                 [:text {:style {:fg [255 0 0]}} ["he"]]
                 [:text {:style {:fg [255 255 0]}} ["ll"]]
                 [:text {:style {:fg [0 255 0]}} ["o w"]]
                 [:text {:style {:fg [0 255 255]}} ["or"]]
                 [:text {:style {:fg [0 0 255]}} ["ld"]]]]]]
-            [:view {:style {:border 2}} [
+            [:view {:style {:border 1 :border-style :double}} [
               [:text {} [text]]]]]]]]]])))
 
 (defn -main [& _]
