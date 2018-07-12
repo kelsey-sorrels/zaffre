@@ -441,20 +441,29 @@
 (defn assoc-key [element key]
   (assoc element :key key))
 
+(defn- csx* [v]
+  (if-not (vector? v)
+    v
+    (do
+      (log/info "expanding" v)
+      (let [[type props children] (case (count v)
+                                    1 [(first v) {} []]
+                                    2 [(first v) (second v) []]
+                                    3 [(first v) (second v) (last v)]
+                                    [(first v) (second v) (drop 2 v)])
+             csx-children (map csx* children)
+             _ (println "props" props)
+             #_#_display-name (display-name type)
+             ; TODO: is there a better way to calculate display-name?
+             config (merge {#_#_:display-name display-name
+                            #_#_:state (get type :initial-state)}
+                            props)]
+           (list `create-element type config (cons list csx-children))))))
+  
 (defmacro csx [v]
-  (let [_ (log/info "expanding" v)
-        [type# props# children#] (case (count v)
-                                   1 [(first v) {} []]
-                                   2 [(first v) (second v) []]
-                                   3 [(first v) (second v) (last v)]
-                                   [(first v) (second v) (drop 2 v)])]
-    `(let [type-value# ~type#
-           #_#_display-name# (display-name type-value#)
-           ; TODO: is there a better way to calculate display-name?
-           config# (merge {#_#_:display-name display-name#
-                           #_#_:state (get ~type# :initial-state)}
-                          ~props#)]
-       (create-element type-value# config# ~children#))))
+  (let [r (csx* v)]
+    (log/info "csx" r)
+    r))
 
 (defmacro def-component [sym & fn-tail]
   "(def-component red-text [this] (zc/csx [:text (props this) [\"label\"]]))"

@@ -8,29 +8,36 @@
             [zaffre.tilesets :as ztiles]
             [zaffre.util :as zutil]
             [clojure.core.async :refer :all]
+            [taoensso.timbre :as log]
             [overtone.at-at :as atat])
-  (:import (zaffre.font CompositeFont)))
-
-(defmethod zc/render-comp :ui [_ props]
-  [:terminal {}
-    [:group {:group-id :ui}
-      (zc/with-children :layer {:layer-id :main}
-        (get props :zaffre/children))]])
-
-(def font ztiles/pastiche-16x16)
+  (:import (zaffre.font CompositeFont))) (def font ztiles/pastiche-16x16) 
 
 (def width 30)
 (def height 40)
 
 (def text "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.; Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.")
 
+
 (zc/def-component UI
   [this]
-  (zc/csx [:terminal {} [
-    (zc/csx [:group {:id :ui} [
-      (zc/csx [:layer {:id :main} [
-        (zc/csx [:view {} [
-          (zc/csx [:text {} [text]])]])]])]])]]))
+  (let [{:keys [fps a]} (zc/props this)]
+    (zc/csx
+      [:terminal {} [
+        [:group {:id :ui} [
+          [:layer {:id :main} [
+            [:view {} [
+              [:text {} [(str fps)]]]]
+            [:view {} [
+              [:text {} [(if a "A" "Not A")]]]]
+            [:view {:style {:border 1}} [
+              [:text {} [
+                [:text {:style {:fg [255 0 0]}} ["he"]]
+                [:text {:style {:fg [255 255 0]}} ["ll"]]
+                [:text {:style {:fg [0 255 0]}} ["o w"]]
+                [:text {:style {:fg [0 255 255]}} ["or"]]
+                [:text {:style {:fg [0 0 255]}} ["ld"]]]]]]
+            [:view {:style {:border 2}} [
+              [:text {} [text]]]]]]]]]])))
 
 (defn -main [& _]
   (zgl/create-terminal
@@ -49,21 +56,21 @@
         ;; Save the last key press in an atom
         (let [last-key (atom nil)
               width (atom 16)
+              pool (atat/mk-pool)
+              frames (atom 0)
+              fps (atom 0)
               render-state (atom {})]
+          (atat/every 1000 #(do
+                         (reset! fps @frames)
+                         (reset! frames 0))
+                      pool)
           ;; Every 33ms, draw a full frame
           (zat/do-frame terminal 33 
             (let [key-in (or @last-key \?)]
+              (swap! frames inc)
               ;; Draw components
               (zcr/render-into-container terminal
-                (zc/csx [UI])
-                #_[:ui {}
-                  [:text {} (str @width)]
-                  [:view {:zaffre/style {:left 1 :top 1 :width @width}}
-                    [:text {}
-                      [:text {} text]
-                      #_[:text {:fg [255 0 0 255]} "llo"]
-                      #_[:text {:fg [255 128 0 255]} "wor"]
-                      #_[:text {:fg [255 255 0 255]} "ld"]]]])))
+                (zc/csx [UI {:fps @fps :a (= @last-key \a)}]))))
           ;; Wire up terminal events to channels we read from
           (zevents/add-event-listener terminal :keypress
              (fn [new-key]
@@ -73,6 +80,9 @@
               (case new-key
                 \b (swap! width inc)
                 \s (swap! width dec)
+                \t (log/set-level! :trace)
+                \d (log/set-level! :debug)
+                \i (log/set-level! :info)
                 \q (zat/destroy! terminal)
                 nil))))))))
 
