@@ -54,7 +54,7 @@
 ;; Given a :text tree, return [concatenated-text style-seq]
 (defn text-spans [text-element]
   (let [spans (->> text-element
-				(cascade-style {})
+                (cascade-style {})
 				text-tree-seq
 				filter-leaves)
        strings (map last spans)]
