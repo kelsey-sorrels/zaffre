@@ -45,14 +45,14 @@
          (map (partial cascade-style new-style) children)]))))
       
 
-(defn render-string-into-container [target x y fg bg s]
+(defn render-string-into-container [^"[[Ljava.lang.Object;" target x y fg bg s]
   {:pre [(number? x)
          (number? y)
          (vector? fg)
          (vector? bg)
          (string? s)]}
   (when (< y (count target))
-    (let [target-line (aget target y)
+    (let [^"[Ljava.lang.Object;" target-line (aget target y)
           max-x (count target-line)]
     (loop [index 0 s s]
       (let [target-index (+ x index)]
@@ -71,7 +71,7 @@
         lines (ztext/word-wrap-text-tree width height text-element)]
     (log/trace "render-text-into-container lines" (vec lines))
     (doseq [[dy line] (map-indexed vector lines)]
-      (when (< dy height)
+      (when (and (< dy height) (not (empty? line)))
         (log/trace "rendering line" (vec line))
         ;; remove inc? for spaces
         (let [but-last (butlast line)
@@ -177,9 +177,9 @@
       (log/debug "render-layer-into-container element" element)
       (render-component-into-container target element))))
                     
-(defn log-layer [layer-container]
+(defn log-layer [^"[[Ljava.lang.Object;" layer-container]
   (doseq [y (range (alength layer-container))
-          :let [line (aget layer-container y)]]
+          :let [^"[Ljava.lang.Object;" line (aget layer-container y)]]
     (doseq [x (range (alength line))
             :let [{:keys [c]} (aget line x)]]
       (if-not (nil? c)
@@ -365,47 +365,49 @@
 
 ;; Renders component into container. Does not call refresh! on container
 (defn render-into-container
-  [target component]
-  (let [group-info (zt/groups target)
-        layer-info (layer-info group-info)
-        ;; render to native elements
-        root-element (render-recursively component)
-        [type props groups :as root-dom] (-> root-element
-                                            extract-native-elements
-                                            first
-                                            cascade-style)]
-    (log/trace "render-into-container" root-dom)
-    (assert (= type :terminal)
-            (format "Root component not :terminal found %s instead" type))
-    ;; for each group in terminal
-    (doseq [[type {:keys [id pos]} layers] groups
-            :let [{:keys [columns rows]} (get group-info id)]]
-      (assert (= type :group)
-              (format "Expected :group found %s instead" type))
-      (log/trace "rendering group" id)
-      ;; update group pos
-      (when pos
-        (zt/alter-group-pos! target id pos))
-      ;; for each layer in group
-      (doseq [[type {:keys [id style]} :as layer] layers]
-        (assert (= type :layer)
-                (format "Expected :layer found %s instead" type))
-        ;; create a container to hold cells
-        (let [layer-container (object-array rows)
-              ;; merge layer width height into layer's style
-              {:keys [columns rows]} (get layer-info id)
-              style (merge style {:width columns :height rows})]
-          (doseq [i (range rows)]
-            (aset layer-container i (object-array columns)))
-          (log/trace "render-into-container - layer" id)
-          ;; render layer into layer-container
-          (render-layer-into-container
-             layer-container
-             (-> layer
-               (assoc-in [1 :style :width] columns)
-               (assoc-in [1 :style :height] rows)))
-          #_(log-layer layer-container)
-          ;; replace chars in layer
-          (zt/replace-chars! target id layer-container))))
-    root-element))
+  ([target component]
+    (render-into-container target nil component))
+  ([target existing component]
+    (let [group-info (zt/groups target)
+          layer-info (layer-info group-info)
+          ;; render to native elements
+          root-element (render-recursively existing component)
+          [type props groups :as root-dom] (-> root-element
+                                              extract-native-elements
+                                              first
+                                              cascade-style)]
+      (log/trace "render-into-container" root-dom)
+      (assert (= type :terminal)
+              (format "Root component not :terminal found %s instead" type))
+      ;; for each group in terminal
+      (doseq [[type {:keys [id pos]} layers] groups
+              :let [{:keys [columns rows]} (get group-info id)]]
+        (assert (= type :group)
+                (format "Expected :group found %s instead" type))
+        (log/trace "rendering group" id)
+        ;; update group pos
+        (when pos
+          (zt/alter-group-pos! target id pos))
+        ;; for each layer in group
+        (doseq [[type {:keys [id style]} :as layer] layers]
+          (assert (= type :layer)
+                  (format "Expected :layer found %s instead" type))
+          ;; create a container to hold cells
+          (let [layer-container (object-array rows)
+                ;; merge layer width height into layer's style
+                {:keys [columns rows]} (get layer-info id)
+                style (merge style {:width columns :height rows})]
+            (doseq [i (range rows)]
+              (aset layer-container i (object-array columns)))
+            (log/trace "render-into-container - layer" id)
+            ;; render layer into layer-container
+            (render-layer-into-container
+               layer-container
+               (-> layer
+                 (assoc-in [1 :style :width] columns)
+                 (assoc-in [1 :style :height] rows)))
+            #_(log-layer layer-container)
+            ;; replace chars in layer
+            (zt/replace-chars! target id layer-container))))
+      root-element)))
 

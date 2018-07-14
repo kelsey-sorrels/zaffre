@@ -4,6 +4,7 @@
             [taoensso.timbre :as log]
             [clojure.test :refer [is]])
   (:import (java.lang AutoCloseable)
+           (java.io ByteArrayInputStream ByteArrayOutputStream)
            (java.nio ByteBuffer)
            (org.apache.commons.io IOUtils)
            (org.lwjgl BufferUtils)
@@ -50,14 +51,32 @@
     #_(log/info "Creating buffer" width height channels)
     (->Image width height channels (BufferUtils/createByteBuffer (* width height channels)))))
 
+(defn slurp-bytes [x]
+  (with-open [out (ByteArrayOutputStream.)]
+    (jio/copy (jio/input-stream x) out)
+    (.toByteArray out)))
+
+(defn spit-bytes [x bytes]
+  (with-open [in (ByteArrayInputStream. bytes)]
+    (jio/copy in (jio/output-stream x))))
+
+(defn cache-load [location]
+  (let [k (format "%x" (.hashCode location))]
+    (if (.exists (jio/as-file k))
+      (slurp-bytes location)
+      (let [bytes (->
+                    location
+                    (client/get {:as :byte-array})
+                    :body)]
+        (spit-bytes k bytes)
+        bytes))))
+      
 (defn load-image [location]
   (let [w           (BufferUtils/createIntBuffer 1)
         h           (BufferUtils/createIntBuffer 1)
         c           (BufferUtils/createIntBuffer 1)
         buffer      (->
-                      location
-                      (client/get {:as :byte-array})
-                      :body
+                      (cache-load location)
                       ByteBuffer/wrap)
         direct-buffer (BufferUtils/createByteBuffer (.limit buffer))]
     (doto direct-buffer

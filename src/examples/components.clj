@@ -1,6 +1,7 @@
 (ns examples.components
   (:require [zaffre.terminal :as zat]
             [zaffre.components :as zc]
+            [zaffre.components.ui :as zcui]
             [zaffre.components.render :as zcr]
             [zaffre.glterminal :as zgl]
             [zaffre.events :as zevents]
@@ -10,7 +11,9 @@
             [clojure.core.async :refer :all]
             [taoensso.timbre :as log]
             [overtone.at-at :as atat])
-  (:import (zaffre.font CompositeFont))) (def font ztiles/pastiche-16x16) 
+  (:import (zaffre.font CompositeFont)))
+
+(def font ztiles/pastiche-16x16) 
 
 (def width 30)
 (def height 40)
@@ -20,7 +23,7 @@
 
 (zc/def-component UI
   [this]
-  (let [{:keys [fps a]} (zc/props this)]
+  (let [{:keys [fps a text-value]} (zc/props this)]
     (zc/csx
       [:terminal {} [
         [:group {:id :ui} [
@@ -29,6 +32,8 @@
               [:text {} [(str fps)]]]]
             [:view {} [
               [:text {} [(if a "A" "Not A")]]]]
+            #_[:view {} [
+              [zcui/Input {:on-change (fn [e] (reset! text-value (get e :value)))} []]]]
             [:view {:style {:border 1
                             :border-style :single
                             :text-align :right}} [
@@ -37,7 +42,8 @@
                 [:text {:style {:fg [255 255 0]}} ["ll"]]
                 [:text {:style {:fg [0 255 0]}} ["o w"]]
                 [:text {:style {:fg [0 255 255]}} ["or"]]
-                [:text {:style {:fg [0 0 255]}} ["ld"]]]]]]
+                [:text {:style {:fg [0 0 255]}} ["ld"]]
+                [:text {:style {:fg [0 0 0] :bg [255 255 255]}} [@text-value]]]]]]
             [:view {:style {:border 1 :border-style :double}} [
               [:text {:style {:text-align :right}} [text]]]]]]]]]])))
 
@@ -61,18 +67,25 @@
               pool (atat/mk-pool)
               frames (atom 0)
               fps (atom 0)
-              render-state (atom {})]
+              text-value (atom "")
+              last-dom (atom nil)]
           (atat/every 1000 #(do
                          (reset! fps @frames)
                          (reset! frames 0))
                       pool)
-          ;; Every 33ms, draw a full frame
+          ;; Every 20ms, draw a full frame
           (zat/do-frame terminal 33 
-            (let [key-in (or @last-key \?)]
-              (swap! frames inc)
+            (let [key-in (or @last-key \?)
+                  dom (zcr/render-into-container terminal
+                        nil #_@last-dom
+                        (zc/csx [UI {:fps @fps
+                                     :a (= @last-key \a)
+                                     :text-value text-value}]))]
+              (reset! last-dom dom)
+              #_(zce/send-events-to-dom terminal dom)
+              (swap! frames inc)))
               ;; Draw components
-              (zcr/render-into-container terminal
-                (zc/csx [UI {:fps @fps :a (= @last-key \a)}]))))
+              
           ;; Wire up terminal events to channels we read from
           (zevents/add-event-listener terminal :keypress
              (fn [new-key]

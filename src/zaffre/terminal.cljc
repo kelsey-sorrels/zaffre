@@ -26,6 +26,15 @@
 
 (defmulti do-frame-clear type)
 
+(defmacro time-val
+  "Evaluates expr and returns the time it took.  Returns the value of
+ [expr millis]."
+  [expr]
+  `(let [start# (. System (nanoTime))
+         ret# ~expr
+         dt# (/ (double (- (. System (nanoTime)) start#)) 1000000.0)]
+     [ret# dt#]))
+
 (defmacro do-frame
   ([t d & body]
     `(let [terminal# ~t
@@ -35,12 +44,14 @@
          (try
            (loop []
              (when-not (destroyed? terminal#)
-               (dosync
-                 (do-frame-clear terminal#)
-                 ~@body
-                 (refresh! terminal#))
-               (Thread/sleep sleep-time#)
-               (recur)))
+               (let [dt# (second
+                           (time-val
+                             (dosync
+							   (do-frame-clear terminal#)
+							   ~@body
+							   (refresh! terminal#))))]
+               (Thread/sleep (max 0 (- sleep-time# dt#)))
+               (recur))))
            (catch Throwable th#
              (log/error th# "Error rendering")))))))
 
