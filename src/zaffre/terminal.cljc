@@ -52,6 +52,7 @@
 							   (refresh! terminal#))))]
                (Thread/sleep (max 0 (- sleep-time# dt#)))
                (recur))))
+           (log/info "finished do-frame loop")
            (catch Throwable th#
              (log/error th# "Error rendering")))))))
 

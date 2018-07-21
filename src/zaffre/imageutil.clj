@@ -58,17 +58,19 @@
 
 (defn spit-bytes [x bytes]
   (with-open [in (ByteArrayInputStream. bytes)]
-    (jio/copy in (jio/output-stream x))))
+    (jio/copy in x)))
 
 (defn cache-load [location]
-  (let [k (format "%x" (.hashCode location))]
-    (if (.exists (jio/as-file k))
-      (slurp-bytes location)
+  (let [k (format "%x" (hash location))
+        f (jio/as-file k)]
+    (log/info "loading from cache" (.getCanonicalPath f))
+    (if (.exists f)
+      (slurp-bytes f)
       (let [bytes (->
                     location
                     (client/get {:as :byte-array})
                     :body)]
-        (spit-bytes k bytes)
+        (spit-bytes f bytes)
         bytes))))
       
 (defn load-image [location]
