@@ -252,16 +252,17 @@
               _ (log/trace "existing" (get existing :id) "element" (get element :id))
               ; copy prev state into instance because we're checking to see how the component
               ; handles the change from prev-state to next state
-              instance (assoc (zc/construct-instance existing) :state (zc/get-prev-state zc/*updater* existing))
+              instance (zc/construct-instance existing)
+              prev-instance (assoc instance :state (zc/get-prev-state zc/*updater* existing))
               prev-props (get existing :props)
               next-props (get element :props)
               prev-state (zc/get-prev-state zc/*updater* existing)
               next-state (zc/get-state zc/*updater* existing)
               ;; only call when props have changed
               _ (when-not (props-without-children-match? existing element)
-                  (zc/component-will-receive-props instance next-props))]
-         (if (zc/should-component-update? instance next-props next-state)
-           (let [_ (zc/component-will-update instance next-props next-state)
+                  (zc/component-will-receive-props prev-instance next-props))]
+         (if (zc/should-component-update? prev-instance next-props next-state)
+           (let [_ (zc/component-will-update prev-instance next-props next-state)
                  next-element (zc/render instance)
                  _ (zc/component-did-update instance prev-props prev-state)]
              (log/trace "should-component-update? = true" (get existing :id) (zc/element-display-name existing))
