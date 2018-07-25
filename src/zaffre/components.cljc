@@ -1,8 +1,10 @@
 (ns zaffre.components
   (:require clojure.data
             clojure.string
+            [overtone.at-at :as atat]
             [taoensso.timbre :as log]))
  
+(def ^:dynamic *pool* (atat/mk-pool))
 (declare ^:dynamic *current-owner*)
 
 (declare element?)
@@ -10,6 +12,7 @@
 ;; State
 (defprotocol IUpdater
   (enqueue-set-state! [this element partial-state callback])
+  (enqueue-remove-state! [this element])
   (update-state! [this])
   (element-state-changed? [this element])
   (get-state [this element])
@@ -43,7 +46,7 @@
                           :post [(some? %)
                                  (map? %)]}
                          (try
-                           (println "partial-state-callback" s k partial-state)
+                           (log/trace "partial-state-callback" s k partial-state)
                            (update s k #(merge % partial-state))
                            (catch Exception e
                              (log/error "Exception applying callback" e)
@@ -54,8 +57,8 @@
                           :post [(some? %)
                                  (map? %)]}
                          (try
-                           (println "fn-callback" s k callback)
-                           (update s k callback)
+                           (log/trace "fn-callback" s k callback)
+                           (update s k (fn [s] (merge s (callback s))))
                            (catch Exception e
                              (log/error "Exception applying callback" e)
                              s)))
@@ -64,19 +67,24 @@
       (swap! a (fn [{:keys [q] :as updater}]
                  (assoc updater :q (conj q callback)))))
       this)
+  (enqueue-remove-state! [this element]
+    {:pre [(element? element) (get element :id)]}
+    (let [k (get element :id)
+          callback (fn [s] (dissoc s k))]
+      (swap! a (fn [{:keys [q] :as updater}]
+                 (assoc updater :q (conj q callback)))))
+      this)
   (update-state! [this]
     (swap! a (fn [{:keys [q s] :as updater}]
                (assert q (str "q cannot be nil" q s))
                (assert (some? s) (str "s cannot be nil" q s))
-               (log/info "update-state!" (count q) "queued updates")
+               ;(when-not (zero? (count q))
+                 (log/info "update-state!" (count q) "queued updates")
                ;; apply queued changes to old state to make new state
                (let [new-s (reduce (fn [s f]
                                      {:pre [(some? s) (some? f)]
                                       :post [(some? %)]}
-                                     (println "f" f "s" s)
-                                     (let [r (f s)]
-                                       (println "r" r)
-                                       r)) s q)]
+                                     (f s)) s q)]
                  (assert (some? new-s) (str "new-s cannot be nil q:" q "s:" s "new-s:" new-s))
                  (assoc updater :q []
                                 :s new-s
@@ -86,8 +94,11 @@
     (assert (some? element) "Element must not be nil")
     (assert (-> element :id some?) "Element must have :id")
     (let [k (get element :id)
-          {:keys [s prev-state] :as updater} @a]
-      (not= (get s k) (get prev-state k))))
+          {:keys [s prev-state] :as updater} @a
+          current-state (get s k)
+          prev-state (get prev-state k)]
+      (log/trace "element-state-changed?\nprev-state: " prev-state "\ncurrent-state: " current-state "\nchanged?: " (not= prev-state current-state))
+      (not= current-state prev-state)))
   (get-state [this element]
     (let [k (get element :id)]
       (-> a deref :s (get k))))
@@ -107,6 +118,9 @@
   (enqueue-set-state! [this element partial-state callback]
     (assert (-> element :id some?) "Element must not be nil")
       this)
+  (enqueue-remove-state! [this element]
+    (log/error "Removing noop state")
+    this)
   (update-state! [this]
     (log/error "Updating noop state")
     this)
@@ -121,6 +135,8 @@
 (defrecord AlwaysThrowUpdater []
   IUpdater
   (enqueue-set-state! [this element partial-state callback]
+    (assert false))
+  (enqueue-remove-state! [this element]
     (assert false))
   (update-state! [this]
     (assert false))
@@ -156,8 +172,8 @@
   (component-did-catch [this]))
 
 (defprotocol ComponentMethods
-  (set-state [this update])
-  (force-update [this callback]))
+  (set-state! [this update])
+  (force-update! [this callback]))
 
 (defprotocol ComponentProperties
   (default-props [this])
@@ -269,14 +285,14 @@
     ((get component :component-did-catch) this))
 
   ComponentMethods
-  (set-state [this update]
+  (set-state! [this update]
     (if (or (map? update) (fn? update))
       (let [partial-state (when (map? update) update)
             callback (when (fn? update) update)]
         (enqueue-set-state! *updater* *current-owner* partial-state callback))
       (throw "setState(...): takes an object of state variables to update or a
              function which returns an object of state variables.")))
-  (force-update [this callback]
+  (force-update! [this callback]
     (enqueue-set-state! *updater* *current-owner* nil callback))
 
   ComponentProperties
@@ -338,8 +354,15 @@
   :component-did-mount (fn [this] nil)
   :component-will-receive-props (fn [this next-props] nil)
   :should-component-update? (fn [this next-props next-state]
-                              (or (not= (props this) next-props)
-                                  (not= (state this) next-state)))
+                              (let [current-props (props this)
+                                    current-state (state this)]
+                                (log/trace "should-component-update? fn\n"
+                                           (dissoc current-props :children)"\n"
+                                           (dissoc next-props :children) "\n"
+                                           current-state "\n"
+                                           next-state)
+                                (or (not= current-props next-props)
+                                    (not= current-state next-state))))
   :component-will-update (fn [this next-props next-state] nil)
   :get-snapshot-before-update (fn [this] nil)
   :component-did-update (fn [this prev-props prev-state] nil)
@@ -408,7 +431,7 @@
 (defrecord ReactElement [id type key ref self source owner props]
   Object
   (toString [this]
-    (format "Element %s :props %s :state %s"
+    (format "Element.toString %s :props %s :state %s"
       (if (keyword? (get this :type))
         (name (get this :type))
         (display-name (get this :type)))
@@ -491,7 +514,7 @@
   (if-not (vector? v)
     v
     (do
-      (log/info "expanding" v)
+      (log/trace "expanding" v)
       (let [[type props children] (case (count v)
                                     1 [(first v) {} []]
                                     2 [(first v) (second v) []]
@@ -516,7 +539,7 @@
   
 (defmacro csx [v]
   (let [r (csx* v)]
-    (log/info "csx" r)
+    (log/trace "csx" r)
     r))
 
 (defmacro def-component [sym & fn-tail]
@@ -527,21 +550,37 @@
                :display-name display-name#
                :render `(fn ~@fn-tail)}))))
 
+(defn component-display-name [component]
+  (cond
+    (keyword? component)
+      (name component)
+    :default
+      (display-name component)))
+
+(defn element-display-name [element]
+  (cond
+    (and (some? element) (get element :type))
+      (component-display-name (get element :type))
+    (string? element)
+      "String"
+    (nil? element)
+      "nil"
+    :else
+      (assert false)))
+
 (defn construct-instance
   [element]
   {:pre [(element? element)]
    :post [(component-instance? %)]}
-  (log/info "constructing component instance" (get element :id))
-  (log/info "*updater*" *updater*)
+  (log/trace "constructing component instance" (element-display-name element) (get element :id))
+  (log/trace "*updater*" *updater*)
   (let [{:keys [type props]} element
         state (or (get-state *updater* element)
                   (when (component? type)
                     (when-let [s ((get type :get-initial-state))]
-                      (log/info "construct-instance state" s)
-                      (-> *updater*
-                        (enqueue-set-state! element s nil)
-                        update-state!
-                        (get-state element)))))
+                      (log/trace "construct-instance state" s)
+                        (enqueue-set-state! *updater* element s nil)
+                        s)))
         _ (log/trace "construct-component element type" (str type))
         instance (if (fn? type)
                    (create-instance (assoc (fn->component type) :props props))
@@ -607,46 +646,62 @@
                                           (log/info (display-name this) "component-did-catch"))}]
    (lifecycle spec))) 
 
-(defn component-display-name [component]
-  (cond
-    (keyword? component)
-      (name component)
-    :default
-      (display-name component)))
+(defn tree-indent [level]
+  (str (apply str (map (fn [is-last] (if is-last "  " "\u2502 ")) (butlast level))) ; │
+       (if (last level)
+         "\u2514 " ; └
+         "\u251c "))) ;├
 
-(defn element-display-name [element]
-  (component-display-name (get element :type)))
-
-(defmulti tree-level->str (fn [v _] (type v)))
+(defmulti tree-level->str (fn [v _] (if (vector? v)
+                                          :vector
+                                          (type v))))
 (defmethod tree-level->str nil [s level]
-  (let [indent (apply str (repeat (* 2 level) " "))]
-    (format "%s%s (Nil @%s)" indent s (System/identityHashCode s))))
+  (let [indent (tree-indent level)]
+    (format "%s%s (Nil @%s)\n" indent s (System/identityHashCode s))))
 (defmethod tree-level->str String [s level]
-  (let [indent (apply str (repeat (* 2 level) " "))]
-    (format "%s%s (String @%s)" indent s (System/identityHashCode s))))
-(defmethod tree-level->str Component [component level]
+  (let [indent (tree-indent level)]
+    (format "%s %s (String @%s)\n" indent s (System/identityHashCode s))))
+(defmethod tree-level->str :vector [[k v] level]
+  (let [indent (tree-indent level)]
+    (format "%s%s:%s\n" indent k v)))
+(defmethod tree-level->str Component [component level is-last]
   (let [indent (apply str (repeat (* 2 level) " "))]
     (apply str
       [(format "%s%s (Component @%x)\n" indent (component-display-name component) (System/identityHashCode component))
        (format "%s  :props %s\n" indent (dissoc (props component) :children))
        (format "%s  :state %s\n" indent (when-let [s (state component)] @s))])))
-(defmethod tree-level->str ComponentInstance [instance level]
+(defmethod tree-level->str ComponentInstance [instance level is-last]
   (let [indent (apply str (repeat (* 2 level) " "))]
     (apply str
       [(format "%s%s (ComponentInstance @%x)\n" indent (component-display-name instance) (System/identityHashCode instance))
        (format "%s  :props %s\n" indent (dissoc (props instance) :children))
        (format "%s  :state %s\n" indent (when-let [s (state instance)] @s))])))
 (defmethod tree-level->str ReactElement [element level]
-  (let [indent (apply str (repeat (* 2 level) " "))
-        children (get-in element [:props :children])]
+  (let [elem-indent (tree-indent level)
+        indent (tree-indent (conj level false))
+        last-indent (tree-indent (conj level true))
+        children (element-children element)]
     (apply str
       (concat
-        [(format "%s%s (Element(id=%x)@%x)\n" indent (element-display-name element) (get element :id) (System/identityHashCode element))
-         (format "%s  :props %s\n" indent (dissoc (get element :props) :children))
-         (let [s (get-state *updater* element)]
-           (format "%s  :state@(%x) %s\n" indent (System/identityHashCode s) s))
-         (format "%s  children (%d)\n" indent (count children))]
-        (map (fn [child] (tree-level->str child (+ 2 level))) children)))))
+        [(format "%s%c[32m%s%c[39m(Element(id=%x)@%x)\n" elem-indent (char 27) (element-display-name element) (char 27) (get element :id) (System/identityHashCode element))
+         (format "%s:props\n" indent)]
+         (let [props (dissoc (get element :props) :children)]
+           (map (fn [kv child-is-last] (tree-level->str kv (-> level (conj false) (conj child-is-last))))
+                props
+                (concat (repeat (dec (count props)) false)
+                        (repeat true))))
+         [(let [s (get-state *updater* element)]
+           (format "%s:state@(%x)\n" indent (System/identityHashCode s)))]
+         (let [s  (get-state *updater* element)]
+           (map (fn [kv child-is-last] (tree-level->str kv (-> level (conj false) (conj child-is-last))))
+                s
+                (concat (repeat (dec (count s)) false)
+                        (repeat true))))
+         [(format "%schildren (%d)\n" last-indent (count children))]
+         (map (fn [child child-is-last] (tree-level->str child (-> level (conj true) (conj child-is-last))))
+              children
+              (concat (repeat (dec (count children)) false)
+                      (repeat true)))))))
 
 (defn tree->str [v]
-  (tree-level->str v 0))
+  (str "\n" (tree-level->str v [true])))

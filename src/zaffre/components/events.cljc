@@ -22,8 +22,8 @@
                          (= type zcui/Input))
                         dom))
 
-(defn send-events-to-dom [events dom]
-  (log/info "send-events-to-dom" events)
+(defn send-event-to-dom [event dom]
+  (log/info "send-events-to-dom" event)
   (let [selected-input-index 0
         input-elements (input-element-seq dom)]
     ;(log/trace "input-elements" (type input-elements) (vec input-elements))
@@ -35,8 +35,11 @@
         (binding [zc/*current-owner* selected-input-element]
           (on-keypress
             (assoc instance :updater zc/*updater*)
-            {:key-code (int 13)
-             :key \a})))))
+            {:key event}))))))
+
+(defn send-events-to-dom [events dom]
+  (doseq [event events]
+    (send-event-to-dom event dom))
   ;; Take all enqueued state changes and reduce them down to new state
   (zc/update-state! zc/*updater*))
 
