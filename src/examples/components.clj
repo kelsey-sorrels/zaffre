@@ -39,7 +39,8 @@
             #_[:view {} [
               [:text {} [(if a "A" "Not A")]]]]
             [:view {} [
-              [zcui/Input {:on-change (fn [e] (reset! text-value (get e :value)))} []]]]
+              [zcui/Input {:style {:cursor-fg [244 208 65]}
+                           :on-change (fn [e] (reset! text-value (get e :value)))} []]]]
             #_[:view {:style {:border 1
                             :border-style :single
                             :text-align :right}} [
