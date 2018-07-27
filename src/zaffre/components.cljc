@@ -596,6 +596,19 @@
                    (create-instance (assoc type :props props) state))]
     instance))
 
+
+;; Transform element tree into a sequence by walking the tree
+(defn element-tree-seq [element]
+  (let [element-seq (tree-seq element?
+                              element-children
+                              element)]
+    element-seq))
+
+;; Return only the leaf nodes from text-tree-seq
+(defn filter-element-tree [p element]
+  (let [elements (element-tree-seq element)]
+    (filter p elements)))
+
 ;; Higher Order Components
 (defn compose [& funcs]
   (reduce (fn [a b] (fn [& args] (a (apply b args)))) funcs))

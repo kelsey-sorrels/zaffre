@@ -31,28 +31,33 @@
   (let [{:keys [fps a text-value]} (zc/props this)]
     (log/info "UI render")
     (zc/csx
-      [:terminal {} [
-        [:group {:id :ui} [
-          [:layer {:id :main} [
-            [:view {} [
-              [:text {} [(str fps)]]]]
-            #_[:view {} [
-              [:text {} [(if a "A" "Not A")]]]]
-            [:view {} [
-              [zcui/Input {:style {:cursor-fg [244 208 65]}
-                           :on-change (fn [e] (reset! text-value (get e :value)))} []]]]
-            #_[:view {:style {:border 1
-                            :border-style :single
-                            :text-align :right}} [
-              [:text {} [
-                [:text {:style {:fg [255 0 0]}} ["he"]]
-                [:text {:style {:fg [255 255 0]}} ["ll"]]
-                [:text {:style {:fg [0 255 0]}} ["o w"]]
-                [:text {:style {:fg [0 255 255]}} ["or"]]
-                [:text {:style {:fg [0 0 255]}} ["ld"]]
-                [:text {:style {:fg [0 0 0] :bg [255 255 255]}} [@text-value]]]]]]
-            #_[:view {:style {:border 1 :border-style :double}} [
-              [:text {:style {:text-align :right}} [text]]]]]]]]]]))))
+      [zcui/InputSelect {} [
+        [:terminal {} [
+          [:group {:id :ui} [
+            [:layer {:id :main} [
+              [:view {} [
+                [:text {} [(str fps)]]]]
+              #_[:view {} [
+                [:text {} [(if a "A" "Not A")]]]]
+              [:view {} [
+                [zcui/Input {:style {:cursor-fg [244 208 65]}
+                             :on-change (fn [e] (reset! text-value (get e :value)))} []]
+                [zcui/Input {:style {:cursor-fg [65 244 208]}
+                             :on-change (fn [e] (reset! text-value (get e :value)))} []]
+                [zcui/Input {:style {:cursor-fg [208 65 244]}
+                             :on-change (fn [e] (reset! text-value (get e :value)))} []]]]
+              #_[:view {:style {:border 1
+                              :border-style :single
+                              :text-align :right}} [
+                [:text {} [
+                  [:text {:style {:fg [255 0 0]}} ["he"]]
+                  [:text {:style {:fg [255 255 0]}} ["ll"]]
+                  [:text {:style {:fg [0 255 0]}} ["o w"]]
+                  [:text {:style {:fg [0 255 255]}} ["or"]]
+                  [:text {:style {:fg [0 0 255]}} ["ld"]]
+                  [:text {:style {:fg [0 0 0] :bg [255 255 255]}} [@text-value]]]]]]
+              #_[:view {:style {:border 1 :border-style :double}} [
+                [:text {:style {:text-align :right}} [text]]]]]]]]]]]]))))
 
 (defn -main [& _]
   (zgl/create-terminal
@@ -69,7 +74,8 @@
     (fn [terminal] ;; Receive the terminal in a callback
       (binding [zc/*updater* updater]
         ;; Save the last key press in an atom
-        (let [last-key (atom nil)
+        (let [first-render (atom true)
+              last-key (atom nil)
               width (atom 16)
               frames (atom 0)
               fps (atom 0)
@@ -91,6 +97,13 @@
                           (zc/csx [UI {:fps @fps
                                        :a true #_(= @last-key \a)
                                        :text-value text-value}]))]
+                (when @first-render
+                  (reset! first-render false)
+                  ;; Select the first Input
+                  (let [first-input-element (first (zcui/input-element-seq dom))
+                        instance (zc/construct-instance first-input-element)]
+                    (binding [zc/*current-owner* first-input-element]
+                      (zc/set-state! instance {:focused true}))))
                 (reset! last-dom dom)
                 ;; pump all terminal events to elements
                 (zce/send-events-to-dom key-events dom)
