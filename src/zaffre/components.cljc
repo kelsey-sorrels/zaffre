@@ -471,14 +471,18 @@
 (defn element? [v]
   (instance? ReactElement v))
 
-(defn- valid-children? [children]
+(defn- valid-children? [type children]
   (assert (sequential? children) (format "%s not sequential" children))
-  (assert (every? (fn [child] (or (component? child)
+  (assert (every? (if (= type :img)
+                    (fn [child] (and
+                                  (sequential? child)
+                                  (every? map? child)))
+                    (fn [child] (or (component? child)
                                   (element? child)
                                   (string? child)
-                                  (nil? child)))
+                                  (nil? child))))
                   children)
-          (str " Not every child is a component or element " (vec children)))
+          (str " Not every child is a component or element " type (vec children)))
   true)
 
 (defn deep-merge [v & vs]
@@ -501,7 +505,7 @@
         source (get config :source)
         ;; either a single children array arg or multiple children using & more
         children (if (not (empty? more)) (cons children more) children)
-        _ (valid-children? children)
+        _ (valid-children? type children)
         props  (deep-merge
                     {:children children}
                     (if type (get type :default-props {}) {})
@@ -536,9 +540,7 @@
              _ (println "props" props)
              #_#_display-name (display-name type)
              ; TODO: is there a better way to calculate display-name?
-             config (merge {#_#_:display-name display-name
-                            #_#_:state (get type :initial-state)}
-                            props)]
+             config props]
            (list `create-element
                   type
                   config
@@ -575,7 +577,7 @@
     (nil? element)
       "nil"
     :else
-      (assert false)))
+      (assert false element)))
 
 (defn construct-instance
   [element]

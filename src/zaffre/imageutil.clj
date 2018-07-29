@@ -16,10 +16,24 @@
   (width [this])
   (height [this]))
 
+(defprotocol Pixels
+  (pixel-seq [this]))
+
 (defrecord Image [width height channels byte-buffer]
   Dimensions
   (width [_] width)
   (height [_] height)
+  Pixels
+  (pixel-seq [this]
+    (let [left (- (.limit byte-buffer) (.position byte-buffer))
+          num-pixels-left (quot left channels)]
+      (if (zero? left)
+        (do
+          (.flip byte-buffer)
+          nil)
+        (let [channel-values (mapv (fn [_] (.get byte-buffer)) (range channels))]
+          (lazy-seq
+            (cons channel-values (pixel-seq this)))))))
   AutoCloseable
   (close [_]
     (STBImage/stbi_image_free byte-buffer)))
@@ -73,12 +87,14 @@
         (spit-bytes f bytes)
         bytes))))
       
-(defn load-image [location]
+(defn load-image [location-or-bytes]
   (let [w           (BufferUtils/createIntBuffer 1)
         h           (BufferUtils/createIntBuffer 1)
         c           (BufferUtils/createIntBuffer 1)
         buffer      (->
-                      (cache-load location)
+                      (if (string? location-or-bytes)
+                        (cache-load location-or-bytes)
+                        location-or-bytes)
                       ByteBuffer/wrap)
         direct-buffer (BufferUtils/createByteBuffer (.limit buffer))]
     (doto direct-buffer
@@ -89,7 +105,7 @@
           width       (.get w)
           height      (.get h)
           channels    (.get c)]
-      (log/info "loaded image" location width "x" height channels) 
+      (log/trace "loaded image" location-or-bytes width "x" height channels) 
       (->Image width height channels byte-buffer))))
 
 (defn write-png [{:keys [width height channels byte-buffer] :as img} path]
@@ -127,7 +143,8 @@
                       dx1 dy1 sx1 sy1 sx2 sy2]
   {:pre [(is (= dchannels schannels) (format "%s and %s differ in channels" dimg simg))]}
   ;; for each line
-  (doseq [y (range (- sy2 sy1))
+  (doseq [y 
+          (range (- sy2 sy1))
           :let [sidx (* (+ sx1 (* (+ y sy1) swidth)) schannels)
                 didx (* (+ dx1 (* (+ y dy1) dwidth)) dchannels)]
           :when (and (< -1 didx (.limit dbytes))
@@ -140,6 +157,11 @@
   (.flip sbytes)
   (.flip dbytes)
   dimg)
+
+(defn clip-image [{swidth :width sheight :height schannels :channels sbytes :byte-buffer :as simg}
+                  [sx1 sy1 sx2 sy2]]
+  (let [dimg (image (- sx2 sx1) (- sy2 sy1) schannels)]
+    (copy-sub-image dimg simg 0 0 sx1 sy1 sx2 sy2)))
 
 ;; From http://stackoverflow.com/questions/19753134/get-the-points-of-intersection-from-2-rectangles
 (defn rect-intersect [x0 y0 x1 y1 x2 y2 x3 y3]

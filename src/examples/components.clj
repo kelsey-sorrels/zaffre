@@ -16,7 +16,7 @@
   (:import (zaffre.font CompositeFont)))
 
 
-(def font ztiles/pastiche-16x16) 
+(def font ztiles/pastiche-16x16-op) 
 
 (def width 30)
 (def height 40)
@@ -46,10 +46,13 @@
                              :on-change (fn [e] (reset! text-value (get e :value)))} []]
                 [zcui/Input {:style {:cursor-fg [208 65 244]}
                              :on-change (fn [e] (reset! text-value (get e :value)))} []]]]
-              #_[:view {:style {:border 1
+              [:view {:style {:border 1
                               :border-style :single
                               :text-align :right}} [
-                [:text {} [
+                  [zcui/Image {:src "/home/santos/Downloads/Food.png" :style {:clip [0 0 16 16]}}]
+                  [zcui/Image {:src "/home/santos/Downloads/Food.png" :style {:clip [0 (* 5 16) 16 (* 6 16)]}}]
+                  [zcui/Image {:src "/home/santos/Downloads/Food.png" :style {:clip [0 (* 6 16) 16 (* 7 16)]}}]
+                #_[:text {} [
                   [:text {:style {:fg [255 0 0]}} ["he"]]
                   [:text {:style {:fg [255 255 0]}} ["ll"]]
                   [:text {:style {:fg [0 255 0]}} ["o w"]]
