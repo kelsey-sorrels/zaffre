@@ -60,7 +60,8 @@
          (string? s)]}
   (when (< y (count target))
     (let [^"[Ljava.lang.Object;" target-line (aget target y)
-          max-x (count target-line)]
+          max-x (count target-line)
+          style #{}]
     (loop [index 0 s s]
       (let [target-index (+ x index)]
         (when (and (seq s) (< target-index max-x))
@@ -70,12 +71,14 @@
 (defn render-text-into-container [target text-element]
   {:pre [(= (first text-element) :text)
          (map? (second text-element))
-         (not (empty?  (last text-element)))]}
-  (log/trace "render-text-into-container" text-element)
+         (not (empty? (last text-element)))]}
+  (log/debug "render-text-into-container" text-element)
   (let [[type {:keys [style zaffre/layout] :or {style {}} :as props} children] text-element
         {:keys [x y width height]} layout
         {:keys [text-align] :or {text-align :left}} style
-        lines (ztext/word-wrap-text-tree width height text-element)]
+        lines (ztext/word-wrap-text-tree width height (if (every? string? children)
+                                                          [:text props (map (fn [child] [:text {} [child]]) children)]
+                                                          text-element))]
     (log/trace "render-text-into-container lines" (vec lines))
     (doseq [[dy line] (map-indexed vector lines)]
       (when (and (< dy height) (not (empty? line)))
@@ -109,7 +112,7 @@
   {:pre [(= (first img-element) :img)
          (map? (second img-element))
          #_(not (empty? (last img-element)))]}
-  (log/trace "render-img-into-container" img-element)
+  (log/debug "render-img-into-container" img-element)
   (let [[type {:keys [style zaffre/layout] :or {style {}} :as props} children] img-element
         {:keys [x y width height]} layout
         lines (last img-element)]
@@ -194,8 +197,10 @@
                      (get border-map :top-right)))))
           ; render middle
           (doseq [dy (range (- height 2))]
-            (render-string-into-container target x (+ y dy 1) fg bg (str (get border-map :vertical)))
-            (render-string-into-container target (+ x width -1) (+ y dy 1) fg bg (str (get border-map :vertical))))
+            (when (or (< 0 border) (< 0 border-left))
+              (render-string-into-container target x (+ y dy 1) fg bg (str (get border-map :vertical))))
+            (when (or (< 0 border) (< 0 border-right))
+            (render-string-into-container target (+ x width -1) (+ y dy 1) fg bg (str (get border-map :vertical)))))
           ; render bottom
           (when (or (< 0 border) (< 0 border-bottom))
             (render-string-into-container target x (+ y height -1) fg bg
@@ -264,7 +269,7 @@
 
 ;; render a single element if needed
 (defn render [existing parent element]
-  (log/info "existing" [(zc/element-display-name existing) (get existing :id)]
+  (log/trace "existing" [(zc/element-display-name existing) (get existing :id)]
             "element"  [(zc/element-display-name element) (get element :id)])
   
   (log/trace "existing" (zc/tree->str existing))

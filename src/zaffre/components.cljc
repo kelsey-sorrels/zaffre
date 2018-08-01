@@ -473,16 +473,20 @@
 
 (defn- valid-children? [type children]
   (assert (sequential? children) (format "%s not sequential" children))
-  (assert (every? (if (= type :img)
-                    (fn [child] (and
-                                  (sequential? child)
-                                  (every? map? child)))
-                    (fn [child] (or (component? child)
+  (if (= type :img)
+    (letfn [(child-validator [child] (and
+                                       (sequential? child)
+                                       (every? map? child)))]
+      (assert (every? child-validator children)
+              (str " Not every child is a pixel in " type " "
+                (vec (filter (complement child-validator) children)))))
+    (letfn [(child-validator [child] (or (component? child)
                                   (element? child)
                                   (string? child)
-                                  (nil? child))))
-                  children)
-          (str " Not every child is a component or element " type (vec children)))
+                                  (nil? child)))]
+      (assert (every? child-validator children)
+          (str " Not every child is a component or element in " type " "
+               (vec (filter (complement child-validator) children))))))
   true)
 
 (defn deep-merge [v & vs]
@@ -534,7 +538,7 @@
                                     3 [(first v) (second v) (last v)]
                                     [(first v) (second v) (drop 2 v)])
              _ (println "type children" (type children))
-             csx-children (if (and children (symbol? children))
+             csx-children (if (and children (or (symbol? children) (list? children)))
                             children
                             (map csx* children))
              _ (println "props" props)
@@ -544,7 +548,7 @@
            (list `create-element
                   type
                   config
-                  (if (symbol? csx-children)
+                  (if (or (symbol? csx-children) (list? csx-children))
                     csx-children
                     (cons list csx-children)))))))
   

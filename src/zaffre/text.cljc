@@ -20,7 +20,7 @@
 ;; About 3.8x faster than the naive version
 (defn word-wrap [size text]
   (if text
-	(let [size (int size)]
+	(let [size (max (int size) 1)]
       (if (<= (count text) size)
         [text]
 		(re-seq (re-pattern (str ".{1," size "}\\s|.{1," size "}"))
@@ -66,8 +66,8 @@
 
 (defn text [text-element]
   (let [leaves (-> text-element text-tree-seq filter-leaves)]
-    (log/debug "text element" text-element)
-    (log/debug "text leaves" (vec leaves))
+    (log/trace "text element" text-element)
+    (log/trace "text leaves" (vec leaves))
   (->> text-element
     text-tree-seq
     filter-leaves

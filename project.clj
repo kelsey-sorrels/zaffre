@@ -10,6 +10,7 @@
                  [commons-io/commons-io "2.5"]
                  [overtone/at-at "1.2.0"]
                  [aaron-santos/tinter "0.1.1-SNAPSHOT"]
+                 [rockpick "0.1.0-SNAPSHOT"]
                  [nio "1.0.3"]
                  [clj-http "3.9.0"]
                  [org.joml/joml "1.7.1"]

@@ -42,9 +42,10 @@ void main(void) {
         //result.r = 0.5;
         break;
       case 2u:
-        //result += fnt * fg * fnt.a + (result * (1.0 - fnt.a));
-        result = fnt * fg * fnt.a + (result * (1.0 - fnt.a));
-        //result.r = 0.8;
+        // from https://www.w3.org/TR/compositing-1/#csscompositingrules_CSS
+        vec4 m = mix(bg, fg, fnt.a);
+        result = m  +  result * (1.0 - m.a);
+        result.a = 0.5;
         break;
     }
     //result.r = ((r | (glyphType * 10u)  << (2u * i))/ 256u);

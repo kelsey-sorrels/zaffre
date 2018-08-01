@@ -479,12 +479,14 @@
                 style      (get c :style)
                 highlight  (or (= @cursor-xy [col (- rows row 1)]) (contains? style :fg-bg))
                 ;highlight  (= @cursor-xy [col (- rows row 1)])
-                [fg-r fg-g fg-b] (if highlight
-                                   (get c :bg-color)
-                                   (get c :fg-color))
-                [bg-r bg-g bg-b] (if highlight
-                                   (get c :fg-color)
-                                   (get c :bg-color))
+                [fg-r fg-g fg-b fg-a] (if highlight
+                                        (get c :bg-color)
+                                        (get c :fg-color))
+                [bg-r bg-g bg-b bg-a] (if highlight
+                                        (get c :fg-color)
+                                        (get c :bg-color))
+                fg-a (or fg-a 255)
+                bg-a (or bg-a 255)
                 ;s         (str (get c :character))
                 i         (+ (* 4 (+ (* texture-columns row) col)) (* layer-size layer))
                 [x y]     (get character->col-row chr)
@@ -522,11 +524,11 @@
                 (.put fg-image-data    (unchecked-byte fg-r))
                 (.put fg-image-data    (unchecked-byte fg-g))
                 (.put fg-image-data    (unchecked-byte fg-b))
-                (.put fg-image-data    (unchecked-byte 0))
+                (.put fg-image-data    (unchecked-byte fg-a))
                 (.put bg-image-data    (unchecked-byte bg-r))
                 (.put bg-image-data    (unchecked-byte bg-g))
                 (.put bg-image-data    (unchecked-byte bg-b))
-                (.put bg-image-data    (unchecked-byte 0)))
+                (.put bg-image-data    (unchecked-byte bg-a)))
               ;; space ie empty, skip forward
               (do
                 (.put glyph-image-data (byte-array 4))
@@ -936,8 +938,8 @@
                   icon-paths
                   fx-shader]
     :or {title "Zaffre"
-         default-fg-color [255 255 255]
-         default-bg-color [0 0 0]
+         default-fg-color [255 255 255 255]
+         default-bg-color [0 0 0 0]
          on-key-fn        nil
          fullscreen       false
          icon-paths       nil
