@@ -309,13 +309,11 @@
                 [:view {:style {:bg [0 0 0 255]
                                 :fg [255 255 255 255]
                                 :margin-top 10
-                                :margin-bottom 10
+                                ;:margin-bottom 10
                                 :padding 0
                                 :border 1 :border-style :single
                                 :text-align :center
-                                #_#_:max-height "90%"
-                                #_#_:max-width "90%"
-                                :overlow-x :scroll}} [
-                  [:view {:style {:margin 0 :margin-top 0 :border 0}}
-                    (get props :children)]]]]])))}))
+                                :max-height "90%"
+                                :max-width "90%"}}
+                    (get props :children)]]])))}))
 
