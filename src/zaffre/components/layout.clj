@@ -238,7 +238,7 @@
 
   (log/trace "style" style "position-keys" (vec (position-keys style)))
   (doseq [position-key (position-keys style)]
-    (log/info "setting position property" position-key node)
+    (log/debug "setting position property" position-key (get style position-key) node)
     (copy-property-or-percent style position-key identity
       #(Yoga/YGNodeStyleSetPosition node (yoga-edge position-key) %)
       #(Yoga/YGNodeStyleSetPositionPercent node (yoga-edge position-key) %)))

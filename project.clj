@@ -4,6 +4,7 @@
   :license {:name "The MIT License (MIT)"
             :url "https://raw.githubusercontent.com/aaron-santos/zaffre/master/LICENSE"}
   :dependencies [[org.clojure/clojure "1.9.0"]
+                 [org.clojure/core.cache "0.7.1"]
                  [org.clojure/core.async "0.3.465"]
                  ^{:voom {:repo "https://github.com/rogerallen/hello_lwjgl" :branch "master"}}
                  [hello_lwjgl "0.4.0-20180105_044833-g683b3f6"]
@@ -27,4 +28,5 @@
               ["-XstartOnFirstThread"
                "-Dorg.lwjgl.opengl.Display.enableHighDPI=true"
                #_"-Djava.library.path=native/"]
-              [#_"-Djava.library.path=native/"]))
+              ["-Dclojure.debug=true"
+               #_"-Djava.library.path=native/"]))
