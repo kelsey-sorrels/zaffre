@@ -170,7 +170,7 @@
         min-y (dec (max 1 overflow-min-y))
         max-y (min overflow-max-y (count target))
         lines (last img-element)]
-    (log/info "render-img-into-container layout " layout)
+    (log/debug "render-img-into-container layout " layout)
     (log/trace "render-img-into-container lines" (vec lines))
     (doseq [[dy line] (map-indexed vector lines)
             :let [target-y (+ y dy)]]
@@ -373,8 +373,8 @@
   (log/trace "existing" [(zc/element-display-name existing) (zc/element-id-str existing)]
             "element"  [(zc/element-display-name element) (zc/element-id-str element)])
   
-  (log/trace "existing" (zc/tree->str existing))
-  (log/trace "element" (zc/tree->str element))
+  #_(log/trace "existing" (zc/tree->str existing))
+  #_(log/trace "element" (zc/tree->str element))
   (if (type-match? existing element)
     (log/trace "type-match? true")
     (log/trace "type-mismatch" (get existing :type) (get element :type)))
@@ -396,7 +396,7 @@
          (props-without-children-match? existing element)
          (not (state-changed? existing)))
       (binding [zc/*current-owner* element]
-        (log/info "identical rendering element")
+        (log/trace "identical rendering element")
         #_(log/info "element children:\n" (first (zc/element-children element)))
         (let [instance (zc/construct-instance element)
               next-element (zc/render instance)
@@ -427,10 +427,10 @@
                  instance (zc/construct-instance element)
                  next-element (zc/render instance)
                  _ (zc/component-did-update instance prev-props prev-state)]
-             (log/info "should-component-update? = true" (get existing :id) (zc/element-display-name existing))
+             (log/debug "should-component-update? = true" (get existing :id) (zc/element-display-name existing))
              (log/trace "next-element" (type next-element))
              (log/trace (zc/element-display-name next-element))
-             (log/trace (zc/tree->str next-element))
+             #_(log/trace (zc/tree->str next-element))
              (assoc next-element :id (or (get (first (zc/element-children existing)) :id) (get next-element :id))))
            (do
              (log/info "should-component-update? = false" (get existing :id) (zc/element-display-name existing))
@@ -473,12 +473,12 @@
     (render-recursively existing nil element))
   ([existing parent element]
    {:post [(is (or (nil? %) (string? %) (zc/element? %)) (zc/element-display-name %))]}
-    (when (= existing element)
+    #_(when (= existing element)
       (log/warn "WARNING Existing = Element WARNING"))
     (log/trace "render-recursively existing" (zc/element-display-name existing) (count (zc/element-children existing)) #_(without-type existing))
     (log/trace "render-recursively element" (zc/element-display-name element) (count (zc/element-children element)) #_(without-type element))
-    (log/trace "existing:\n" (zc/tree->str existing))
-    (log/trace "element:\n" (zc/tree->str element))
+    #_(log/trace "existing:\n" (zc/tree->str existing))
+    #_(log/trace "element:\n" (zc/tree->str element))
     (cond
       (nil? element)
         element
@@ -557,8 +557,8 @@
                                               extract-native-elements
                                               first
                                               cascade-style)]
-      (log/trace "render-into-container existing" (zc/tree->str existing))
-      (log/trace "render-into-container element" (zc/tree->str root-element))
+      #_(log/trace "render-into-container existing" (zc/tree->str existing))
+      #_(log/trace "render-into-container element" (zc/tree->str root-element))
       ;(log/trace "render-into-container" (clojure.pprint/pprint root-dom))
       (assert (= type :terminal)
               (format "Root component not :terminal found %s instead" type))
