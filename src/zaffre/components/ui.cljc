@@ -36,7 +36,8 @@
 
 (def InputSelect (zc/create-react-class {
   :display-name "InputSelect"
-  :get-initial-state (fn [] {:index 0})
+  :get-initial-state (fn []
+    {:index 0})
   :get-default-props (fn input-get-default-props [] {
     :on-keypress (fn input-select-on-keypress [this e]
                    (log/info "InputSelect on-keypress" (get e :key))
@@ -49,16 +50,16 @@
                            (let [next-input (nth input-elements (mod (inc index) (count input-elements)))]
                              (when-not (= curr-input next-input)
                                ;; blur curr input
-                               (let [instance (zc/construct-instance curr-input)
+                               (binding [zc/*current-owner* curr-input]
+                                 (let [instance (zc/construct-instance curr-input)
                                      {:keys [on-blur]} (zc/props instance)]
-                                 (binding [zc/*current-owner* curr-input]
                                    (on-blur
                                      (assoc instance :updater zc/*updater*)
                                      {})))
                                ;; focus next input
-                               (let [instance (zc/construct-instance next-input)
+                               (binding [zc/*current-owner* next-input]
+                                 (let [instance (zc/construct-instance next-input)
                                      {:keys [on-focus]} (zc/props instance)]
-                                 (binding [zc/*current-owner* next-input]
                                    (on-focus
                                      (assoc instance :updater zc/*updater*)
                                      {})))
@@ -66,9 +67,9 @@
                                (zc/set-state! this (fn [{:keys [index]}]
                                                      {:index (inc index)}))))
                             ;; dispatch event to curr input
-                            (let [instance (zc/construct-instance curr-input)
+                            (binding [zc/*current-owner* curr-input]
+                              (let [instance (zc/construct-instance curr-input)
                                   {:keys [on-keypress]} (zc/props instance)]
-                              (binding [zc/*current-owner* curr-input]
                                 (on-keypress
                                   (assoc instance :updater zc/*updater*)
                                   {:key key}))))))))})
@@ -78,34 +79,19 @@
         (log/trace "InputSelect render")
         (first children)))}))
   
+(def c (atom 0))
 (def Input (zc/create-react-class {
     :display-name "Input"
     :get-initial-state (fn []
-                         (log/info "Input get-initial-state")
+                         (log/info "Input get-initial-state" (zc/element-id-str zc/*current-owner*))
+                         (when (< 10 @c )
+                           (assert false (zc/element-id-str zc/*current-owner*)))
+                         (swap! c inc)
+                         (assert (not (nil? zc/*current-owner*)) "Input *current-owner* nil")
+                         (assert (not= (zc/element-id-str zc/*current-owner*) "null") "Input *current-owner* null")
                          {:value ""
                           :show-cursor false
                           :focused false})
-    :component-will-mount (fn [this]
-                            (log/info "Input component-will-mount" (get zc/*current-owner* :id))
-                            ;; pass current-owner binding through to the scheduled fn
-                            (let [owner zc/*current-owner*
-                                  updater zc/*updater*
-                                  cursor-fn (atat/every 400
-                                                        #(try
-                                                          (binding [zc/*current-owner* owner
-                                                                    zc/*updater* updater]
-                                                            (log/info "Input component-will-mount cursor-fn" (get owner :id))
-                                                            (zc/set-state! this (fn [{:keys [show-cursor]}]
-                                                                                  (log/info "Input component-will-mount cursor set-state-fn" (get owner :id) (not show-cursor))
-                                                                                  {:show-cursor (not show-cursor)})))
-                                                          (catch Exception e
-                                                            (log/error e)))
-                                                        zc/*pool*)]
-                              (zc/set-state! this {:cursor-fn cursor-fn})))
-    :component-will-unmount (fn [this]
-                              (let [{:keys [cursor-fn]} (zc/state [this])]
-                                (log/info "Input unmounting" cursor-fn)
-                                (atat/stop cursor-fn)))
     :get-default-props (fn input-get-default-props [] {
       :max-length 28
       :style {:width 30
@@ -133,10 +119,14 @@
                                                    {:value value}))))))})
     :render
       (fn [this]
-        (let [{:keys [value show-cursor focused]} (zc/state this)
+        (let [{:keys [value focused]} (zc/state this)
               {:keys [style] :as props} (zc/props this)
               {:keys [cursor-char-on cursor-char-off
                       cursor-fg cursor-bg]}  style
+              duty-on 400
+              duty-off 400
+              t (mod (System/currentTimeMillis) (+ duty-on duty-off))
+              show-cursor (< t duty-on)
               cursor (if (and focused show-cursor) cursor-char-on cursor-char-off)]
           (log/debug "Input render" show-cursor (dissoc props :children))
           (zc/csx [:view {:style {:border-style :single
@@ -186,7 +176,7 @@
   :display-name "UrlResource"
   :get-initial-state (fn [] {:state :not-loaded})
   :component-will-mount (fn [this]
-    (log/info "UrlResource component-will-mount" (get zc/*current-owner* :id))
+    (log/info "UrlResource component-will-mount" (zc/element-id-str zc/*current-owner*))
     ;; pass current-owner binding through to the scheduled fn
     (let [owner zc/*current-owner*
           updater zc/*updater*
@@ -196,7 +186,7 @@
         (try
           (binding [zc/*current-owner* owner
                     zc/*updater* updater]
-            (log/info "UrlResource component-will-mount load-fn" (get owner :id))
+            (log/info "UrlResource component-will-mount load-fn" (zc/element-id-str owner))
             (let [bytes (get (swap! resource-cache
                                     cache/through-cache
                                     src
@@ -233,7 +223,7 @@
                        (log/info "NativeImage get-initial-state")
                        {:state :not-loaded})
   :component-will-mount (fn [this]
-    (log/info "NativeImage component-will-mount" (get zc/*current-owner* :id))
+    (log/info "NativeImage component-will-mount" (zc/element-id-str zc/*current-owner*))
     ;; pass current-owner binding through to the scheduled fn
     (let [owner zc/*current-owner*
           updater zc/*updater*
@@ -243,7 +233,7 @@
         (try
           (binding [zc/*current-owner* owner
                     zc/*updater* updater]
-            (log/info "NativeImage component-will-mount load-fn" (get owner :id))
+            (log/info "NativeImage component-will-mount load-fn" (zc/element-id-str owner))
             (let [{:keys [data style]} (zc/props this)
                   clip (get style :clip)
                   k [data clip]
@@ -371,33 +361,14 @@
   :display-name "AnimateProps"
   :get-initial-state (fn []
                        (log/debug "AnimateProps get-initial-state")
-                       {:t 0})
-  :component-will-mount (fn [this]
-                          (log/debug "AnimateProps component-will-mount" (get zc/*current-owner* :id))
-                          ;; pass current-owner binding through to the scheduled fn
-                          (let [owner zc/*current-owner*
-                                updater zc/*updater*
-                                tick-fn (atat/every (/ 1000 30)
-                                                      #(try
-                                                        (binding [zc/*current-owner* owner
-                                                                  zc/*updater* updater]
-                                                          (log/debug "AnimateProps component-will-mount tick-fn" (get owner :id))
-                                                          (zc/set-state! this (fn [{:keys [t]}]
-                                                                                (log/trace "AnimateProps component-will-mount tick set-state-fn" (get owner :id) t)
-                                                                                {:t (System/currentTimeMillis)})))
-                                                        (catch Exception e
-                                                          (log/error e)))
-                                                      zc/*pool*)]
-                            (zc/set-state! this {:tick-fn tick-fn})))
-  :component-will-unmount (fn [this]
-                            (let [{:keys [tick-fn]} (zc/state this)]
-                              (log/info "AnimateProps unmounting" tick-fn)
-                              (atat/stop tick-fn)))
+                       {:t 0
+                        :start-time (System/currentTimeMillis)})
   :render (fn [this]
     (log/debug "AnimateProps render")
     (let [{:keys [children] :as props} (zc/props this)
+          {:keys [start-time]} (zc/state this)
           generators (dissoc props :children)
-          t (System/currentTimeMillis)
+          t (- (System/currentTimeMillis) start-time)
           child-props (clojure.walk/postwalk (fn [node]
                                                (cond
                                                  (fn? node)
@@ -415,3 +386,45 @@
                                       (zc/deep-merge prev-child-props child-props))))
                                 children)]
       (first updated-children)))}))
+
+
+(def Sequence (zc/create-react-class {
+  :display-name "Sequence"
+  :get-initial-state (fn []
+                       {:start-time (System/currentTimeMillis)
+                        :t 0})
+  :component-will-mount (fn [this]
+                          (log/debug "Sequence component-will-mount" (zc/element-id-str zc/*current-owner*))
+                          (when-not (contains? (zc/props this) :t)
+                            ;; pass current-owner binding through to the scheduled fn
+                            (let [owner zc/*current-owner*
+                                  updater zc/*updater*
+                                  tick-fn (atat/every (/ 1000 30)
+                                                        #(try
+                                                          (binding [zc/*current-owner* owner
+                                                                    zc/*updater* updater]
+                                                            (log/debug "Sequence component-will-mount tick-fn" (zc/element-id-str owner))
+                                                            (zc/set-state! this (fn [{:keys [t]}]
+                                                                                  (log/trace "Sequence component-will-mount tick set-state-fn" (zc/element-id-str owner) t)
+                                                                                  {:t (- (System/currentTimeMillis)
+                                                                                         (get (zc/state this) :start-time))})))
+                                                          (catch Exception e
+                                                            (log/error e)))
+                                                        zc/*pool*)]
+                              (zc/set-state! this {:tick-fn tick-fn}))))
+  :component-will-unmount (fn [this]
+                            (when-let [{:keys [tick-fn]} (zc/state this)]
+                              (log/info "Sequence unmounting" tick-fn)
+                              (atat/stop tick-fn)))
+  :render (fn [this]
+    (log/debug "Sequence render")
+    (let [{:keys [key-frames] :as props} (zc/props this)
+          {:keys [start-time]} (zc/state this)
+          t (- (System/currentTimeMillis) start-time)
+          start-times (cons 0 (reductions + (keys key-frames)))
+          total-time (reduce + start-times)
+          time-in-loop (mod t total-time)
+          index (count (filter (partial > t) start-times))]
+      ;; TODO pick nth child using t prop
+      (nth (vals key-frames))))}))
+

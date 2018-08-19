@@ -353,7 +353,8 @@
     (zc/element-state-changed? zc/*updater* element)))
 
 (defn- check-elem [existing element result]
- (if(zc/element? result)
+ true
+ #_(if(zc/element? result)
     true
     (do
       (log/error "render did not returnn element")
@@ -364,17 +365,20 @@
       (log/error "result")
       (log/error (zc/tree->str result))
       false)))
-   
+
+(defn first-element-id [& elements]
+  (some :id elements))
+
 ;; render a single element if needed
 (defn render [existing parent element]
   {:pre [(is (or (nil? existing) (zc/element? existing)) (zc/tree->str element))
          (is (zc/element? element) (zc/tree->str element))]
-   :post [(check-elem existing element %)]}
+   :post [(is (or (nil? %) (string? %) (and (zc/element? %) (check-elem existing element %))) (zc/element-display-name %))]}
   (log/trace "existing" [(zc/element-display-name existing) (zc/element-id-str existing)]
             "element"  [(zc/element-display-name element) (zc/element-id-str element)])
   
-  #_(log/trace "existing" (zc/tree->str existing))
-  #_(log/trace "element" (zc/tree->str element))
+  #_(log/info "existing" (zc/tree->str existing))
+  #_(log/info "element" (zc/tree->str element))
   (if (type-match? existing element)
     (log/trace "type-match? true")
     (log/trace "type-mismatch" (get existing :type) (get element :type)))
@@ -395,13 +399,13 @@
     (and (type-match? existing element)
          (props-without-children-match? existing element)
          (not (state-changed? existing)))
-      (binding [zc/*current-owner* element]
-        (log/trace "identical rendering element")
+      (binding [zc/*current-owner* existing]
+        #_(log/info "identical rendering element" (zc/element-display-name existing))
+        #_(log/info "existing" (zc/element-id-str existing) "element" (zc/element-id-str element))
         #_(log/info "element children:\n" (first (zc/element-children element)))
-        (let [instance (zc/construct-instance element)
-              next-element (zc/render instance)
-              first-existing-child (first (zc/element-children existing))]
-          (assoc next-element :id (get first-existing-child :id))))
+        (let [instance (zc/construct-instance (assoc element :id (get existing :id)))
+              next-element (zc/render instance)]
+          next-element))
     ;; same type, new props?
     (and (type-match? existing element)
          (or
@@ -409,12 +413,12 @@
            (state-changed? existing)))
       ;; updating
       (binding [zc/*current-owner* existing]
-        (log/trace "same type, different-props or state" (zc/element-display-name existing))
-        (log/trace "existing" (get existing :id) "element" (get element :id))
+        #_(log/info "same type, different-props or state" (zc/element-display-name existing))
+        #_(log/info "existing" (zc/element-id-str existing) "element" (zc/element-id-str element))
         (let [; copy prev state into instance because we're checking to see how the component
               ; handles the change from prev-state to next state
-              existing-instance (zc/construct-instance existing)
-              prev-instance (assoc existing-instance :state (zc/get-prev-state zc/*updater* existing))
+              instance (zc/construct-instance existing)
+              prev-instance (assoc instance :state (zc/get-prev-state zc/*updater* existing))
               prev-props (get existing :props)
               next-props (get element :props)
               prev-state (zc/get-prev-state zc/*updater* existing)
@@ -424,15 +428,16 @@
                   (zc/component-will-receive-props prev-instance next-props))]
          (if (zc/should-component-update? prev-instance next-props next-state)
            (let [_ (zc/component-will-update prev-instance next-props next-state)
-                 instance (zc/construct-instance element)
+                 instance (zc/construct-instance (assoc element :id (get existing :id)))
                  next-element (zc/render instance)
                  _ (zc/component-did-update instance prev-props prev-state)]
              (log/debug "should-component-update? = true" (get existing :id) (zc/element-display-name existing))
              (log/trace "next-element" (type next-element))
              (log/trace (zc/element-display-name next-element))
              #_(log/trace (zc/tree->str next-element))
-             (assoc next-element :id (or (get (first (zc/element-children existing)) :id) (get next-element :id))))
+             next-element)
            (do
+             (assert false)
              (log/info "should-component-update? = false" (get existing :id) (zc/element-display-name existing))
              (first (zc/element-children existing))))))
     ;; initial render
@@ -463,16 +468,13 @@
     (dissoc v :type)
     v))
 
-(defn first-element-id [existing element]
-  (get existing :id (get element :id)))
-
 (defn render-recursively 
   ([element]
     (render-recursively nil element))
   ([existing element]
     (render-recursively existing nil element))
   ([existing parent element]
-   {:post [(is (or (nil? %) (string? %) (zc/element? %)) (zc/element-display-name %))]}
+   {:post [(is (or (nil? %) (string? %) (and (zc/element? %) (check-elem existing element %))) (zc/element-display-name %))]}
     #_(when (= existing element)
       (log/warn "WARNING Existing = Element WARNING"))
     (log/trace "render-recursively existing" (zc/element-display-name existing) (count (zc/element-children existing)) #_(without-type existing))
@@ -495,9 +497,13 @@
                                                      (render-recursively existing-child element child))
                                                    element
                                                    existing)]
-            (assoc (zc/assoc-children element rendered-children)
-                   :id
-                   (get existing :id))))
+            (-> element
+              (zc/assoc-children (remove nil? rendered-children))
+              (assoc
+                :id
+                (if (type-match? existing element)
+                  (first-element-id existing element)
+                  (get element :id))))))
       :default
         (let [;; Render one level
               rendered-element (render (when (zc/element? existing) existing)
@@ -505,10 +511,9 @@
                                        element)
               rendered-child (render-recursively (first (zc/element-children existing))
                                                     element
-                                                    rendered-element)
-              element-id (first-element-id existing element)]
+                                                    rendered-element)]
           (log/trace "rendered element" (zc/element-display-name rendered-element))
-          (log/trace "element-id" (zc/element-id-str element-id))
+          (log/trace "element-id" (zc/element-id-str rendered-child))
           (assert (is (zc/element? rendered-element)))
           (assert (zc/element? rendered-child)
             (str (zc/element-display-name element) " -> "
@@ -520,7 +525,12 @@
           (-> element
             (zc/assoc-children [rendered-child])
             ;; assign existing id so that state lookup works
-            #_(assoc :id element-id))))))
+            ;; FIXME find out why this kills Popup
+            (assoc
+              :id
+              (if (type-match? existing element)
+                (first-element-id existing element)
+                (get element :id))))))))
 
 (defn extract-native-elements [element]
   (cond
@@ -557,8 +567,8 @@
                                               extract-native-elements
                                               first
                                               cascade-style)]
-      #_(log/trace "render-into-container existing" (zc/tree->str existing))
-      #_(log/trace "render-into-container element" (zc/tree->str root-element))
+      #_(log/info "render-into-container existing" (zc/tree->str existing))
+      #_(log/info "render-into-container rendered-element" (zc/tree->str root-element))
       ;(log/trace "render-into-container" (clojure.pprint/pprint root-dom))
       (assert (= type :terminal)
               (format "Root component not :terminal found %s instead" type))

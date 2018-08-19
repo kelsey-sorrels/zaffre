@@ -28,7 +28,7 @@
 (binding [zc/*updater* updater]
 (zc/def-component UI
   [this]
-  (let [{:keys [fps show-popup text-value]} (zc/props this)
+  (let [{:keys [fps show-popup text-value text-value-on-change]} (zc/props this)
         popup (if show-popup
                 [[zcui/Popup {} [[:text {} ["popup"]]]]]
                 [])]
@@ -40,41 +40,42 @@
             [:layer {:id :main} [
               [:view {} [
                 [:text {} [(str fps)]]]]
-              #_[:view {} [
+              [:view {} [
                 [zcui/Input {:style {:cursor-fg [244 208 65 255]}
-                             :on-change (fn [e] (reset! text-value (get e :value)))} []]
+                             :on-change text-value-on-change} []]
                 [zcui/Input {:style {:cursor-fg [65 244 208]}
-                             :on-change (fn [e] (reset! text-value (get e :value)))} []]
+                             :on-change text-value-on-change} []]
                 [zcui/Input {:style {:cursor-fg [208 65 244]}
-                             :on-change (fn [e] (reset! text-value (get e :value)))} []]]]
-              #_[:view {:style {:border 1
+                             :on-change text-value-on-change} []]]]
+              [:view {:style {:border 1
                               :border-style :single
                               :text-align :right}} [
                   [zcui/Image {:src "/home/santos/Downloads/Food.png" :style {:clip [0 0 16 16]}}]
-                  #_[zcui/Image {:src "/home/santos/Downloads/Food.png" :style {:clip [0 (* 5 16) 16 (* 6 16)]}}]
-                  #_[zcui/Image {:src "/home/santos/Downloads/Food.png" :style {:clip [0 (* 6 16) 16 (* 7 16)]}}]
-                #_[:text {} [
+                  [zcui/Image {:src "/home/santos/Downloads/Food.png" :style {:clip [0 (* 5 16) 16 (* 6 16)]}}]
+                  [zcui/Image {:src "/home/santos/Downloads/Food.png" :style {:clip [0 (* 6 16) 16 (* 7 16)]}}]
+                [:text {} [
                   [:text {:style {:fg [255 0 0]}} ["he"]]
                   [:text {:style {:fg [255 255 0]}} ["ll"]]
                   [:text {:style {:fg [0 255 0]}} ["o w"]]
                   [:text {:style {:fg [0 255 255]}} ["or"]]
                   [:text {:style {:fg [0 0 255]}} ["ld"]]
-                  [:text {:style {:fg [0 0 0] :bg [255 255 255]}} [@text-value]]]]]]
-              #_[:view {:style {:border 1 :border-style :double}} [
+                  [:text {:style {:fg [0 0 0] :bg [255 255 255]}} [text-value]]]]]]
+              [:view {:style {:border 1 :border-style :double}} [
                 [:text {:style {:text-align :right}} [text]]]]]]
             [:layer {:id :popup} [
                 [zcui/Popup {} [#_[:text {} ["popup"]]
-                                  [:view {:style {:width 20
+                                 [:view {:style {:width 20
                                                  :height 20
                                                  :max-width 20
                                                  :max-height 20
                                                  :overflow :hidden}} [
+                                   #_[zcui/Image {:src "/home/santos/src/zaffre/earthmap.jpg"}] 
                                    [zcui/AnimateProps {:style {
                                                          :position-top (fn [t] (int (- (* 5 (Math/sin (/ t 8000))) 8)))
                                                          :position-left (fn [t] (int (- (* 20 (Math/cos (/ t 8000))) 60)))}} [
-                                     (zc/csx [:view {:style {:fg nil :bg nil
+                                     [:view {:style {:fg nil :bg nil
                                                      :position-type :absolute}} [
-                                       [zcui/Image {:src "/home/santos/src/zaffre/earthmap.jpg"}]]])]]]]]]]]
+                                       [zcui/Image {:src "/home/santos/src/zaffre/earthmap.jpg"}]]]]]]]]]]]
 ]]]]]]))))
 (defn -main [& _]
   (zgl/create-terminal
@@ -98,6 +99,7 @@
               fps (atom 0)
               show-popup (atom true)
               text-value (atom "")
+              on-change-text-value (fn [e] (reset! text-value (get e :value)))
               last-dom (atom nil)
               key-event-queue (atom [])
               fps-fn (atat/every 1000
@@ -109,11 +111,13 @@
           ;; Every 20ms, draw a full frame
           (zat/do-frame terminal 0
             (binding [zc/*updater* updater]
+              #_(when (= @frames 2) (System/exit 0))
               (let [key-in (or @last-key \?)
                     [key-events _] (reset-vals! key-event-queue [])
                     ui (zc/csx [UI {:fps @fps
-                                       :show-popup @show-popup
-                                       :text-value text-value}])
+                                    :show-popup @show-popup
+                                    :text-value @text-value
+                                    :text-value-on-change on-change-text-value}])
                     dom (zcr/render-into-container terminal
                           @last-dom
                           ui)]
@@ -122,12 +126,13 @@
                   (reset! first-render false)
                   ;; Select the first Input
                   (when-let [first-input-element (first (zcui/input-element-seq dom))]
-                    (let [instance (zc/construct-instance first-input-element)]
-                      (binding [zc/*current-owner* first-input-element]
+                    (binding [zc/*current-owner* first-input-element]
+                      (let [instance (zc/construct-instance first-input-element)]
                         (zc/set-state! instance {:focused true})))))
                 (reset! last-dom dom)
                 ;; pump all terminal events to elements
                 (zce/send-events-to-dom key-events dom)
+                (log/trace "--- End of Frame ---")
                 (swap! frames inc))))
               
           ;; Wire up terminal events to channels we read from
