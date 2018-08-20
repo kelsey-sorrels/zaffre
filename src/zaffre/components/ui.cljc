@@ -417,39 +417,43 @@
 (defn transpose [xs]
   (apply map list xs))
 
-(defmacro sequence [state-chan & cmds]
-  `(fn [] (go
-     ~@(map (fn [cmd next-cmd]
-              (cond
-                (number? cmd)
-                  ;; numbers are pauses
-                  `(<! (timeout ~cmd))
-                (and (map? cmd) (number? next-cmd))
-                  ;; maps are prop generators
-                  (let [generators (keys-to-leaves [] cmd)
-                        dt 33
-                        duration (if (number? next-cmd) next-cmd 1)
-                        steps (int (/ duration dt))
-                        events (transpose
-                                 (map (fn [[ks g]]
-                                        (map (fn [v] [ks v])
-                                             (if (list? g)
-                                               ((eval g) steps)
-                                               (repeat steps g))))
-                                      generators))
-                        state-changes (map (fn [event]
-                                             (reduce (fn [m [ks v]]
-                                                       `(>! ~state-chan ~(assoc-in m ks v)))
-                                                     {}
-                                                     event))
-                                             events)
-                        change-cmds `(go ~@(interpose `(<! (timeout ~dt)) state-changes))]
-                    change-cmds)
-                  :default
-                     (assert false (str "cmd must be map or number. found:" cmd " " next-cmd))))
-            cmds
-            (concat (rest cmds) [(first cmds)])))))
-  
+(defn sequence [state-chan & cmds]
+  (fn [] (go
+     (doseq [[cmd next-cmd] (map list
+                              cmds
+                              (concat (rest cmds) [(first cmds)]))]
+       (cond
+         (number? cmd)
+           ;; numbers are pauses
+           (<! (timeout cmd))
+         (and (map? cmd) (number? next-cmd))
+           ;; maps are prop generators
+           (let [generators (keys-to-leaves [] cmd)
+                 dt 33
+                 duration (if (number? next-cmd) next-cmd 1)
+                 steps (int (/ duration dt))
+                 events (transpose
+                          (map (fn [[ks g]]
+                                 (map (fn [v] [ks v])
+                                      (if (fn? g)
+                                        (g steps)
+                                        (repeat steps g))))
+                               generators))
+                 state-changes (map (fn [event]
+                                      (reduce (fn [m [ks v]]
+                                                (assoc-in m ks v))
+                                              {}
+                                              event))
+                                      events)
+                 change-cmds (interpose dt state-changes)]
+             (go
+               (doseq [cmd change-cmds]
+                 (if (number? cmd)
+                   (<! (timeout cmd))
+                   (>! state-chan cmd)))))
+           :default
+              (assert false (str "cmd must be map or number. found:" cmd " " next-cmd)))))))
+
 (def AnimateProps2 (zc/create-react-class {
   :display-name "AnimateProps2"
   :get-initial-state (fn []
@@ -469,9 +473,9 @@
          (binding [zc/*current-owner* owner
                    zc/*updater* updater]
            (let [m (<! state-chan)]
-             (log/info "AnimateProps2 receive state " m)
              (zc/set-state! this {:child-props m})))
-          (recur))
+         (when (= :open (<! open-chan))
+           (recur)))
       ;; puts state changes on state-chan until the open-chan closes
       ((gen state-chan open-chan))))
   :render (fn [this]
