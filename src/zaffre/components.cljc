@@ -10,6 +10,14 @@
 (declare element?)
 (declare element-id-str)
 
+(defn deep-merge [v & vs]
+  (letfn [(rec-merge [v1 v2]
+                     (if (and (map? v1) (map? v2))
+                       (merge-with deep-merge v1 v2)
+                       v2))]
+    (when (some identity vs)
+      (reduce #(rec-merge %1 %2) v vs))))
+
 ;; State
 (defprotocol IUpdater
   (enqueue-set-state! [this element partial-state callback])
@@ -48,7 +56,7 @@
                                  (map? %)]}
                          (try
                            (log/trace "partial-state-callback" (format "%x" k) partial-state)
-                           (update s k #(merge % partial-state))
+                           (update s k #(deep-merge % partial-state))
                            (catch Exception e
                              (log/error "Exception applying callback" e)
                              s)))
@@ -59,7 +67,7 @@
                                  (map? %)]}
                          (try
                            (log/trace "fn-callback" s k callback)
-                           (update s k (fn [s] (merge s (callback s))))
+                           (update s k (fn [s] (deep-merge s (callback s))))
                            (catch Exception e
                              (log/error "Exception applying callback" e)
                              s)))
@@ -491,14 +499,6 @@
           (str " Not every child is a component or element in " type " "
                (vec (filter (complement child-validator) children))))))
   true)
-
-(defn deep-merge [v & vs]
-  (letfn [(rec-merge [v1 v2]
-                     (if (and (map? v1) (map? v2))
-                       (merge-with deep-merge v1 v2)
-                       v2))]
-    (when (some identity vs)
-(reduce #(rec-merge %1 %2) v vs))))
 
 ;; React.createElement(Hello, {toWhat: 'World'}, null)
 (defn create-element [type config children & more]
