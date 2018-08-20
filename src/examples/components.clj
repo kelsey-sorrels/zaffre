@@ -9,7 +9,6 @@
             [zaffre.font :as zfont]
             [zaffre.tilesets :as ztiles]
             [zaffre.util :as zutil]
-            [clojure.core.async :refer :all]
             clojure.inspector
             [taoensso.timbre :as log]
             [overtone.at-at :as atat])
@@ -20,6 +19,15 @@
 
 (def width 55)
 (def height 40)
+
+(defn lazy-sin [steps]
+  (let [step (/ (* 2 3.14159) steps)]
+    (log/info "lazy-sin" step)
+    (take steps (map (fn [s] (Math/sin s)) (range 0 (* 2 3.14159) step)))))
+(defn lazy-cos [steps]
+  (let [step (/ (* 2 3.14159) steps)]
+    (log/info "lazy-cos" step)
+    (take steps (map (fn [s] (Math/cos s)) (range 0 (* 2 3.14159) step)))))
 
 (def text "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.; Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.")
 
@@ -40,14 +48,14 @@
             [:layer {:id :main} [
               [:view {} [
                 [:text {} [(str fps)]]]]
-              #_[:view {} [
+              [:view {} [
                 [zcui/Input {:style {:cursor-fg [244 208 65 255]}
                              :on-change text-value-on-change} []]
                 [zcui/Input {:style {:cursor-fg [65 244 208]}
                              :on-change text-value-on-change} []]
                 [zcui/Input {:style {:cursor-fg [208 65 244]}
                              :on-change text-value-on-change} []]]]
-              #_[:view {:style {:border 1
+              [:view {:style {:border 1
                               :border-style :single
                               :text-align :right}} [
                   [zcui/Image {:src "/home/santos/Downloads/Food.png" :style {:clip [0 0 16 16]}}]
@@ -60,7 +68,7 @@
                   [:text {:style {:fg [0 255 255]}} ["or"]]
                   [:text {:style {:fg [0 0 255]}} ["ld"]]
                   [:text {:style {:fg [0 0 0] :bg [255 255 255]}} [text-value]]]]]]
-              #_[:view {:style {:border 1 :border-style :double}} [
+              [:view {:style {:border 1 :border-style :double}} [
                 [:text {:style {:text-align :right}} [text]]]]]]
             [:layer {:id :popup} [
                 [zcui/Popup {} [#_[:text {} ["popup"]]
@@ -70,13 +78,25 @@
                                                  :max-height 20
                                                  :overflow :hidden}} [
                                    #_[zcui/Image {:src "/home/santos/src/zaffre/earthmap.jpg"}] 
-                                   #_[zcui/AnimateProps {:style {
-                                                         :position-top (fn [t] (int (- (* 5 (Math/sin (/ t 8000))) 8)))
-                                                         :position-left (fn [t] (int (- (* 20 (Math/cos (/ t 8000))) 60)))}} [
+                                   #_[zcui/AnimateProps {:gen (fn [state-chan open-chan]
+                                                               (zcui/cycle open-chan
+                                                                 (zcui/sequence state-chan
+                                                                   {:style {
+                                                                     :position-top (fn [steps]
+                                                                                      (map (fn [x]
+                                                                                             (int (- (* 5 x) 8)))
+                                                                                        (lazy-sin steps)))
+                                                                     :position-left (fn [steps]
+                                                                                      (map (fn [x]
+                                                                                             (int (- (* 20 x) 60)))
+                                                                                        (lazy-cos steps)))}}
+                                                                      8000)))} [
                                      [:view {:style {:fg nil :bg nil
+                                                     :position-top 0
+                                                     :position-left 0
                                                      :position-type :absolute}} [
                                        [zcui/Image {:src "/home/santos/src/zaffre/earthmap.jpg"}]]]]]
-                                     [zcui/AnimateProps2 {:gen (fn [state-chan open-chan]
+                                     [zcui/AnimateProps {:gen (fn [state-chan open-chan]
                                                                  (let [x-min 4
                                                                        y-min 4
                                                                        x-max 16
