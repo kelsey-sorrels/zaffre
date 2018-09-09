@@ -135,7 +135,7 @@
 
 (defn copy-buffer-range! [dest src n]
   (when (pos? n)
-    (let [slice (.limit (.slice src) n)]
+    (let [slice (.limit (.slice src) (int n))]
       (.put dest slice))))
 
 (defn copy-sub-image [{dwidth :width dheight :height dchannels :channels dbytes :byte-buffer :as dimg}
@@ -149,8 +149,8 @@
                 didx (* (+ dx1 (* (+ y dy1) dwidth)) dchannels)]
           :when (and (< -1 didx (.limit dbytes))
                      (< -1 sidx (.limit sbytes)))]
-      (.position dbytes didx)
-      (.position sbytes sidx)
+      (.position dbytes (int didx))
+      (.position sbytes (int sidx))
       (copy-buffer-range! dbytes sbytes (* (- sx2 sx1) schannels)))
   (.position sbytes (* swidth sheight schannels))
   (.position dbytes (* dwidth dheight dchannels))

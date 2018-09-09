@@ -77,13 +77,13 @@
 
 (defn yoga-edge [value]
   (case value
-    (:border-left :margin-left :padding-left :position-left)
+    (:border-left :margin-left :padding-left :left)
       Yoga/YGEdgeLeft
-    (:border-top :margin-top :padding-top :position-top)
+    (:border-top :margin-top :padding-top :top)
       Yoga/YGEdgeTop
-    (:border-right :margin-right :padding-right :position-right)
+    (:border-right :margin-right :padding-right :right)
       Yoga/YGEdgeRight
-    (:border-bottom :margin-bottom :padding-bottom :position-bottom)
+    (:border-bottom :margin-bottom :padding-bottom :bottom)
       Yoga/YGEdgeBottom
     (:border-start :margin-start :padding-start :position-start)
       Yoga/YGEdgeStart
@@ -172,7 +172,7 @@
   (style-keys "padding" style))
 
 (defn position-keys [style]
-  (style-keys "position" style))
+  (keys (select-keys style [:top :bottom :left :right])))
 
 (defn style-node [style node]
   ;; Alignment
@@ -233,8 +233,9 @@
     #(Yoga/YGNodeStyleSetMaxHeightPercent node %))
 
     ;; Position
-  (copy-property style :position-type yoga-position-type
-    #(Yoga/YGNodeStyleSetPositionType node %))
+  (when (contains? #{:absolute :relative} (get style :position))
+    (copy-property style :position yoga-position-type
+      #(Yoga/YGNodeStyleSetPositionType node %)))
 
   (log/trace "style" style "position-keys" (vec (position-keys style)))
   (doseq [position-key (position-keys style)]
@@ -278,13 +279,18 @@
   (copy-property style :justify yoga-justify
     #(Yoga/YGNodeStyleSetJustifyContent node %)))
 
-(defn build-yoga-tree [parent index element]
+(defn build-yoga-tree [max-width max-height parent index element]
   "Takes [type props] elements and annotates them with yoga nodes like
    [type props node]. Does this recursively to the element's children"
   (log/trace "build-yoga-tree" index element)
-  (let [[type {:keys [style] :as props} children] element
+  (let [[type {:keys [style] :as props} children] (if (nil? parent)
+                                                    (-> element
+                                                      (assoc-in [1 :style :width] max-width)
+                                                      (assoc-in [1 :style :height] max-height))
+                                                    element)
         node (Yoga/YGNodeNew)]
     (Yoga/YGNodeStyleSetFlexDirection node Yoga/YGFlexDirectionColumn)
+    
 
     ;; set style
     (style-node style node)
@@ -306,19 +312,28 @@
 
     (log/trace "node" node)
     ;; don't recurse into :text and :img
-    (if (or (= type :text) (= type :img))
-      [type props children node]
-      [type
-       props
-       (if children
-           ;; force eager evaluation so that entire tree is created
-           (vec (map-indexed (fn [index child]
-             (if (sequential? child)
-               (build-yoga-tree node index child)
-               child))
-             children))
-         [])
-       node])))
+    (let [result
+      (if (or (= type :text) (= type :img))
+        [type props children node]
+        [type
+         props
+         (if children
+             ;; force eager evaluation so that entire tree is created
+             (vec (map-indexed (fn [index child]
+               (if (sequential? child)
+                 (let [child-props (second child)]
+                   ;; When position == fixed, detatch child and position separately
+                   (if (= (get-in child-props [:style :position]) :fixed)
+                     (build-yoga-tree max-width max-height nil index (assoc-in child [1 :style :position] :absolute))
+                     (build-yoga-tree max-width max-height node index child)))
+                 child))
+               children))
+           [])
+         node])]
+      ;; if no parent, then calculate layout before returning
+      (when (nil? parent)
+        (Yoga/YGNodeCalculateLayout node Yoga/YGUndefined Yoga/YGUndefined Yoga/YGDirectionLTR))
+      result)))
 
 (defn transfer-layout
   "Traverses the yoga tree updating the element portion with
@@ -330,10 +345,21 @@
     (log/trace "transfer-layout" yoga-tree)
     (if (and (sequential? yoga-tree) (= 4 (count yoga-tree)))
       (let [[type props children node] yoga-tree
+            style (get props :style)
+            layout (get style :layout-type :static)
             left (Yoga/YGNodeLayoutGetLeft node)
             top  (Yoga/YGNodeLayoutGetTop node)
-            layout-x (+ parent-layout-x left)
-            layout-y (+ parent-layout-y top)
+            [layout-x layout-y] (case layout
+                                  :fixed
+                                  [(get style :left 0)
+                                   (get style :top 0)]
+                                  :absolute
+                                  ;; TODO use :right/:bottom and handle both cases
+                                  [(+ parent-layout-x (get style :left 0))
+                                   (+ parent-layout-y (get style :top 0))]
+                                  ; default
+                                  [(+ parent-layout-x left)
+                                   (+ parent-layout-y top)])
             layout-width (Yoga/YGNodeLayoutGetWidth node)
             layout-height (Yoga/YGNodeLayoutGetHeight node)
             props-with-layout (assoc props
@@ -355,9 +381,9 @@
       yoga-tree)))
 
 (defn layout-element [element]
-  (let [yoga-tree (build-yoga-tree nil nil element)
-        root-node (last yoga-tree)]
+  (let [width (get-in element [1 :style :width])
+        height (get-in element [1 :style :height])
+        yoga-tree (build-yoga-tree width height nil nil element)]
     (log/trace "yoga-tree" yoga-tree)
-    (Yoga/YGNodeCalculateLayout root-node Yoga/YGUndefined Yoga/YGUndefined Yoga/YGDirectionLTR)
     (transfer-layout yoga-tree)))
 

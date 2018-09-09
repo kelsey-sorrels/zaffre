@@ -698,12 +698,21 @@
 (defmethod tree-level->str String [s level]
   (let [indent (tree-indent level)]
     (format "%s %s (String @%s)\n" indent s (System/identityHashCode s))))
-(defmethod tree-level->str :vector [[k v] level]
-  (let [indent (tree-indent level)]
+(defmethod tree-level->str :vector [[k v children] level]
+  (let [elem-indent (tree-indent level)
+        indent (tree-indent (conj level false))
+        last-indent (tree-indent (conj level true))]
     (if (map? v)
       (apply str
-        [(format "%s%s\n" indent k)
-         (tree-level->str v level)])
+        (concat
+          [(format "%s%c[32m%s%c[39m\n" elem-indent (char 27) k (char 27))
+           (format "%s:props\n" indent)
+           (tree-level->str v (conj level false))]
+           [(format "%schildren (%d)\n" last-indent (count children))]
+           (map (fn [child child-is-last] (tree-level->str child (-> level (conj true) (conj child-is-last))))
+                children
+                (concat (repeat (dec (count children)) false)
+                        (repeat true)))))
       (format "%s%s: %s\n" indent k (if (fn? v) "fn" v)))))
 (defmethod tree-level->str :map [m level]
   (let [indent (tree-indent level)]
@@ -734,7 +743,7 @@
         [(format "%s%c[32m%s%c[39m(Element(id=%s)@%x)\n" elem-indent (char 27) (element-display-name element) (char 27) (element-id-str element) (System/identityHashCode element))
          (format "%s:props\n" indent)
          (tree-level->str (dissoc (get element :props) :children) (conj level false))]
-         #_(let [props (dissoc (get element :props) :children)]
+         (let [props (dissoc (get element :props) :children)]
            (map (fn [kv child-is-last] (tree-level->str kv (-> level (conj false) (conj child-is-last))))
                 props
                 (concat (repeat (dec (count props)) false)

@@ -62,12 +62,12 @@
                   [zcui/Image {:src "/home/santos/Downloads/Food.png" :style {:clip [0 (* 5 16) 16 (* 6 16)]}}]
                   [zcui/Image {:src "/home/santos/Downloads/Food.png" :style {:clip [0 (* 6 16) 16 (* 7 16)]}}]
                 [:text {} [
-                  [:text {:style {:fg [255 0 0]}} ["he"]]
-                  [:text {:style {:fg [255 255 0]}} ["ll"]]
-                  [:text {:style {:fg [0 255 0]}} ["o w"]]
-                  [:text {:style {:fg [0 255 255]}} ["or"]]
-                  [:text {:style {:fg [0 0 255]}} ["ld"]]
-                  [:text {:style {:fg [0 0 0] :bg [255 255 255]}} [text-value]]]]]]
+                  [:text {:style {:color [255 0 0]}} ["he"]]
+                  [:text {:style {:color [255 255 0]}} ["ll"]]
+                  [:text {:style {:color [0 255 0]}} ["o w"]]
+                  [:text {:style {:color [0 255 255]}} ["or"]]
+                  [:text {:style {:color [0 0 255]}} ["ld"]]
+                  [:text {:style {:color [0 0 0] :bg [255 255 255]}} [text-value]]]]]]
               [:view {:style {:border 1 :border-style :double}} [
                 [:text {:style {:text-align :right}} [text]]]]]]
             [:layer {:id :popup} [
@@ -82,19 +82,19 @@
                                                                (zcui/cycle open-chan
                                                                  (zcui/sequence state-chan
                                                                    {:style {
-                                                                     :position-top (fn [steps]
+                                                                     :top (fn [steps]
                                                                                       (map (fn [x]
                                                                                              (int (- (* 5 x) 8)))
                                                                                         (lazy-sin steps)))
-                                                                     :position-left (fn [steps]
+                                                                     :left (fn [steps]
                                                                                       (map (fn [x]
                                                                                              (int (- (* 20 x) 60)))
                                                                                         (lazy-cos steps)))}}
                                                                       8000)))} [
-                                     [:view {:style {:fg nil :bg nil
-                                                     :position-top 0
-                                                     :position-left 0
-                                                     :position-type :absolute}} [
+                                     [:view {:style {:color nil :background-color nil
+                                                     :top 0
+                                                     :left 0
+                                                     :position :absolute}} [
                                        [zcui/Image {:src "/home/santos/src/zaffre/earthmap.jpg"}]]]]]
                                      [zcui/AnimateProps {:gen (fn [state-chan open-chan]
                                                                  (let [x-min 4
@@ -105,32 +105,32 @@
                                                             (zcui/parallel
                                                               (zcui/sequence state-chan
                                                                 {:style {
-                                                                  :position-top (zcui/interpolate-to y-min y-max)}}
+                                                                  :top (zcui/interpolate-to y-min y-max)}}
                                                                 200
                                                                 {:style {
-                                                                  :position-top y-max}}
+                                                                  :top y-max}}
                                                                 200
                                                                 {:style {
-                                                                  :position-top (zcui/interpolate-to y-max y-min)}}
+                                                                  :top (zcui/interpolate-to y-max y-min)}}
                                                                 200
                                                                 {:style {
-                                                                  :position-top y-min}}
+                                                                  :top y-min}}
                                                                 200)
                                                               (zcui/sequence state-chan
                                                                 {:style {
-                                                                  :position-left x-min}}
+                                                                  :left x-min}}
                                                                 200
                                                                 {:style {
-                                                                  :position-left (zcui/interpolate-to x-min x-max)}}
+                                                                  :left (zcui/interpolate-to x-min x-max)}}
                                                                 200
                                                                 {:style {
-                                                                  :position-left x-max}}
+                                                                  :left x-max}}
                                                                 200
                                                                 {:style {
-                                                                  :position-left (zcui/interpolate-to x-max x-min)}}
+                                                                  :left (zcui/interpolate-to x-max x-min)}}
                                                                 200)))))} [
                                          [:view {:style {:width 1
-                                                         :position-type :relative}} [
+                                                         :position :relative}} [
                                            [:text {} ["*"]]]]]]]]]]]]
 ]]]]]]))))
 (defn -main [& _]
