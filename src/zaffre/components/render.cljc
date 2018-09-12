@@ -374,7 +374,7 @@
 
 ;; render a single element if needed
 (defn render [existing parent element]
-  {:pre [(is (or (nil? existing) (zc/element? existing)) (zc/tree->str element))
+  #_{:pre [(is (or (nil? existing) (zc/element? existing)) (zc/tree->str element))
          (is (zc/element? element) (zc/tree->str element))]
    :post [(is (or (nil? %) (string? %) (and (zc/element? %) (check-elem existing element %))) (zc/element-display-name %))]}
   (log/trace "existing" [(zc/element-display-name existing) (zc/element-id-str existing)]
