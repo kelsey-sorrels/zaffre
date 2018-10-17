@@ -17,6 +17,7 @@
    :border-right 0
    :border-top 0
    :border-bottom 0
+   :mix-blend-mode :normal
 })
 
 ;; Primitive elements
@@ -102,7 +103,7 @@
 (defn layout->bounds [{:keys [x y width height]}]
   [x y (+ x width) (+ y height)])
 
-(defn render-string-into-container [^"[[Ljava.lang.Object;" target x y color background-color s]
+(defn render-string-into-container [^"[[Ljava.lang.Object;" target x y color background-color s blend-mode]
   {:pre [(number? x)
          (number? y)
          (vector? color)
@@ -115,7 +116,7 @@
     (loop [index 0 s s]
       (let [target-index (+ x index)]
         (when (and (seq s) (< -1 target-index max-x))
-          (aset target-line target-index {:c (first s) :fg color :bg background-color})
+          (aset target-line target-index {:c (first s) :fg color :bg background-color :blend-mode blend-mode})
           (recur (inc index) (rest s))))))))
 
 (defn render-text-into-container [target text-element]
@@ -125,7 +126,7 @@
   (log/debug "render-text-into-container" text-element)
   (let [[type {:keys [style zaffre/layout] :or {style {}} :as props} children] text-element
         {:keys [x y width height]} layout
-        {:keys [text-align] :or {text-align :left}} style
+        {:keys [text-align mix-blend-mode] :or {text-align :left mix-blend-mode :normal}} style
         lines (ztext/word-wrap-text-tree width height (if (every? string? children)
                                                           [:text props (map (fn [child] [:text {} [child]]) children)]
                                                           text-element))]
@@ -156,7 +157,8 @@
               (+ x dx) (+ y dy)
               (or color (get default-style :color))
               (or background-color (get default-style :background-color))
-              (clojure.string/trim s))))))))
+              (clojure.string/trim s)
+              mix-blend-mode)))))))
 
 (defn render-img-into-container [^"[[Ljava.lang.Object;" target img-element]
   {:pre [(= (first img-element) :img)
@@ -164,6 +166,7 @@
          #_(not (empty? (last img-element)))]}
   (log/debug "render-img-into-container" img-element)
   (let [[type {:keys [style zaffre/layout] :or {style {}} :as props} children] img-element
+        {:keys [mix-blend-mode] :or {mix-blend-mode (get default-style :mix-blend-mode)}} style
         {:keys [x y width height overflow-bounds]} layout
         overflow-bounds (or overflow-bounds (layout->bounds layout))
         [overflow-min-x overflow-min-y overflow-max-x overflow-max-y] overflow-bounds
@@ -187,7 +190,7 @@
                 target-x (int (+ x dx))]
             (when (< min-x target-x max-x)
               (log/trace "rendering pixel x:" target-x " y:" target-y " " pixel " max-x:" max-x " max-y:" (count target))
-              (aset target-line target-x pixel))))))))
+              (aset target-line target-x (merge pixel {:blend-mode mix-blend-mode})))))))))
 
 (defn element-seq [element]
   "Returns :view and top-level :text elements."
@@ -231,12 +234,13 @@
           {:keys [color background-color
                   border border-style
                   border-top border-bottom
-                  border-left border-right]} (merge default-style style)]
+                  border-left border-right
+                  mix-blend-mode]} (merge default-style style)]
       ;; render background when set
       (when background-color
         (doseq [dy (range height)
                 :let [color (or color (get default-style :color))]]
-          (render-string-into-container target x (+ y dy) color background-color (apply str (repeat width " ")))))
+          (render-string-into-container target x (+ y dy) color background-color (apply str (repeat width " ")) mix-blend-mode)))
       ; render border when set
       (when border-style
         (let [border-map (case border-style
@@ -250,13 +254,14 @@
                    (apply str (repeat (- width (+ (or border border-left) (or border border-right)))
                                       (get border-map :horizontal)))
                    (when (or (< 0 border) (< 0 border-right))
-                     (get border-map :top-right)))))
+                     (get border-map :top-right)))
+               mix-blend-mode))
           ; render middle
           (doseq [dy (range (- height 2))]
             (when (or (< 0 border) (< 0 border-left))
-              (render-string-into-container target x (+ y dy 1) color background-color (str (get border-map :vertical))))
+              (render-string-into-container target x (+ y dy 1) color background-color (str (get border-map :vertical)) mix-blend-mode))
             (when (or (< 0 border) (< 0 border-right))
-              (render-string-into-container target (+ x width -1) (+ y dy 1) color background-color (str (get border-map :vertical)))))
+              (render-string-into-container target (+ x width -1) (+ y dy 1) color background-color (str (get border-map :vertical)) mix-blend-mode)))
           ; render bottom
           (when (or (< 0 border) (< 0 border-bottom))
             (render-string-into-container target x (+ y height -1) color background-color
@@ -265,7 +270,8 @@
                    (apply str (repeat (- width (+ (or border border-left) (or border border-right)))
                                 (get border-map :horizontal)))
                    (when (or (< 0 border) (< 0 border-right))
-                     (get border-map :bottom-right))))))))
+                     (get border-map :bottom-right)))
+              mix-blend-mode)))))
     nil)
 
 ;; Do nothing for :layer

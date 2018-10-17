@@ -30,6 +30,12 @@
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* true)
 
+(defn blend-mode->byte [blend-mode]
+  (case blend-mode
+    :normal 0x0
+    :multiple 0x1
+    (assert false (str "Unknown blend-mode " blend-mode))))
+
 ;; GLFW won't maintain a strong reference to our callback objects, so we have to
 (def key-callback-atom (atom nil))
 (def char-callback-atom (atom nil))
@@ -459,9 +465,13 @@
   (character [this])
   (fg-color [this])
   (bg-color [this])
-  (style [this]))
+  (highlight [this])
+  (blend-mode [this]))
 
-(defrecord GLCharacter [character fg-color bg-color style]
+; style #{:fg-bg ; reverse foreground and background colors
+;        }
+; blend-mode one of :normal, or :multiply
+(defrecord GLCharacter [character fg-color bg-color style blend-mode]
   Object
   (toString [this]
     (pr-str this))
@@ -469,11 +479,20 @@
   (character [this] character)
   (fg-color [this] fg-color)
   (bg-color [this] bg-color)
-  (style [this] style))
+  (highlight [this] (contains? style :fg-bg))
+  (blend-mode [this] blend-mode))
 
 (defn make-terminal-character
-  ([character fg-color bg-color style]
-   (GLCharacter. character fg-color bg-color style)))
+  ([character fg-color bg-color style blend-mode]
+   ; uncomment for debugging
+   {:pre [(char? character)
+          (vector? fg-color)
+          #_(< 2 (count fg-color) 5)
+          (vector? bg-color)
+          #_(< 2 (count bg-color) 5)
+          (set? style)
+          (contains? #{:normal :multiple} blend-mode)]}
+   (GLCharacter. character fg-color bg-color style blend-mode)))
 
 (defn- fill-glyph-fg-bg-buffers [layer-id->character-map character->col-row character->transparent texture-columns texture-rows rows layer-size cursor-xy glyph-image-data fg-image-data bg-image-data]
   (let [^long texture-columns texture-columns
@@ -496,8 +515,8 @@
       (loop-with-index row [line (reverse @character-map)]
         (loop-with-index col [c line]
           (let [chr        (or (get c :fx-character) (character c))
-                style      (style c)
-                highlight  (or (= @cursor-xy [col (- rows row 1)]) (contains? style :fg-bg))
+                blend-mode (blend-mode c)
+                highlight  (or (= @cursor-xy [col (- rows row 1)]) (highlight c))
                 ;highlight  (= @cursor-xy [col (- rows row 1)])
                 [fg-r fg-g fg-b fg-a] (if highlight
                                         (bg-color c)
@@ -510,8 +529,8 @@
                 ;s         (str (get c :character))
                 i         (+ (* 4 (+ (* texture-columns row) col)) (* layer-size layer))
                 [x y]     (get character->col-row chr)
-                transparent (and (get character->transparent chr) (not (contains? style :fg-bg)))]
-            #_(log/info "Drawing " layer-id "at col row" col row "character from atlas col row" x y c "(index=" i ") transparent" transparent )
+                transparent (and (get character->transparent chr) (not highlight))]
+            #_(log/info "Drawing " layer-id "at col row" col row "character from atlas col row" x y c "(index=" i ") transparent " transparent " blend-mode " blend-mode)
             (when (zero? col)
               ;(log/info "glyph texture" glyph-texture-width glyph-texture-height)
               ;(log/info "resetting position to start of line" layer row col i)
@@ -537,9 +556,7 @@
                 (.put glyph-image-data (unchecked-byte x))
                 (.put glyph-image-data (unchecked-byte y))
                 ;; TODO fill with appropriate type
-                (.put glyph-image-data (unchecked-byte (cond
-                                                         transparent 2
-                                                         :else 1)))
+                (.put glyph-image-data (unchecked-byte (blend-mode->byte blend-mode)))
                 (.put glyph-image-data (unchecked-byte 0))
                 (.put fg-image-data    (unchecked-byte fg-r))
                 (.put fg-image-data    (unchecked-byte fg-g))
@@ -639,12 +656,13 @@
                                (reduce
                                  (fn [line c]
                                    (if (< -1 (get c :x) columns)
-                                     (let [fg        (get c :fg)
-                                           bg        (get c :bg)
-                                           style     (get c :style #{})
-                                           fg-color  fg
-                                           bg-color  bg
-                                           character (make-terminal-character (get c :c) fg-color bg-color style)]
+                                     (let [fg          (get c :fg)
+                                           bg          (get c :bg)
+                                           style       (get c :style #{})
+                                           blend-mode  (get c :blend-mode :normal)
+                                           fg-color    fg
+                                           bg-color    bg
+                                           character   (make-terminal-character (get c :c) fg-color bg-color style blend-mode)]
                                        (assoc! line (int (get c :x)) character))
                                      line))
                                  (transient (get cm (int row)))
@@ -658,13 +676,14 @@
            (fn [_]
              (map (fn [line]
                     (map (fn [c]
-                           (let [fg        (get c :fg [255 0 0 255])
-                                 bg        (get c :bg [0 0 0 0])
-                                 style     (get c :style #{})
-                                 ch        (get c :c \ )
-                                 fg-color  fg
-                                 bg-color  bg
-                                 character (make-terminal-character ch fg-color bg-color style)]
+                           (let [fg          (get c :fg [255 0 0 255])
+                                 bg          (get c :bg [0 0 0 0])
+                                 style       (get c :style #{})
+                                 blend-mode  (get c :blend-mode :normal)
+                                 ch          (get c :c \ )
+                                 fg-color    fg
+                                 bg-color    bg
+                                 character   (make-terminal-character ch fg-color bg-color style blend-mode)]
                              character))
                          line))
                   characters))))
@@ -1012,7 +1031,8 @@
                                                                                      (char 0)
                                                                                      default-fg-color
                                                                                      default-bg-color
-                                                                                     #{})))))]))
+                                                                                     #{}
+                                                                                     :normal)))))]))
         layer-character-map (into {}
                                   (for [id (keys layer-id->group)]
                                     [id (ref (get layer-character-map-cleared id))]))
