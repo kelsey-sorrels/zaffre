@@ -33,7 +33,7 @@
 (defn blend-mode->byte [blend-mode]
   (case blend-mode
     :normal 0x0
-    :multiple 0x1
+    :multiply 0x1
     (assert false (str "Unknown blend-mode " blend-mode))))
 
 ;; GLFW won't maintain a strong reference to our callback objects, so we have to
@@ -485,13 +485,13 @@
 (defn make-terminal-character
   ([character fg-color bg-color style blend-mode]
    ; uncomment for debugging
-   {:pre [(char? character)
+   #_{:pre [(char? character)
           (vector? fg-color)
-          #_(< 2 (count fg-color) 5)
+          (< 2 (count fg-color) 5)
           (vector? bg-color)
-          #_(< 2 (count bg-color) 5)
+          (< 2 (count bg-color) 5)
           (set? style)
-          (contains? #{:normal :multiple} blend-mode)]}
+          (contains? #{:normal :multiply} blend-mode)]}
    (GLCharacter. character fg-color bg-color style blend-mode)))
 
 (defn- fill-glyph-fg-bg-buffers [layer-id->character-map character->col-row character->transparent texture-columns texture-rows rows layer-size cursor-xy glyph-image-data fg-image-data bg-image-data]
