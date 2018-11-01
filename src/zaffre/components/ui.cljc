@@ -357,8 +357,7 @@
   :display-name "Popup"
   :render (fn [this]
     (log/trace "Popup render")
-    (let [{:keys [style children] :as props} (zc/props this)
-          {:keys [color background-color]} style]
+    (let [{:keys [style children] :as props} (zc/props this)]
       (zc/csx [:view {:style {:max-height "100%" :max-width "100%"
                               :height "100%"
                               :align-items :center
@@ -367,15 +366,17 @@
                               :top 0 :left 0
                               :color [0 0 0 128]
                               :background-color [0 0 0 128]}} [
-                [:view {:style {:color (or color [255 255 255 255])
-                                :background-color (or background-color [0 0 0 255])
-                                :margin-top 10
-                                ;:margin-bottom 10
-                                :padding 0
-                                :border 1 :border-style :single
-                                :text-align :center
-                                :max-height "90%"
-                                :max-width "90%"}}
+                [:view {:style (merge
+                                 {:color [255 255 255 255]
+                                  :background-color [0 0 0 255]
+                                  :margin-top 10
+                                  ;:margin-bottom 10
+                                  :padding 0
+                                  :border 1 :border-style :single
+                                  :text-align :center
+                                  :max-height "90%"
+                                  :max-width "90%"}
+                                style)}
                     children]]])))}))
 
 (defn interpolate-to [start end]
