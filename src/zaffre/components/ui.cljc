@@ -4,7 +4,6 @@
     [clj-http.client :as client]
     [clojure.java.io :as jio]
     [clojure.core.cache :as cache]
-    [clojure.core.async :as async :refer [>! <! chan to-chan timeout go go-loop thread]]
     [clojure.pprint :as pprint]
     [taoensso.timbre :as log]
     rockpick.core
@@ -384,100 +383,4 @@
     (let [interval (- end start)
           step (/ interval steps)]
       (range start end step))))
-
-(defn cycle [open-chan chan-fn]
-  (fn []
-    (go-loop []
-       (<! (chan-fn))
-       (when (= :open (<! open-chan))
-         (recur)))))
-
-(defn parallel [& chans]
-  (fn []
-    (go
-      (<! (async/merge (map (fn [c] (c)) chans))))))
-
-(defn keys-to-leaves [prefix m]
-  (mapcat (fn [[k v]]
-            (if (map? v)
-              (keys-to-leaves (conj prefix k) v)
-              [[(conj prefix k) v]]))
-          m))
-
-(defn transpose [xs]
-  (apply map list xs))
-
-(defn sequence [state-chan & cmds]
-  (fn [] (go
-     (doseq [[cmd next-cmd] (map list
-                              cmds
-                              (concat (rest cmds) [(first cmds)]))]
-       (cond
-         (number? cmd)
-           ;; numbers are pauses
-           (<! (timeout cmd))
-         (and (map? cmd) (number? next-cmd))
-           ;; maps are prop generators
-           (let [generators (keys-to-leaves [] cmd)
-                 dt 33
-                 duration (if (number? next-cmd) next-cmd 1)
-                 steps (int (/ duration dt))
-                 events (transpose
-                          (map (fn [[ks g]]
-                                 (map (fn [v] [ks v])
-                                      (if (fn? g)
-                                        (g steps)
-                                        (repeat steps g))))
-                               generators))
-                 state-changes (map (fn [event]
-                                      (reduce (fn [m [ks v]]
-                                                (assoc-in m ks v))
-                                              {}
-                                              event))
-                                      events)
-                 change-cmds (interpose dt state-changes)]
-             (go
-               (doseq [cmd change-cmds]
-                 (if (number? cmd)
-                   (<! (timeout cmd))
-                   (>! state-chan cmd)))))
-           :default
-              (assert false (str "cmd must be map or number. found:" cmd " " next-cmd)))))))
-
-(def AnimateProps (zc/create-react-class {
-  :display-name "AnimateProps"
-  :get-initial-state (fn []
-                       (log/debug "AnimateProps get-initial-state")
-                       {:open-chan (to-chan (repeat :open))
-                        :start-time (System/currentTimeMillis)})
-  :component-will-mount (fn [this]
-    (log/info "AnimateProps component-will-mount" (zc/element-id-str zc/*current-owner*))
-    ;; pass current-owner binding through to the scheduled fn
-    (let [owner zc/*current-owner*
-          updater zc/*updater*
-          {:keys [gen]} (zc/props this)
-          {:keys [open-chan]} (zc/state this)
-          state-chan (chan)]
-      ;; receives state changes through state-chan
-      (go-loop []
-         (binding [zc/*current-owner* owner
-                   zc/*updater* updater]
-           (let [m (<! state-chan)]
-             (zc/set-state! this {:child-props m})))
-         (when (= :open (<! open-chan))
-           (recur)))
-      ;; puts state changes on state-chan until the open-chan closes
-      ((gen state-chan open-chan))))
-  :render (fn [this]
-    (log/debug "AnimateProps render")
-    (let [{:keys [children] :as props} (zc/props this)
-          {:keys [child-props
-                  state-chan
-                  open-chan]} (zc/state this)
-          updated-children (map (fn [child]
-                                  (update child :props 
-                                    (fn [prev-child-props]
-                                      (zc/deep-merge prev-child-props child-props))))
-                                children)]
-      (first updated-children)))}))
 
