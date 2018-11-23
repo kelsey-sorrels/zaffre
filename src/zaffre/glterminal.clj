@@ -846,19 +846,19 @@
               ; Send updated glyph texture to gl
               (GL13/glActiveTexture GL13/GL_TEXTURE1)
               (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY glyph-texture)
-              (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL30/GL_RGBA8UI texture-columns texture-rows layer-count 0 GL30/GL_RGBA_INTEGER GL11/GL_UNSIGNED_BYTE glyph-image-data)
+              (GL12/glTexSubImage3D GL30/GL_TEXTURE_2D_ARRAY 0 0 0 0 texture-columns texture-rows layer-count GL30/GL_RGBA_INTEGER GL11/GL_UNSIGNED_BYTE glyph-image-data)
               (except-gl-errors "glyph texture data")
               ; Send updated fg texture to gl
               (GL13/glActiveTexture GL13/GL_TEXTURE2)
               (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY fg-texture)
-              (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL11/GL_RGBA texture-columns texture-rows layer-count 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE fg-image-data)
+              (GL12/glTexSubImage3D GL30/GL_TEXTURE_2D_ARRAY 0 0 0 0 texture-columns texture-rows layer-count GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE fg-image-data)
               (except-gl-errors "fg color texture data")
               ; Send updated bg texture to gl
               (GL13/glActiveTexture GL13/GL_TEXTURE3)
               (except-gl-errors "bg color glActiveTexture")
               (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY bg-texture)
               (except-gl-errors "bg color glBindTexture")
-              (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL11/GL_RGBA texture-columns texture-rows layer-count 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bg-image-data)
+              (GL12/glTexSubImage3D GL30/GL_TEXTURE_2D_ARRAY 0 0 0 0 texture-columns texture-rows layer-count GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bg-image-data)
               (except-gl-errors "bg color glTexImage2D")
               (GL11/glDrawArrays GL11/GL_TRIANGLE_STRIP 0 vertices-count)
               (except-gl-errors "bg color glDrawArrays")
