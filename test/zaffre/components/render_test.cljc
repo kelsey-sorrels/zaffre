@@ -64,8 +64,6 @@
     (let [element (zc/csx [hello-world-label-csx {:value "world"}])
           rendered-element (zcr/render-recursively nil nil element)
           re-rendered-element (zcr/render-recursively rendered-element nil element)]
-      (inspect-tree rendered-element)
-      (inspect-tree re-rendered-element)
       (is (= re-rendered-element rendered-element)))))
 
 (deftest should-extract-native-elements
