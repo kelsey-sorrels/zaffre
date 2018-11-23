@@ -85,9 +85,9 @@
       Yoga/YGEdgeRight
     (:border-bottom :margin-bottom :padding-bottom :bottom)
       Yoga/YGEdgeBottom
-    (:border-start :margin-start :padding-start :position-start)
+    (:border-start :margin-start :padding-start :start)
       Yoga/YGEdgeStart
-    (:border-end :margin-end :padding-end :position-end)
+    (:border-end :margin-end :padding-end :end)
       Yoga/YGEdgeEnd
     (:border-horizontal :margin-horizontal :padding-horizontal)
       Yoga/YGEdgeHorizontal

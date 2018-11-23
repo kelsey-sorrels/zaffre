@@ -45,7 +45,6 @@
                   :get-initial-state (fn [] {:count 1})
                   :get-derived-state-from-props
                     (fn [this next-props prev-state]
-                      (println "get-derived-state-from-props" next-props prev-state)
                       {:count (+ (get prev-state :count) (get next-props :increment-by))})
                   :render (fn [this]
                             (let [{:keys [count]} (zc/state this)
