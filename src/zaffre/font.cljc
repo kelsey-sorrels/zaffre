@@ -31,12 +31,11 @@
 ;    (spit "calls.log" calls)))
     
 (defn- byte-buffer->str [^ByteBuffer buffer]
-  (if buffer
+  (when buffer
     (loop [s ""]
       (if (pos? (.remaining buffer))
          (recur (str s (char (.get buffer))))
-         s))
-    nil))
+         s))))
 
 (defn font-family [font-info]
   (byte-buffer->str (STBTruetype/stbtt_GetFontNameString font-info 1 0 0 1)))

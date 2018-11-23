@@ -1,5 +1,6 @@
 (ns zaffre.text
-  (:require [taoensso.timbre :as log]))
+  (:require clojure.string
+            [taoensso.timbre :as log]))
 
 ;; like split-at, but takes a sequence of n and splits into lengths of n
 (defn split-n [n-seq l]
@@ -59,7 +60,7 @@
 				filter-leaves)
        strings (map last spans)]
   (log/trace "text-spans" (vec spans))
-  [(apply str strings)
+  [(clojure.string/join strings)
    (mapcat (fn [style length] (repeat length style))
        (map second spans)
        (map count strings))]))

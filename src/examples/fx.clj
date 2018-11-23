@@ -5,6 +5,7 @@
             [zaffre.font :as zfont]
             [zaffre.util :as zutil]
             [clojure.core.async :as async :refer [go-loop]]
+            clojure.string
             [taoensso.timbre :as log])
   (:import (zaffre.terminal Terminal)
            (zaffre.font CP437Font TTFFont)))
@@ -80,8 +81,8 @@
             (zutil/put-string terminal :text 12 0 (str key-in))
             ; fx (note the only characters we're drawing if full-cell boxes
             (doseq [y (range 16)]
-              (zutil/put-string terminal :dark 0 y (apply str (repeat 16 " ")))
-              (zutil/put-string terminal :light 0 y (apply str (repeat 16 " "))))
+              (zutil/put-string terminal :dark 0 y (clojure.string/join (repeat 16 " ")))
+              (zutil/put-string terminal :light 0 y (clojure.string/join (repeat 16 " "))))
             (zat/set-bg! terminal :light 8 8 [32 32 16])
             (doseq [x (range 16)
                     y (range 16)]
