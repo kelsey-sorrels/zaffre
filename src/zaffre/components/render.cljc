@@ -460,7 +460,7 @@
                                 prev-state (zc/get-state zc/*updater* element)]
                             (zc/get-derived-state-from-props instance next-props prev-state))
             _ (when derived-state
-                (zc/enqueue-set-state! zc/*updater* element derived-state nil))
+                (zc/immediate-set-state! zc/*updater* element derived-state))
             _ (zc/component-will-mount instance)
             _ (log/trace "rendering component" (str instance))
             next-element (zc/render instance)
