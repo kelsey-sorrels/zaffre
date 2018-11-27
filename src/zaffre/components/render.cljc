@@ -171,8 +171,8 @@
         overflow-bounds (or overflow-bounds (layout->bounds layout))
         [overflow-min-x overflow-min-y overflow-max-x overflow-max-y] overflow-bounds
         ;; bounds for overflow/target container (whichever is smaller)
-        min-x (dec (max 1 overflow-min-x))
-        min-y (dec (max 1 overflow-min-y))
+        min-x (dec (max 0 overflow-min-x))
+        min-y (dec (max 0 overflow-min-y))
         max-y (min overflow-max-y (count target))
         lines (last img-element)]
     (log/debug "render-img-into-container layout " layout)
@@ -186,7 +186,7 @@
           (assert (vector? fg))
           (assert (vector? bg))
           (let [^"[Ljava.lang.Object;" target-line (aget target target-y)
-                max-x (min overflow-max-x(count target-line))
+                max-x (min overflow-max-x (count target-line))
                 target-x (int (+ x dx))]
             (when (< min-x target-x max-x)
               (log/trace "rendering pixel x:" target-x " y:" target-y " " pixel " max-x:" max-x " max-y:" (count target))
@@ -320,10 +320,10 @@
         elements (-> (inherit-overflow-bounds layer-en-place)
                    element-seq
                    vec)]
-    (log/trace "render-layer-into-container elements" elements)
-    #_(log/info "render-layer-into-container layer-en-place" (zc/tree->str layer-en-place))
+    #_(log/trace "render-layer-into-container elements" elements)
+    #_(log/trace "render-layer-into-container layer-en-place" (zc/tree->str layer-en-place))
     (doseq [element elements]
-      (log/debug "render-layer-into-container element" element)
+      #_(log/debug "render-layer-into-container element" element)
       (render-component-into-container target element))))
                     
 (defn log-layer [^"[[Ljava.lang.Object;" layer-container]
