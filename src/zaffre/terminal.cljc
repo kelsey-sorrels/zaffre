@@ -11,7 +11,7 @@
   (alter-group-pos! [this group-id pos-fn] "Change the [x y] position of a layer group. `x` and `y` are mesured in pixels from the upper left corner of the screen.")
   (alter-group-font! [this group-id font-fn] "Changes the font for a layer group. `font-fn` is a function that takes one argument: one of :linux :macosx or :windows, and returns a font.")
   (put-chars! [this layer-id characters] "Changes the characters in a layer. `characters` is a sequence where each element is a map and must have these keys: :c - a character or keyword, :x int, column, :y int row, :fg [r g b], :bg [r g b] where r,g,b are ints from 0-255.")
-  (replace-chars! [this layer-id characters] "Replaces the characters in a layer. `characters is an array of arrays where each element is a map and must have these keys: :c - character or keyword, :fg [r g b] :bg [r g b] where r,g,b are ints from 0-355.")
+  (replace-chars! [this layer-id characters] "Replaces the characters in a layer. `characters is an array of arrays where each element is a map and must have these keys: :c - character or keyword, :fg [r g b] :bg [r g b] where r,g,b are ints from 0-255.")
   (set-fg! [this layer-id x y fg] "Changes the foreground color of a character in a layer.")
   (set-bg! [this layer-id x y bg] "Changes the background color of a character in a layer.")
   (assoc-shader-param! [this k v] "Changes the value of a uniform variable in the post-processing shader.")
