@@ -96,7 +96,7 @@
                                                      :left 0
                                                      :position :absolute}} [
                                        [zcui/Image {:src "/home/santos/src/zaffre/earthmap.jpg"}]]]]]
-                                     [zcui/AnimateProps {:gen (fn [state-chan open-chan]
+                                     #_[zcui/AnimateProps {:gen (fn [state-chan open-chan]
                                                                  (let [x-min 4
                                                                        y-min 4
                                                                        x-max 16
