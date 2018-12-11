@@ -1,7 +1,8 @@
 ; Functions for rendering characters to screen
 (ns zaffre.glterminal
-  (:require [zaffre.terminal :as zat]
+  (:require [zaffre.terminal :as zt]
             [zaffre.font :as zfont]
+            [zaffre.color :as zcolor]
             [zaffre.util :as zutil]
             [zaffre.imageutil :as zimg]
             [zaffre.lwjglutil :as zlwjgl]
@@ -29,12 +30,6 @@
 
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* true)
-
-(defn blend-mode->byte [blend-mode]
-  (case blend-mode
-    :normal 0x0
-    :multiply 0x1
-    (assert false (str "Unknown blend-mode " blend-mode))))
 
 ;; GLFW won't maintain a strong reference to our callback objects, so we have to
 (def key-callback-atom (atom nil))
@@ -494,92 +489,6 @@
           (contains? #{:normal :multiply} blend-mode)]}
    (GLCharacter. character fg-color bg-color style blend-mode)))
 
-(defn- fill-glyph-fg-bg-buffers [layer-id->character-map character->col-row character->transparent texture-columns texture-rows rows layer-size cursor-xy glyph-image-data fg-image-data bg-image-data]
-  (let [^long texture-columns texture-columns
-        ^long texture-rows texture-rows
-        ^long rows rows
-        ^long layer-size layer-size
-        ^ByteBuffer glyph-image-data glyph-image-data
-        ^ByteBuffer fg-image-data fg-image-data
-        ^ByteBuffer bg-image-data bg-image-data]
-    (.clear glyph-image-data)
-    (.clear fg-image-data)
-    (.clear bg-image-data)
-    (loop-with-index layer [[layer-id character-map] layer-id->character-map]
-      ;;(doseq [[layer-id character-map] layers-character-map]
-      ;;  (doseq [[row line] (map-indexed vector (reverse @character-map))
-      ;;          [col c]    (map-indexed vector line)]
-          ;;(log/info "row" row "col" col "c" c)
-      ;(log/info layer-id)
-      ;; Set buffer positions to beginning
-      (loop-with-index row [line (reverse @character-map)]
-        (loop-with-index col [c line]
-          (let [chr        (or (get c :fx-character) (character c))
-                blend-mode (blend-mode c)
-                highlight  (or (= @cursor-xy [col (- rows row 1)]) (highlight c))
-                ;highlight  (= @cursor-xy [col (- rows row 1)])
-                [fg-r fg-g fg-b fg-a] (if highlight
-                                        (bg-color c)
-                                        (fg-color c))
-                [bg-r bg-g bg-b bg-a] (if highlight
-                                        (fg-color c)
-                                        (bg-color c))
-                fg-a (or fg-a 255)
-                bg-a (or bg-a 255)
-                ;s         (str (get c :character))
-                i         (+ (* 4 (+ (* texture-columns row) col)) (* layer-size layer))
-                [x y]     (get character->col-row chr)
-                transparent (and (get character->transparent chr) (not highlight))]
-            #_(log/info "Drawing " layer-id "at col row" col row "character from atlas col row" x y c "(index=" i ") transparent " transparent " blend-mode " blend-mode)
-            (when (zero? col)
-              ;(log/info "glyph texture" glyph-texture-width glyph-texture-height)
-              ;(log/info "resetting position to start of line" layer row col i)
-              (.position glyph-image-data i)
-              (.position fg-image-data i)
-              (.position bg-image-data i))
-            (if (not= chr (char 0))
-              (do
-                (when (or (nil? x) (nil? y))
-                  (log/error (format "X/Y nil - glyph not found for character %s %s"
-                               (or (str chr) "nil")
-                               (or (cond
-                                     (nil? chr) "nil"
-                                     (char? chr) (format "%x" (int chr))
-                                     :else (str chr)))))
-                  (assert
-                    (format "X/Y nil - glyph not found for character %s %s"
-                      (or (str chr) "nil")
-                      (or (cond
-                            (nil? chr) "nil"
-                            (char? chr) (format "%x" (int chr))
-                            :else (str chr))))))
-                (.put glyph-image-data (unchecked-byte x))
-                (.put glyph-image-data (unchecked-byte y))
-                ;; TODO fill with appropriate type
-                (.put glyph-image-data (unchecked-byte (blend-mode->byte blend-mode)))
-                (.put glyph-image-data (unchecked-byte 0))
-                (.put fg-image-data    (unchecked-byte fg-r))
-                (.put fg-image-data    (unchecked-byte fg-g))
-                (.put fg-image-data    (unchecked-byte fg-b))
-                (.put fg-image-data    (unchecked-byte fg-a))
-                (.put bg-image-data    (unchecked-byte bg-r))
-                (.put bg-image-data    (unchecked-byte bg-g))
-                (.put bg-image-data    (unchecked-byte bg-b))
-                (.put bg-image-data    (unchecked-byte bg-a)))
-              ;; space ie empty, skip forward
-              (do
-                (.put glyph-image-data (byte-array 4))
-                (.put fg-image-data (byte-array 4))
-                (.put bg-image-data (byte-array 4)))))))
-        #_(log/info "At pos" (.position glyph-image-data))
-        #_(log/info "Setting layer" layer "new pos" (* texture-columns texture-height 4 (inc layer)))
-        (.position glyph-image-data (* texture-columns texture-rows 4 (inc layer)))
-        (.position fg-image-data    (* texture-columns texture-rows 4 (inc layer)))
-        (.position bg-image-data    (* texture-columns texture-rows 4 (inc layer))))
-      (.flip glyph-image-data)
-      (.flip fg-image-data)
-      (.flip bg-image-data)))
-
 ;; Normally this would be a record, but until http://dev.clojure.org/jira/browse/CLJ-1224 is fixed
 ;; it is not performant to memoize records because hashCode values are not cached and are recalculated
 ;; each time.
@@ -588,12 +497,12 @@
                            window-size
                            framebuffer-size
                            monitor-fullscreen-sizes
-                           layer-character-map-cleared
-                           layer-character-map
                            group-map
                            group-order
                            group->font-texture
+                           group-id->index
                            layer-id->group
+                           layer-id->index
                            cursor-xy
                            fx-uniforms
                            gl
@@ -603,7 +512,7 @@
                            destroyed
                            window
                            capabilities]
-  zat/Terminal
+  zt/Terminal
   (args [_]
     term-args)
   (groups [_]
@@ -639,75 +548,141 @@
                                                   :character-width
                                                   :character-height])
                                  (assoc :type :font-change)))))
-  ;; characters is a list of {:c \character :x col :y row :fg [r g b] :bg [r g b]}
+  ;; characters is a list of {:c \character :x col :y row :fg [r g b [a]] :bg [r g b [a]]}
   (put-chars! [_ layer-id characters]
     {:pre [(is (not (nil? (get layer-id->group layer-id))) (format "Invalid layer-id %s" layer-id))
-           (is (not (nil? (get layer-character-map layer-id))) (format "Invalid layer-id %s" layer-id))
            (is (coll? characters) "characters must be a collection")
            (every? true? (map (fn [character]
                                 (is (every? character #{:x :y :c :fg :bg}) (str character "missing required keys"))
                                 (is number? (get character :x))
                                 (is number? (get character :y)))
                               characters))]}
-    #_(log/info "characters" (str characters))
     (let [columns (-> layer-id layer-id->group deref :columns)
-          rows    (-> layer-id layer-id->group deref :rows)]
-      ;(log/info "writing to layer" layer-id "dim:" columns "x" rows)
-      (alter (get layer-character-map layer-id)
-             (fn [cm]
-               (reduce (fn [cm [row row-characters]]
-                         (if (< -1 row rows)
-                           (assoc cm
-                             (int row)
-                             (persistent!
-                               (reduce
-                                 (fn [line c]
-                                   (if (< -1 (get c :x) columns)
-                                     (let [fg          (get c :fg)
-                                           bg          (get c :bg)
-                                           style       (get c :style #{})
-                                           blend-mode  (get c :blend-mode :normal)
-                                           fg-color    fg
-                                           bg-color    bg
-                                           character   (make-terminal-character (get c :c) fg-color bg-color style blend-mode)]
-                                       (assoc! line (int (get c :x)) character))
-                                     line))
-                                 (transient (get cm (int row)))
-                                 row-characters)))
-                           cm))
-                       cm
-                       (group-by :y characters))))
-      #_(log/info "character-map" (str @character-map))))
-  (replace-chars! [_ layer-id characters]
-    (alter (get layer-character-map layer-id)
-           (fn [_]
-             (map (fn [line]
-                    (map (fn [c]
-                           (let [fg          (get c :fg [255 0 0 255])
-                                 bg          (get c :bg [0 0 0 0])
-                                 style       (get c :style #{})
-                                 blend-mode  (get c :blend-mode :normal)
-                                 ch          (get c :c \ )
-                                 fg-color    fg
-                                 bg-color    bg
-                                 character   (make-terminal-character ch fg-color bg-color style blend-mode)]
-                             character))
-                         line))
-                  characters))))
-  (set-fg! [_ layer-id x y fg]
-    {:pre [(is (vector? fg) "fg not a vector")
-           (is (= (count fg) 3) "fg must have 3 elements")
-           (is (every? number? fg) "fg elements must be numbers")
-           (is (get layer-character-map layer-id) (format "Invalid layer-id %s" layer-id))]}
-      (alter (get layer-character-map layer-id)
-             (fn [cm] (assoc-in cm [y x :fg-color] fg))))
-  (set-bg! [_ layer-id x y bg]
-    {:pre [(is (vector? bg) "bg not a vector")
-           (is (= (count bg) 3) "bg must have 3 elements")
-           (is (every? number? bg) "bg elements must be numbers")
-           (is (get layer-character-map layer-id) (format "Invalid layer-id %s" layer-id))]}
-      (alter (get layer-character-map layer-id)
-             (fn [cm] (assoc-in cm [y x :bg-color] bg))))
+          rows    (-> layer-id layer-id->group deref :rows)
+          group-id (-> layer-id layer-id->group deref :id)
+          group-index  (get group-id->index group-id)
+          ^ByteBuffer glyph-image-data (get-in gl [:data :glyph-image-data group-index])
+          ^ByteBuffer fg-image-data    (get-in gl [:data :fg-image-data group-index])
+          ^ByteBuffer bg-image-data    (get-in gl [:data :bg-image-data group-index])
+          character->col-row (-> group-id group->font-texture deref :character->col-row)
+          texture-columns (int (zutil/next-pow-2 columns))
+          texture-rows    (int (zutil/next-pow-2 rows))
+          layer-size      (* 4 texture-columns texture-rows)
+          layer-index     (get layer-id->index layer-id)]
+      (doseq [{:keys [c x y fg bg blend-mode] :or {blend-mode :normal}} characters
+              :when (and (< -1 x) (< x columns)
+                         (< -1 y) (< y rows)
+                         (not= c (char 0)))
+              :let [i         (int (+ (* 4 (+ (* texture-columns (- rows y 1)) x)) (* layer-size layer-index)))
+                    [x y]     (get character->col-row c)
+                    fg (cond
+                         (integer? fg) fg
+                         (vector? fg) (zcolor/color fg))
+                    bg (cond
+                         (integer? bg) bg
+                         (vector? bg) (zcolor/color bg))]]
+          (when (or (nil? x) (nil? y))
+            (log/error (format "X/Y nil - glyph not found for character %s %s"
+                         (or (str c) "nil")
+                         (or (cond
+                               (nil? c) "nil"
+                               (char? c) (format "%x" (int c))
+                               :else (str c)))))
+            (assert
+              (format "X/Y nil - glyph not found for character %s %s"
+                (or (str c) "nil")
+                (or (cond
+                      (nil? c) "nil"
+                      (char? c) (format "%x" (int c))
+                      :else (str c))))))
+          (.position glyph-image-data i)
+          (.position fg-image-data i)
+          (.position bg-image-data i)
+
+          (.put glyph-image-data (unchecked-byte x))
+          (.put glyph-image-data (unchecked-byte y))
+          ;; TODO fill with appropriate type
+          (.put glyph-image-data (unchecked-byte (zt/blend-mode->byte blend-mode)))
+          (.put glyph-image-data (unchecked-byte 0))
+          (.putInt fg-image-data (unchecked-int fg))
+          (.putInt bg-image-data (unchecked-int bg)))))
+      
+  (replace-chars! [_ layer-id buffers]
+    #_(log/info "replace-chars! characters" (count characters))
+    (let [columns (-> layer-id layer-id->group deref :columns)
+          rows    (-> layer-id layer-id->group deref :rows)
+          group-id (-> layer-id layer-id->group deref :id)
+          group-index  (get group-id->index group-id)
+          ^ByteBuffer glyph-image-data (get-in gl [:data :glyph-image-data group-index])
+          ^ByteBuffer fg-image-data    (get-in gl [:data :fg-image-data group-index])
+          ^ByteBuffer bg-image-data    (get-in gl [:data :bg-image-data group-index])
+          character->col-row (-> group-id group->font-texture deref :character->col-row)
+          texture-columns (int (zutil/next-pow-2 columns))
+          texture-rows    (int (zutil/next-pow-2 rows))
+          layer-size      (* 4 texture-columns texture-rows)
+          layer-index     (get layer-id->index layer-id)
+          character-buffer (zt/character-buffer buffers)
+          fg-buffer        (zt/character-buffer buffers)
+          bg-buffer        (zt/character-buffer buffers)
+          num-cols         (int (zt/num-cols buffers))
+          num-rows         (int (zt/num-rows buffers))]
+      (try
+        #_(log/info "replace-chars! characters" columns rows group-id group-index layer-index glyph-image-data fg-image-data bg-image-data)
+        #_(log/info "replace-chars!" (-> group-id group->font-texture deref))
+        #_(log/info "replace-chars!" character->col-row)
+        #_(log/info (keys gl))
+        #_(log/info (keys (get gl :data)))
+        (when-not (= rows num-rows)
+          (log/error "buffer rows (" num-rows ") does not match group rows (" rows ")"))
+        (when-not (= columns num-cols)
+          (log/error "buffer columns (" num-cols ") does not match group columns (" columns ")"))
+        (when-not glyph-image-data
+          (log/error "glyph-image-data nil"))
+        (when-not fg-image-data
+          (log/error "fg-image-data nil"))
+        (when-not bg-image-data
+          (log/error "bg-image-data nil"))
+        (doseq [row (range (zt/num-rows buffers))]
+          (doseq [col (range num-cols)
+                  :let [c     (zt/get-char buffers col (- num-rows row 1))
+                        [x y] (get character->col-row c)
+                        blend-mode-byte (zt/get-blend-mode buffers col (- num-rows row 1))
+                        fg    (zt/get-fg buffers col (- num-rows row 1))
+                        bg    (zt/get-bg buffers col (- num-rows row 1))]
+                  :when (and (not= c (char 0)) x y)
+                  :let [i (int (+ (* 4 (+ (* texture-columns row) col)) (* layer-size layer-index)))
+                      ;blend-mode  (get character :blend-mode :normal)
+                      blend-mode :normal]]
+              (when (or (nil? x) (nil? y))
+                (log/error (format "X/Y nil - glyph not found for character %s %s"
+                             (or (str c) "nil")
+                             (or (cond
+                                   (nil? c) "nil"
+                                   (char? c) (format "%x" (int c))
+                                   :else (str c)))))
+                (assert
+                  (format "X/Y nil - glyph not found for character %s %s"
+                    (or (str c) "nil")
+                    (or (cond
+                          (nil? c) "nil"
+                          (char? c) (format "%x" (int c))
+                          :else (str c))))))
+              (when false
+                (log/info "replace-chars!" col row i x y (Integer/toHexString fg) (Integer/toHexString bg)))
+              (.position glyph-image-data i)
+              (.position fg-image-data i)
+              (.position bg-image-data i)
+
+              (.put glyph-image-data (unchecked-byte x))
+              (.put glyph-image-data (unchecked-byte y))
+              ;; TODO fill with appropriate type
+              (.put glyph-image-data (unchecked-byte blend-mode-byte))
+              (.put glyph-image-data (unchecked-byte 0))
+              (.putInt fg-image-data (unchecked-int fg))
+              (.putInt bg-image-data (unchecked-int bg))))
+       (catch Exception e
+         (log/error "Error replacing characters in layer" layer-id "=" layer-index
+                    "texture-columns" texture-columns "texture-rows" texture-rows glyph-image-data fg-image-data bg-image-data e)))))
   (assoc-shader-param! [_ k v]
     (-> fx-uniforms (get k) first (reset! v)))
   (pub [_]
@@ -755,7 +730,7 @@
           (except-gl-errors "texture coords bind")
           (catch Error e
            (log/error "OpenGL error:" e)))
-        ;; Render each layer to FBO
+        ;; Render each group to FBO
         (dosync
           (doseq [[{:keys [id columns rows layers gl-blend-func gl-blend-equation] [x-pos y-pos] :pos}
                    glyph-texture
@@ -790,22 +765,13 @@
             (assert (not (nil? font-texture-width)) "font-texture-width nil")
             (assert (not (nil? font-texture-height)) "font-texture-height")
             (assert (not (nil? font-texture)) "font-texture nil")
+            (.flip glyph-image-data)
+            (.flip fg-image-data)
+            (.flip bg-image-data)
             ;(log/info character->transparent)
             (GL14/glBlendEquation (gl-enum-value gl-blend-equation))
             (GL11/glBlendFunc (gl-enum-value (first gl-blend-func))
                               (gl-enum-value (second gl-blend-func)))
-            (fill-glyph-fg-bg-buffers
-              (select-keys layer-character-map layers)
-              character->col-row 
-              character->transparent 
-              texture-columns 
-              texture-rows 
-              rows 
-              layer-size 
-              cursor-xy 
-              glyph-image-data 
-              fg-image-data
-              bg-image-data)
             #_(doseq [layer (partition layer-size (vec (nio/buffer-seq glyph-image-data)))]
               (log/info "layer")
               (doseq [line (partition (* 4 texture-columns) layer)]
@@ -870,7 +836,10 @@
               (GL11/glDrawArrays GL11/GL_TRIANGLE_STRIP 0 vertices-count)
               (except-gl-errors "bg color glDrawArrays")
               (catch Error e
-               (log/error "OpenGL error:" e)))))
+               (log/error "OpenGL error:" e)))
+            (.clear glyph-image-data)
+            (.clear fg-image-data)
+            (.clear bg-image-data)))
         (try 
           (GL20/glDisableVertexAttribArray 0)
           (GL20/glDisableVertexAttribArray 1)
@@ -925,11 +894,31 @@
           (catch Error e
             (log/error "OpenGL error:" e))))))
   (clear! [_]
-    (doseq [[id character-map] layer-character-map]
-      (ref-set character-map (get layer-character-map-cleared id))))
-  (clear! [_ layer-id]
-    {:pre [(is (not (nil? (get layer-character-map layer-id))) (format "Invalid layer-id %s" layer-id))]}
-    (ref-set (get layer-character-map layer-id) (get layer-character-map-cleared layer-id)))
+    (dosync
+      (try
+        (let [{
+               {:keys [glyph-image-data
+                       fg-image-data
+                       bg-image-data]} :data} gl]
+          (doseq [[glyph-image-data
+                   fg-image-data
+                   bg-image-data] (map
+                                    vector
+                                    glyph-image-data
+                                    fg-image-data
+                                    bg-image-data)
+                  :let [^ByteBuffer glyph-image-data glyph-image-data
+                        ^ByteBuffer fg-image-data fg-image-data
+                        ^ByteBuffer bg-image-data bg-image-data]]
+            (.clear glyph-image-data)
+            (.clear fg-image-data)
+            (.clear bg-image-data)
+            (BufferUtils/zeroBuffer glyph-image-data)
+            (BufferUtils/zeroBuffer fg-image-data)
+            (BufferUtils/zeroBuffer bg-image-data)))
+        (catch Error e
+          (log/error "Error clearing terminal:" e)))))
+  (clear! [_ layer-id] nil)
   (set-window-size! [_ v]
     (reset! window-size v))
   (fullscreen-sizes [_]
@@ -941,7 +930,7 @@
     (shutdown-agents))
   (destroyed? [_]
     @destroyed))
-(defmethod zat/do-frame-clear OpenGlTerminal [terminal] (zat/clear! terminal))
+(defmethod zt/do-frame-clear OpenGlTerminal [terminal] (zt/clear! terminal))
 
 (defn group-locations
   ([_ _ _ _]
@@ -990,15 +979,19 @@
                                      (is (every? #{:id :layers :columns :rows :pos :font :gl-blend-equation :gl-blend-func} (keys group)))
                                      [(get group :id) (ref (merge default-blend group))])
                                    groups))
+        layer-id->index     (into {} (mapcat (fn [group] (map-indexed (fn [index layer-id] [layer-id index]) (get group :layers))) groups))
         group-order         (map :id groups)
+        group-id->index     (into {} (map-indexed (fn [index group-id] [group-id index]) group-order))
         layer-id->group     (->> group-map
                                (mapcat (fn [[id layer-group]]
                                          (map (fn [layer-id]
                                                 [layer-id layer-group])
                                               (get @layer-group :layers))))
                                (into {}))
+        _                        (log/info "group-id->index" group-id->index)
         _                        (log/info "group-map" group-map)
         _                        (log/info "layer-id->group" layer-id->group)
+        _                        (log/info "layer-id->index" layer-id->index)
         font-textures       (atom {})
         window-size         (atom nil)
         ;; Last [col row] o f mouse movement
@@ -1032,18 +1025,6 @@
                                              (assoc gg :font-texture font-texture)))])
                                  group-map))
         ;; create empty character maps
-        layer-character-map-cleared (into {}
-                                      (for [[id group-ref] layer-id->group
-                                            :let [{:keys [columns rows]} @group-ref]]
-                                        [id (vec (repeat rows (vec (repeat columns (make-terminal-character
-                                                                                     (char 0)
-                                                                                     default-fg-color
-                                                                                     default-bg-color
-                                                                                     #{}
-                                                                                     :normal)))))]))
-        layer-character-map (into {}
-                                  (for [id (keys layer-id->group)]
-                                    [id (ref (get layer-character-map-cleared id))]))
         cursor-xy           (atom nil)
 
         term-chan           (async/chan (async/buffer 100))
@@ -1060,29 +1041,39 @@
 
         ;; create width*height texture that gets updated each frame that determines which character to draw in each cell
         _ (log/info "Creating glyph array")
-        glyph-image-data    (for [[_ layer-group] group-map]
-                              (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                    np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
-                                    np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
-                                (log/info "creating buffer for glyph textures" np2-columns "x" np2-rows "x" np2-layers)
-                                (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 np2-layers))))
-        fg-image-data       (for [[_ layer-group] group-map]
-                              (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                    np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
-                                    np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
-                                (log/info "creating buffer for fg textures" np2-columns "x" np2-rows) "x" np2-layers
-                                (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 np2-layers))))
-        bg-image-data       (for [[_ layer-group] group-map]
-                              (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                    np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
-                                    np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
-                                (log/info "creating buffer for bg textures" np2-columns "x" np2-rows) "x" np2-layers
-                                (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 np2-layers))))
+        
+        glyph-image-data    (vec
+                              (for [[_ layer-group] group-map
+                                    :let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                          np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                          np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))
+                                          buffer (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 np2-layers))]]
+                                (do
+                                  (log/info "creating buffer for glyph textures" np2-columns "x" np2-rows "x" np2-layers "x 4" buffer)
+                                  buffer)))
+        fg-image-data       (vec
+                              (for [[_ layer-group] group-map
+                                    :let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                          np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                          np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))
+                                          buffer (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 np2-layers))]]
+                                (do
+                                  (log/info "creating buffer for fg textures" np2-columns "x" np2-rows "x" np2-layers "x 4" buffer)
+                                  buffer)))
+        bg-image-data       (vec
+                              (for [[_ layer-group] group-map
+                                    :let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                          np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                          np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))
+                                          buffer (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 np2-layers))]]
+                                (do
+                                  (log/info "creating buffer for bg textures" np2-columns "x" np2-rows "x" np2-layers "x 4" buffer)
+                                  buffer)))
         glyph-textures      (mapv (fn [layer-group glyph-image-data]
                                     (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
                                           np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
                                           np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
-                                      (log/info "creating glyph texture" np2-columns "x" np2-rows "x" np2-layers)
+                                      #_(log/info "creating glyph texture" np2-columns "x" np2-rows "x" np2-layers)
                                       (xy-texture-id np2-columns np2-rows np2-layers glyph-image-data)))
                                   (vals group-map)
                                   glyph-image-data)
@@ -1090,7 +1081,7 @@
                                    (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
                                          np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
                                          np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
-                                     (log/info "creating fg texture" np2-columns "x" np2-rows "x" np2-layers)
+                                     #_(log/info "creating fg texture" np2-columns "x" np2-rows "x" np2-layers)
                                      (texture-id np2-columns np2-rows np2-layers fg-image-data)))
                                  (vals group-map)
                                  fg-image-data)
@@ -1098,7 +1089,7 @@
                                     (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
                                           np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
                                           np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
-                                      (log/info "creating bg texture" np2-columns "x" np2-rows "x" np2-layers)
+                                      #_(log/info "creating bg texture" np2-columns "x" np2-rows "x" np2-layers)
                                       (texture-id np2-columns np2-rows np2-layers bg-image-data)))
                                   (vals group-map)
                                   bg-image-data)
@@ -1281,12 +1272,12 @@
                                             window-size
                                             framebuffer-size
                                             monitor-fullscreen-sizes
-                                            layer-character-map-cleared
-                                            layer-character-map
                                             group-map
                                             group-order
                                             group->font-texture
+                                            group-id->index
                                             layer-id->group
+                                            layer-id->index
                                             cursor-xy
                                             fx-uniforms
                                             gl
@@ -1300,7 +1291,7 @@
         (GLFW/glfwMakeContextCurrent 0)
         ;; Access to terminal will be multi threaded. Release context so that other threads can access it
         (when fullscreen
-          (zat/set-window-size! terminal (first (zat/fullscreen-sizes terminal))))
+          (zt/set-window-size! terminal (first (zt/fullscreen-sizes terminal))))
         ;; Start font file change listener thread
         ; TODO: fix resource reloader
         #_(cwc/start-watch [{:path "./fonts"
@@ -1361,7 +1352,7 @@
                     (doseq [id (flatten [[fbo-texture] glyph-textures fg-textures bg-textures])]
                       (GL11/glDeleteTextures (int id))))
                   (GLFW/glfwDestroyWindow window)
-                  (zat/destroy! terminal)
+                  (zt/destroy! terminal)
                 (log/info "Exiting"))
               (do
                 (when-not (= @last-video-mode @window-size)

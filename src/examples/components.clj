@@ -6,6 +6,7 @@
             [zaffre.components.render :as zcr]
             [zaffre.glterminal :as zgl]
             [zaffre.events :as zevents]
+            [zaffre.color :as zcolor]
             [zaffre.font :as zfont]
             [zaffre.tilesets :as ztiles]
             [zaffre.util :as zutil]
@@ -49,11 +50,11 @@
               [:view {} [
                 [:text {} [(str fps)]]]]
               [:view {} [
-                [zcui/Input {:style {:cursor-fg [244 208 65 255]}
+                [zcui/Input {:style {:cursor-fg (zcolor/color 244 208 65 255)}
                              :on-change text-value-on-change} []]
-                [zcui/Input {:style {:cursor-fg [65 244 208]}
+                [zcui/Input {:style {:cursor-fg (zcolor/color 65 244 208)}
                              :on-change text-value-on-change} []]
-                [zcui/Input {:style {:cursor-fg [208 65 244]}
+                [zcui/Input {:style {:cursor-fg (zcolor/color 208 65 244)}
                              :on-change text-value-on-change} []]]]
               [:view {:style {:border 1
                               :border-style :single
@@ -62,12 +63,12 @@
                   [zcui/Image {:src "/home/santos/Downloads/Food.png" :style {:clip [0 (* 5 16) 16 (* 6 16)]}}]
                   [zcui/Image {:src "/home/santos/Downloads/Food.png" :style {:clip [0 (* 6 16) 16 (* 7 16)]}}]
                 [:text {} [
-                  [:text {:style {:color [255 0 0]}} ["he"]]
-                  [:text {:style {:color [255 255 0]}} ["ll"]]
-                  [:text {:style {:color [0 255 0]}} ["o w"]]
-                  [:text {:style {:color [0 255 255]}} ["or"]]
-                  [:text {:style {:color [0 0 255]}} ["ld"]]
-                  [:text {:style {:color [0 0 0] :bg [255 255 255]}} [text-value]]]]]]
+                  [:text {:style {:color (zcolor/color 255 0 0)}} ["he"]]
+                  [:text {:style {:color (zcolor/color 255 255 0)}} ["ll"]]
+                  [:text {:style {:color (zcolor/color 0 255 0)}} ["o w"]]
+                  [:text {:style {:color (zcolor/color 0 255 255)}} ["or"]]
+                  [:text {:style {:color (zcolor/color 0 0 255)}} ["ld"]]
+                  [:text {:style {:color (zcolor/color 0 0 0) :bg (zcolor/color 255 255 255)}} [text-value]]]]]]
               [:view {:style {:border 1 :border-style :double}} [
                 [:text {:style {:text-align :right}} [text]]]]]]
             [:layer {:id :popup} [
@@ -77,7 +78,7 @@
                                                  :max-width 20
                                                  :max-height 20
                                                  :overflow :hidden}} [
-                                   #_[zcui/Image {:src "/home/santos/src/zaffre/earthmap.jpg"}] 
+                                   [zcui/Image {:src "/home/santos/src/zaffre/earthmap.jpg"}] 
                                    #_[zcui/AnimateProps {:gen (fn [state-chan open-chan]
                                                                (zutil/cycle open-chan
                                                                  (zutil/sequence state-chan

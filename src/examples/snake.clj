@@ -1,7 +1,6 @@
 (ns examples.snake
   (:require [zaffre.terminal :as zat]
             [zaffre.glterminal :as zgl]
-            [zaffre.animation.wrapper :as zaw]
             [zaffre.events :as zevents]
             [zaffre.font :as zfont]
             [zaffre.tilesets :as ztiles]
@@ -17,8 +16,7 @@
 (def width 20)
 (def height 20)
 (defn -main [& _]
-  (zaw/create-animated-terminal
-    zgl/create-terminal
+  (zgl/create-terminal
     [{:id :app
       :layers [:app]
       :columns width
