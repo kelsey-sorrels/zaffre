@@ -607,8 +607,8 @@
           (.putInt fg-image-data (unchecked-int fg))
           (.putInt bg-image-data (unchecked-int bg)))))
       
-  (replace-chars! [_ layer-id buffers]
-    #_(log/info "replace-chars! characters" (count characters))
+  (put-layer! [_ layer-id buffers]
+    #_(log/info "put-layer! characters" (count characters))
     (let [columns (-> layer-id layer-id->group deref :columns)
           rows    (-> layer-id layer-id->group deref :rows)
           group-id (-> layer-id layer-id->group deref :id)
@@ -627,9 +627,9 @@
           num-cols         (int (zt/num-cols buffers))
           num-rows         (int (zt/num-rows buffers))]
       (try
-        #_(log/info "replace-chars! characters" columns rows group-id group-index layer-index glyph-image-data fg-image-data bg-image-data)
-        #_(log/info "replace-chars!" (-> group-id group->font-texture deref))
-        #_(log/info "replace-chars!" character->col-row)
+        #_(log/info "put-layer! characters" columns rows group-id group-index layer-index glyph-image-data fg-image-data bg-image-data)
+        #_(log/info "put-layer!" (-> group-id group->font-texture deref))
+        #_(log/info "put-layer!" character->col-row)
         #_(log/info (keys gl))
         #_(log/info (keys (get gl :data)))
         (when-not (= rows num-rows)
@@ -668,7 +668,7 @@
                           (char? c) (format "%x" (int c))
                           :else (str c))))))
               (when false
-                (log/info "replace-chars!" col row i x y (Integer/toHexString fg) (Integer/toHexString bg)))
+                (log/info "put-layer!" col row i x y (Integer/toHexString fg) (Integer/toHexString bg)))
               (.position glyph-image-data i)
               (.position fg-image-data i)
               (.position bg-image-data i)
