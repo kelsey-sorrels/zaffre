@@ -20,7 +20,7 @@ Zaffre is fast console library for drawing characters to a screen.
 Add the dependency to your project:
 
 ```clojure
-[zaffre "0.1.0"]
+[zaffre "0.2.0"]
 ```
 
 Setup your namespace imports:
