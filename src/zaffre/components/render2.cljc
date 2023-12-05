@@ -63,6 +63,9 @@
    :checkbox-right "]"
    :progress-filled " "
    :progress-empty "\u2592"
+   :slider-filled "\u2500"
+   :slider-empty "\u2500"
+   :slider-control "\u258C"
 })
 
 ;; Primitive elements
@@ -168,6 +171,9 @@
   :checkbox-right
   :progress-filled
   :progress-empty
+  :slider-filled
+  :slider-empty
+  :slider-control
   ;; Non-standard properties
   :overlay-percent
 })

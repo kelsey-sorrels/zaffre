@@ -262,6 +262,69 @@ maps))
                       :width (str right "%")
                       :height 1}}]]))
 
+(g/defcomponent Slider
+  [props _]
+  (let [initial-value (int (get props :initial-value 0))
+        [value set-value!] (g/use-state initial-value)
+        [focused set-focus!] (g/use-state (get props :focus false))
+        [show-cursor set-show-cursor!] (g/use-state false)
+        {:keys [name style]} props
+        {:keys [width] :or {width 40}} style
+        duty-on 400
+        duty-off 400
+        on-focus (fn [_] (set-focus! true))
+        on-blur (fn [_] (set-focus! false))
+        on-keypress (fn [e]
+          #_(log/info "Slider on-keypress" (keys e))
+          (let [increment (int (/ 100 width))]
+            (case (get e :key)
+              :left (set-value! (fn [value] (max 0 (- value increment))))
+              :right (set-value! (fn [value] (min 100 (+ value increment)))))))
+        left (int (* width (/ value 100)))
+        right (- width left)
+        default-props {:on-focus on-focus
+                       :on-blur on-blur
+                       :on-keypress on-keypress
+                       :gossamer.components/type :slider
+                       :gossamer.components/focusable true
+                       :gossamer.components/set-value set-value!
+                       :style {:display :flex
+                               :flex-direction :row
+                               :height 1
+                               :width width
+                               :cursor-char-on \u2592
+                               :cursor-char-off \_
+                               :cursor-fg (zcolor/color 255 255 255 255)
+                               :cursor-bg (zcolor/color 0 0 0 255)}}
+        props (assoc (merge default-props props)
+                :style (merge (:style default-props)
+                              (:style props)))
+        {:keys [cursor-char-on
+                cursor-char-off
+                cursor-fg
+                cursor-bg]} (get props :style)
+        cursor (if (and focused show-cursor) (str cursor-char-on) :ref/slider-control)
+        color :ref/secondary]
+     (g/use-effect (fn []
+       (go-loop []
+         (<! (timeout 400))
+         (set-show-cursor! not)
+         (recur))) [])
+
+    ; FIXME copy key (props?) into view
+    [:view props
+      [:view {:key "left"
+              :style {:background-char :ref/slider-filled
+                      :color :ref/secondary
+                      :width (str left "%")
+                      :height 1}}]
+      [:text {:key "control" :style {:content cursor
+                                     :color :ref/secondary}} ""]
+      [:view {:key "right"
+              :style {:background-char :ref/slider-empty
+                      :color :ref/on-surface
+                      :width (str right "%")
+                      :height 1}}]]))
 
 #_(g/defcomponent VScrollBar
   [props _]

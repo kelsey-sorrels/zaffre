@@ -89,12 +89,16 @@
       [:group {:id :ui}
         [:layer {:id :main}
           [:view {:key "inputs"}
-            [Clock {:key "clock"}]
-            [zcui/LoadingSpinner {:speed 100}]
-            [FPSMeter {:key "fpsmeter"}]
+            #_[Clock {:key "clock"}]
+            #_[zcui/LoadingSpinner {:speed 100}]
+            #_[FPSMeter {:key "fpsmeter"}]
             [zcui/OutsetPanel {:key "input-panel" :title "Inputs"
                          :style {:display :flex :flex-direction :row}}
-              [zcui/InsetPanel {:key "input-panel" :title "Text" :style {:width 20}}
+              [zcui/InsetPanel {:key "slider-panel" :title "Sliders" :style {:width 20}}
+                [zcui/Slider {:key "slider1" :initial-value 25}]
+                [zcui/Slider {:key "slider2" :initial-value 50}]
+                [zcui/Slider {:key "slider3" :initial-value 75}]]
+              #_[zcui/InsetPanel {:key "input-panel" :title "Text" :style {:width 20}}
                 [zcui/Input {:key "input1"
                              :autofocus true
                              :style {:cursor-fg (zcolor/color 244 208 65 255)}
@@ -105,15 +109,15 @@
                 [zcui/Input {:key "input3"
                              :style {:cursor-fg (zcolor/color 208 65 244)}
                              :on-change text-value-on-change} []]]
-              [zcui/InsetPanel {:key "radio-panel" :title "Radio Group" :style {:width 20}}
+              #_[zcui/InsetPanel {:key "radio-panel" :title "Radio Group" :style {:width 20}}
                 [zcui/Radio {:key "option1" :name "group1" :value "option1"} [:text {} "Option 1"]]
                 [zcui/Radio {:key "option2" :name "group1" :value "option2"} [:text {} "Option 2"]]
                 [zcui/Radio {:key "option3" :name "group1" :value "option3"} [:text {} "Option 3"]]]
-              [zcui/InsetPanel {:key "checkbox-panel" :title "Checkboxes" :style {:width 20}}
+              #_[zcui/InsetPanel {:key "checkbox-panel" :title "Checkboxes" :style {:width 20}}
                 [zcui/Checkbox {:key "option1" :value "option1"} [:text {} "Option 1"]]
                 [zcui/Checkbox {:key "option2" :value "option2"} [:text {} "Option 2"]]
                 [zcui/Checkbox {:key "option3" :value "option3"} [:text {} "Option 3"]]]
-              [zcui/InsetPanel {:key "button-panel" :title "Buttons"
+              #_[zcui/InsetPanel {:key "button-panel" :title "Buttons"
                            :style {
                              :width 20
                              :display :flex
@@ -121,7 +125,7 @@
                 [zcui/Button {:key "option1"} [:text {} "Button1"]]
                 [zcui/Button {:key "option2"} [:text {} "Button2"]]
                 [zcui/Button {:key "option3"} [:text {} "Button3"]]]]]
-          [:view {:key "images"
+          #_[:view {:key "images"
                   :style {:display :flex
                           :flex-direction :row
                           :border 1
@@ -131,14 +135,14 @@
               [zcui/Image {:key "img1" :src "https://opengameart.org/sites/default/files/Food.png" :style {:clip [0 0 16 16]}}]
               [zcui/Image {:key "img2" :src "https://opengameart.org/sites/default/files/Food.png" :style {:clip [0 (* 5 16) 16 (* 6 16)]}}]
               [zcui/Image {:key "img3" :src "https://opengameart.org/sites/default/files/Food.png" :style {:clip [0 (* 6 16) 16 (* 7 16)]}}]]
-          [:text {:key "hello"}
+          #_[:text {:key "hello"}
             [:text {:key 1 :style {:color (zcolor/color 255 0 0)}} "he"]
             [:text {:key 2 :style {:color (zcolor/color 255 255 0)}} "ll"]
             [:text {:key 3 :style {:color (zcolor/color 0 255 0)}} "o w"]
             [:text {:key 4 :style {:color (zcolor/color 0 255 255)}} "or"]
             [:text {:key 5 :style {:color (zcolor/color 0 0 255)}} "ld"]
             [:text {:key 6 :style {:color (zcolor/color 0 0 0) :bg (zcolor/color 255 255 255)}} text-value]]
-          [:view {:key "lorem" :style {:border 1 :border-style :double}}
+          #_[:view {:key "lorem" :style {:border 1 :border-style :double}}
             [:text {:style {:text-align :right}} text]]]
         #_[:layer {:id :popup}
             [zcui/Popup {} [#_[:text {} ["popup"]]
