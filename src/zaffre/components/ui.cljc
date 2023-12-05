@@ -132,7 +132,8 @@ maps))
                 cursor-char-off
                 cursor-fg
                 cursor-bg]} (get props :style)
-        cursor (if (and focused show-cursor) cursor-char-on (if selected "x" " "))]
+        cursor (if (and focused show-cursor) (str cursor-char-on) (if selected :ref/checkbox-checked :ref/checkbox-unchecked))
+        color (if selected :ref/secondary :ref/on-surface)]
      (g/use-effect (fn []
        (go-loop []
          (<! (timeout 400))
@@ -140,7 +141,13 @@ maps))
          (recur))) [])
 
     [:view props
-      (cons [:text {:key "Checkbox-text"} (str "[" cursor "]")]
+      (concat
+        [[:text {:key "checkbox-left" :style {:content :ref/checkbox-left
+                                           :color :ref/on-surface}} ""]
+         [:text {:key "checkbox-check" :style {:content cursor
+                                           :color color}} ""]
+         [:text {:key "checkbox-right" :style {:content :ref/checkbox-right
+                                           :color :ref/on-surface}} ""]]
         children)]))
 
 (g/defcomponent Radio
@@ -175,7 +182,8 @@ maps))
                 cursor-char-off
                 cursor-fg
                 cursor-bg]} (get props :style)
-        cursor (if (and focused show-cursor) (str cursor-char-on) (if selected :ref/radio-checked :ref/radio-unchecked))]
+        cursor (if (and focused show-cursor) (str cursor-char-on) (if selected :ref/radio-checked :ref/radio-unchecked))
+        color (if selected :ref/secondary :ref/on-surface)]
      (g/use-effect (fn []
        (go-loop []
          (<! (timeout 400))
@@ -187,7 +195,7 @@ maps))
         [[:text {:key "radio-left" :style {:content :ref/radio-left
                                            :color :ref/on-surface}} ""]
          [:text {:key "radio-check" :style {:content cursor
-                                           :color :ref/on-surface}} ""]
+                                           :color color}} ""]
          [:text {:key "radio-right" :style {:content :ref/radio-right
                                            :color :ref/on-surface}} ""]]
         children)]))
@@ -421,7 +429,8 @@ maps))
   (let [{:keys [title border children]} props]
     (log/info "Panel props" props)
     (log/info "Panel children" children)
-    [:view {:style {:border (or border 1)}}
+    [:view {:style {:border (or border 1)
+                    :background-color :ref/surface}}
       (cons [:text {:key "panel-title"
                     :style {:position :absolute
                             :height 1 :width (+ 2 (count title))
