@@ -24,7 +24,6 @@
     {:title "Zaffre demo"     ;; Set the window title
      :screen-width (* 16 16)  ;; Screen dimentions in pixels
      :screen-height (* 16 16)
-     :filters []
      :effects [(zaw/make-rain-effect :fx 16 16)]} ;; Since our font is 16x16 and our layer group
                                ;; is also 16x16
     (fn [terminal] ;; Receive the terminal in a callback
