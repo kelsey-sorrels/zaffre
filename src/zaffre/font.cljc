@@ -8,16 +8,7 @@
            (java.nio ByteBuffer)
            (org.lwjgl BufferUtils)
            (org.lwjgl.stb STBTruetype STBTTFontinfo)
-           (org.apache.commons.io IOUtils)
-           #_(java.awt Canvas
-                     Color
-                     Font
-                     FontMetrics
-                     Graphics
-                     Graphics2D
-                     RenderingHints)
-           #_(java.awt.image BufferedImage DataBufferByte ImageObserver)
-           #_(javax.imageio ImageIO)))
+           (org.apache.commons.io IOUtils)))
 
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* true)
@@ -190,19 +181,20 @@
                       size)
         char-width  (* (advance-width font-info (int \M)) scale)
         char-height size
-        img         (zimg/image char-width char-height)]
+        img         (zimg/image char-width char-height 1)]
+    ;; draw greyscale font
     (STBTruetype/stbtt_MakeCodepointBitmap
       font-info
       (get img :byte-buffer)
-      char-width
-      char-height
+      (get img :width)
+      (get img :height)
       0
       scale
       scale
       (int c))))
   
 (defmethod glyph-graphics TTFFont [font]
-  {:post [(glyph-graphics? %)]}
+  #_{:post [(glyph-graphics? %)]}
   ;; Adjust canvas to fit character atlas size
   (let [font-info                  (make-font (get font :name-or-path))
         scale                      (STBTruetype/stbtt_ScaleForPixelHeight
@@ -228,17 +220,17 @@
     (let [texture-image    (zimg/image width height)]
       ;; Loop through each character, drawing it
       (doseq [[c col row]  char-idxs]
-        (let [x ^int (* col char-width)
-              y ^int (* (inc row) char-height)
+        (let [x  (* col char-width)
+              y  (* (inc row) char-height)
               cx (+ 0 x)
               cy (- y 0 #_(.getDescent font-metrics))]
           ;(log/info s x y)
         (when (not= c \space)
           ;(println "drawing" s "@" x y "underline?" underline?)
-          (zimg/draw-img texture-image
-                         (char-image font-info size c)
-                         x
-                         y))))
+          (zimg/draw-image texture-image
+                           (char-image font-info (get font :size) c)
+                           x
+                           y))))
       ;; cleanup texture resource
       (zimg/write-png texture-image "glyph-texture.png")
       {:font-texture-width width
@@ -272,8 +264,7 @@
     ;;
     (let [width              (zutil/next-pow-2 (reduce max 0 (map :font-texture-width glyphs)))
           height             (zutil/next-pow-2 (reduce + 0 (map :font-texture-height glyphs)))
-          composite-image    (BufferedImage. width height BufferedImage/TYPE_4BYTE_ABGR)
-          composite-graphics (.createGraphics composite-image)
+          composite-image    (zimg/image width height)
           character-width    (-> glyphs first :character-width)
           character-height   (-> glyphs first :character-height)]
       (loop [y 0
@@ -281,8 +272,8 @@
              character->transparent {}
              glyphs glyphs]
         (if-let [glyph (first glyphs)]
-          (let [image ^BufferedImage (get glyph :font-texture-image)]
-            (.drawImage composite-graphics image 0 y nil)
+          (let [image (get glyph :font-texture-image)]
+            (zimg/draw-image composite-image image 0 y)
             (log/info "merging" (get glyph :character->transparent))
             (recur
               (+ y (int (get glyph :font-texture-height)))
@@ -294,8 +285,7 @@
                      (get glyph :character->transparent))
               (rest glyphs)))
           (do
-            (.dispose composite-graphics)
-            (ImageIO/write composite-image "png", (File. "composite-texture.png"))
+            (zimg/write-png composite-image "composite-texture.png")
             {:font-texture-width width
              :font-texture-height height
              :font-texture-image composite-image
@@ -306,36 +296,26 @@
 
 (defmethod glyph-graphics TileSet [font]
   {:post [(glyph-graphics? %)]}
-  (with-open [image-stream (jio/input-stream (get font :path-or-url))]
-    (let [^BufferedImage font-image    (->
-                          (ImageIO/read image-stream)
-                          (convert-type BufferedImage/TYPE_4BYTE_ABGR)
-                          (compact (get font :tile-width)
-                                   (get font :tile-height)
-                                   (get font :margin))
-                          (as-> font-image
-                            (let [alpha (get font :alpha)]
-                              (if-not (= alpha :alpha)
-                                (copy-channels! font-image (get font :alpha))
-                                font-image))))
-          width         (zutil/next-pow-2 (.getWidth font-image))
-          height        (zutil/next-pow-2 (.getHeight font-image))
-          texture-image (BufferedImage. width height BufferedImage/TYPE_4BYTE_ABGR)
-          texture-graphics (.createGraphics texture-image)]
-      (doto texture-graphics
-        (.setColor (Color. 0 0 0 0))
-        (.fillRect 0 0 width height))
-      (while (not (.drawImage texture-graphics font-image 0 0 nil))
-        (Thread/sleep(100)))
-      (.dispose texture-graphics)
-      (ImageIO/write font-image "png", (File. "tileset-texture.png"))
-      {:font-texture-width width
-       :font-texture-height height
-       :font-texture-image texture-image
-       :character-width (get font :tile-width)
-       :character-height (get font :tile-height)
-       :character->col-row (get font :tile-id->col-row)
-       :character->transparent (get font :tile-id->transparent)})))
+  (let [font-image (-> (zimg/load-image (get font :path-or-url))
+                     (compact (get font :tile-width)
+                              (get font :tile-height)
+                              (get font :margin))
+                     (as-> font-image
+                       (let [alpha (get font :alpha)]
+                         (if-not (= alpha :alpha)
+                           (zimg/copy-channels font-image (get font :alpha))
+                           font-image))))
+        width         (zutil/next-pow-2 (get font-image :width))
+        height        (zutil/next-pow-2 (get font-image :height))
+        texture-image (zimg/resize font-image width height)]
+    (zimg/write-png font-image "tileset-texture.png")
+    {:font-texture-width width
+     :font-texture-height height
+     :font-texture-image texture-image
+     :character-width (get font :tile-width)
+     :character-height (get font :tile-height)
+     :character->col-row (get font :tile-id->col-row)
+     :character->transparent (get font :tile-id->transparent)}))
 
 
 (defn construct [font] (glyph-graphics font))
