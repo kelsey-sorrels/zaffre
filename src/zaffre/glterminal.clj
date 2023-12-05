@@ -158,15 +158,12 @@
     (if (not (zero? error))
       (throw (Exception. error-string)))))
 
-(defn- texture-id
+(defn- texture-id-2d
   ([^BufferedImage buffered-image]
-  (let [width (.getWidth buffered-image)
-        height (.getHeight buffered-image)]
-    (texture-id width height (buffered-image-byte-buffer buffered-image))))
-  ([width height]
-   (texture-id width height (BufferUtils/createByteBuffer (* width height 4))))
-  ([^long width ^long height ^ByteBuffer texture-buffer]
-   (let [texture-id (GL11/glGenTextures)]
+  (let [width          (.getWidth buffered-image)
+        height         (.getHeight buffered-image)
+        texture-id     (GL11/glGenTextures)
+        texture-buffer (buffered-image-byte-buffer buffered-image)]
      ;;(.order texture-buffer (ByteOrder/nativeOrder))
      (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
      (GL11/glPixelStorei GL11/GL_UNPACK_ALIGNMENT 1)
@@ -176,14 +173,32 @@
      (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
      texture-id)))
 
-(defn- xy-texture-id [^long width ^long height ^ByteBuffer texture-buffer]
+(defn- texture-id
+  ([^BufferedImage buffered-image]
+  (let [width  (.getWidth buffered-image)
+        height (.getHeight buffered-image)]
+    (texture-id width height 1 (buffered-image-byte-buffer buffered-image))))
+  ([width height layers]
+   (texture-id width height layers (BufferUtils/createByteBuffer (* width height 4 layers))))
+  ([^long width ^long height ^long layers ^ByteBuffer texture-buffer]
+   (let [texture-id (GL11/glGenTextures)]
+     ;;(.order texture-buffer (ByteOrder/nativeOrder))
+     (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY texture-id)
+     (GL11/glPixelStorei GL11/GL_UNPACK_ALIGNMENT 1)
+     (GL11/glTexParameteri GL30/GL_TEXTURE_2D_ARRAY GL11/GL_TEXTURE_MIN_FILTER GL11/GL_NEAREST)
+     (GL11/glTexParameteri GL30/GL_TEXTURE_2D_ARRAY GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
+     (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL11/GL_RGBA width height layers 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE texture-buffer)
+     (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY 0)
+     texture-id)))
+
+(defn- xy-texture-id [^long width ^long height ^long layers ^ByteBuffer texture-buffer]
   (let [texture-id (GL11/glGenTextures)]
     ;;(.order texture-buffer (ByteOrder/nativeOrder))
-    (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
-    (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MIN_FILTER GL11/GL_NEAREST)
-    (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
-    (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL30/GL_RGBA8UI width height 0 GL30/GL_RGBA_INTEGER GL11/GL_INT texture-buffer)
-    (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
+    (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY texture-id)
+    (GL11/glTexParameteri GL30/GL_TEXTURE_2D_ARRAY GL11/GL_TEXTURE_MIN_FILTER GL11/GL_NEAREST)
+    (GL11/glTexParameteri GL30/GL_TEXTURE_2D_ARRAY GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
+    (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL30/GL_RGBA8UI width height layers 0 GL30/GL_RGBA_INTEGER GL11/GL_INT texture-buffer)
+    (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY 0)
     texture-id))
 
 
@@ -532,7 +547,7 @@
           ;; resize FBO
           (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
           (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB (int screen-width) (int screen-height) 0 GL11/GL_RGB GL11/GL_UNSIGNED_BYTE bbnil)
-          (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture (texture-id font-texture-image))))
+          (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture (texture-id-2d font-texture-image))))
           (catch Throwable t
             (log/error "Eror changing font" t))))))
   (set-cursor! [_ x y]
@@ -543,7 +558,7 @@
              {:keys [font-texture glyph-texture fg-texture bg-texture fbo-texture]} :textures
              program-id :program-id
              fb-program-id :fb-program-id
-             {:keys [u-MVMatrix u-PMatrix u-fb-MVMatrix u-fb-PMatrix u-font u-glyphs u-fg u-bg font-size term-dim font-tex-dim
+             {:keys [u-MVMatrix u-PMatrix u-fb-MVMatrix u-fb-PMatrix u-font u-glyphs u-fg u-bg u-num-layers font-size term-dim font-tex-dim
                      font-texture-width font-texture-height glyph-tex-dim glyph-texture-width glyph-texture-height
                      u-fb]} :uniforms
              {:keys [^ByteBuffer glyph-image-data
@@ -571,7 +586,8 @@
         (.clear glyph-image-data)
         (.clear fg-image-data)
         (.clear bg-image-data)
-        (doseq [[layer-id character-map] layers-character-map]
+        (loop-with-index layer [[layer-id character-map] layers-character-map]
+        ;;(doseq [[layer-id character-map] layers-character-map]
         ;;  (doseq [[row line] (map-indexed vector (reverse @character-map))
         ;;          [col c]    (map-indexed vector line)]
             ;;(log/info "row" row "col" col "c" c)
@@ -592,7 +608,7 @@
                                      (or (get c :fx-bg-color)  (get c :bg-color)))
                   ;s         (str (get c :character))
                   style     (get c :style)
-                  i         (* 4 (+ (* texture-columns row) col))
+                  i         (* 4 (+ (* texture-columns row) col) layer)
                   [x y]     (get character->col-row chr)]
               ;(log/info "Drawing at col row" col row "character from atlas col row" x y c "(index=" i ")")
               (when (zero? col)
@@ -620,9 +636,9 @@
                   (.position glyph-image-data (+ 4 (.position glyph-image-data)))
                   (.position fg-image-data (+ 4 (.position fg-image-data)))
                   (.position bg-image-data (+ 4 (.position bg-image-data)))))))
-          (.rewind glyph-image-data)
-          (.rewind fg-image-data)
-          (.rewind bg-image-data)))
+          #_(.rewind glyph-image-data)
+          #_(.rewind fg-image-data)
+          #_(.rewind bg-image-data)))
         (.position glyph-image-data (.limit glyph-image-data))
         (.position fg-image-data (.limit fg-image-data))
         (.position bg-image-data (.limit bg-image-data))
@@ -670,6 +686,8 @@
           (GL20/glUniform1i u-glyphs 1)
           (GL20/glUniform1i u-fg 2)
           (GL20/glUniform1i u-bg 3)
+          ;; TODO: use real value
+          (GL20/glUniform1i u-num-layers (count layer-order))
           (except-gl-errors "uniformli bind")
           (GL20/glUniform2f font-size, character-width character-height)
           (GL20/glUniform2f term-dim columns rows)
@@ -679,27 +697,26 @@
           (except-gl-errors "gl(en/dis)able")
           ; Send updated glyph texture to gl
           (GL13/glActiveTexture GL13/GL_TEXTURE1)
-          (GL11/glBindTexture GL11/GL_TEXTURE_2D glyph-texture)
-          (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL30/GL_RGBA8UI texture-columns texture-rows 0 GL30/GL_RGBA_INTEGER GL11/GL_UNSIGNED_BYTE glyph-image-data)
+          (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY glyph-texture)
+          (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL30/GL_RGBA8UI texture-columns texture-rows (count layer-order) 0 GL30/GL_RGBA_INTEGER GL11/GL_UNSIGNED_BYTE glyph-image-data)
           (except-gl-errors "glyph texture data")
           ; Send updated fg texture to gl
           (GL13/glActiveTexture GL13/GL_TEXTURE2)
-          (GL11/glBindTexture GL11/GL_TEXTURE_2D fg-texture)
-          (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGBA texture-columns texture-rows 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE fg-image-data)
+          (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY fg-texture)
+          (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL11/GL_RGBA texture-columns texture-rows (count layer-order) 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE fg-image-data)
           (except-gl-errors "fg color texture data")
           ; Send updated bg texture to gl
           (GL13/glActiveTexture GL13/GL_TEXTURE3)
           (except-gl-errors "bg color glActiveTexture")
-          (GL11/glBindTexture GL11/GL_TEXTURE_2D bg-texture)
+          (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY bg-texture)
           (except-gl-errors "bg color glBindTexture")
-          (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGBA texture-columns texture-rows 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bg-image-data)
+          (GL12/glTexImage3D GL30/GL_TEXTURE_2D_ARRAY 0 GL11/GL_RGBA texture-columns texture-rows (count layer-order) 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bg-image-data)
           (except-gl-errors "bg color glTexImage2D")
           (GL11/glDrawArrays GL11/GL_TRIANGLE_STRIP 0 vertices-count)
           (except-gl-errors "bg color glDrawArrays")
           (GL20/glDisableVertexAttribArray 0)
           (GL20/glDisableVertexAttribArray 1)
           (GL20/glUseProgram 0)
-
 
           ;; Draw fbo to screen
           (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
@@ -875,7 +892,7 @@
           _                  (log/info "screen size" screen-width "x" screen-height)
           _                  (init-display title screen-width screen-height icon-paths gl-lock destroyed)
 
-          font-texture       (with-gl-context gl-lock (texture-id font-texture-image))
+          font-texture       (with-gl-context gl-lock (texture-id-2d font-texture-image))
           _                  (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture font-texture)))
           ;; create texture atlas
           character-map-cleared (vec (repeat rows (vec (repeat columns (make-terminal-character (char 0) default-fg-color default-bg-color #{})))))
@@ -896,12 +913,12 @@
           glyph-texture-height next-pow-2-rows
           _ (log/info "creating buffers for glyph/fg/bg textures (" next-pow-2-columns "x" next-pow-2-rows ")")
           ;glyph-array    (ta/unsigned-int8 (repeat (* columns rows) 0))
-          glyph-image-data (BufferUtils/createByteBuffer (* next-pow-2-columns next-pow-2-rows 4))
-          fg-image-data    (BufferUtils/createByteBuffer (* next-pow-2-columns next-pow-2-rows 4))
-          bg-image-data    (BufferUtils/createByteBuffer (* next-pow-2-columns next-pow-2-rows 4))
-          glyph-texture    (with-gl-context gl-lock (xy-texture-id next-pow-2-columns next-pow-2-rows glyph-image-data))
-          fg-texture       (with-gl-context gl-lock (texture-id next-pow-2-columns next-pow-2-rows fg-image-data))
-          bg-texture       (with-gl-context gl-lock (texture-id next-pow-2-columns next-pow-2-rows bg-image-data))
+          glyph-image-data (BufferUtils/createByteBuffer (* next-pow-2-columns next-pow-2-rows 4 (count layer-order)))
+          fg-image-data    (BufferUtils/createByteBuffer (* next-pow-2-columns next-pow-2-rows 4 (count layer-order)))
+          bg-image-data    (BufferUtils/createByteBuffer (* next-pow-2-columns next-pow-2-rows 4 (count layer-order)))
+          glyph-texture    (with-gl-context gl-lock (xy-texture-id next-pow-2-columns next-pow-2-rows (count layer-order) glyph-image-data))
+          fg-texture       (with-gl-context gl-lock (texture-id next-pow-2-columns next-pow-2-rows (count layer-order) fg-image-data))
+          bg-texture       (with-gl-context gl-lock (texture-id next-pow-2-columns next-pow-2-rows (count layer-order) bg-image-data))
           [fbo-id fbo-texture]
                            (with-gl-context gl-lock (fbo-texture screen-width screen-height))
           ; init shaders
@@ -924,6 +941,7 @@
            u-glyphs
            u-fg
            u-bg
+           u-num-layers
            font-size
            term-dim
            font-tex-dim]  (with-gl-context gl-lock (mapv #(GL20/glGetUniformLocation pgm-id (str %))
@@ -934,6 +952,7 @@
                                                           "uGlyphs"
                                                           "uFg"
                                                           "uBg"
+                                                          "numLayers"
                                                           "fontSize"
                                                           "termDimensions"
                                                           "fontTextureDimensions"]))
@@ -1003,6 +1022,7 @@
                                        :u-glyphs u-glyphs
                                        :u-fg u-fg
                                        :u-bg u-bg
+                                       :u-num-layers u-num-layers
                                        :font-size font-size
                                        :term-dim term-dim
                                        :font-tex-dim font-tex-dim
