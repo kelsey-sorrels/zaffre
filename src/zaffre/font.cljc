@@ -20,12 +20,16 @@
       ;; Load font from file
       (do
         (log/info "Loading font from file" path)
-        (let [info (STBTTFontinfo/calloc)]
-          (when (zero?
-                  (STBTruetype/stbtt_InitFont info (-> font-file
-                                                     jio/input-stream
-                                                     IOUtils/toByteArray
-                                                     ByteBuffer/wrap)))
+        (let [info         (STBTTFontinfo/calloc)
+              buffer       (-> font-file
+                             jio/input-stream
+                             IOUtils/toByteArray
+                             ByteBuffer/wrap)
+             direct-buffer (BufferUtils/createByteBuffer (.limit buffer))]
+          (doto direct-buffer
+            (.put buffer)
+            (.flip))
+          (when (zero? (STBTruetype/stbtt_InitFont info direct-buffer))
             (throw (RuntimeException. "Error loading font")))
           info))
       (throw (RuntimeException. "Font does not exit")))))
@@ -128,8 +132,8 @@
   (let [scale       (STBTruetype/stbtt_ScaleForPixelHeight
                       font-info
                       size)
-        char-width  (* (advance-width font-info (int \M)) scale)
-        char-height size
+        char-width  (int (Math/ceil (* (advance-width font-info (int \M)) scale)))
+        char-height (int (Math/ceil size))
         img         (zimg/image char-width char-height 1)]
     ;; draw greyscale font
     (STBTruetype/stbtt_MakeCodepointBitmap
@@ -140,7 +144,9 @@
       0
       scale
       scale
-      (int c))))
+      (int c))
+    ;; convert to rgba
+    (zimg/mode img :rgba)))
   
 (defn glyph-graphics? [m]
   (every?

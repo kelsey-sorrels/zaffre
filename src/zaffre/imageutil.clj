@@ -1,6 +1,7 @@
 (ns zaffre.imageutil
   (:require [clojure.java.io :as jio]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [clojure.test :refer [is]])
   (:import (java.lang AutoCloseable)
            (java.nio ByteBuffer)
            (org.apache.commons.io IOUtils)
@@ -98,9 +99,9 @@
     (.put dest slice)))
 
 (defn copy-sub-image [{dwidth :width dheight :height dchannels :channels dbytes :byte-buffer :as dimg}
-                      {swidth :width sheight :height schannels :channels sbytes :byte-buffer}
+                      {swidth :width sheight :height schannels :channels sbytes :byte-buffer :as simg}
                       dx1 dy1 sx1 sy1 sx2 sy2]
-  {:pre [(= dchannels schannels)]}
+  {:pre [(is (= dchannels schannels) (format "%s and %s differ in channels" dimg simg))]}
   ;; for each line
   (doseq [y (range (- sy2 sy1))
           :let [sidx (* (+ sx1 (* (+ y sy1) swidth)) schannels)
@@ -164,7 +165,7 @@
         (.put dest-buffer (byte (quot (+ r g b) 3)))))
     (.flip byte-buffer)
     (.flip dest-buffer)
-    (->Image width height 1 dest-buffer)))
+    (->Image width height (num-channels image-type) dest-buffer)))
 
 (defmethod mode :grayscale->rgb
   [{:keys [width height channels byte-buffer]} image-type]
@@ -176,7 +177,7 @@
         (.put dest-buffer v)))
     (.flip byte-buffer)
     (.flip dest-buffer)
-    (->Image width height 1 dest-buffer)))
+    (->Image width height (num-channels image-type) dest-buffer)))
 
 (defmethod mode :grayscale->rgba
   [{:keys [width height channels byte-buffer]} image-type]
@@ -189,7 +190,7 @@
         (.put dest-buffer v)))
     (.flip byte-buffer)
     (.flip dest-buffer)
-    (->Image width height 1 dest-buffer)))
+    (->Image width height (num-channels image-type) dest-buffer)))
 
 (defmethod mode :rgb->rgba
   [{:keys [width height channels byte-buffer]} image-type]
@@ -207,7 +208,7 @@
         (.put dest-buffer (byte 0))))
     (.flip byte-buffer)
     (.flip dest-buffer)
-    (->Image width height 4 dest-buffer)))
+    (->Image width height (num-channels image-type) dest-buffer)))
 
 (defmethod mode :rgba->rgb
   [{:keys [width height channels byte-buffer]} image-type]
@@ -222,7 +223,7 @@
         (.put dest-buffer b)))
     (.flip byte-buffer)
     (.flip dest-buffer)
-    (->Image width height 3 dest-buffer)))
+    (->Image width height (num-channels image-type) dest-buffer)))
 
 (defn- skip [buffer n]
   (.position buffer (+ (.position buffer) n)))
