@@ -3,6 +3,7 @@
   (:require [zaffre.aterminal :as zat]
             [zaffre.font :as zfont]
             [zaffre.util :as zutil]
+            [zaffre.keyboard :as zkeyboard]
             [nio.core :as nio]
             [taoensso.timbre :as log]
             [clojure.core.async :as async :refer [go go-loop]]
@@ -84,40 +85,7 @@
 (defn convert-key-code [event-char event-key on-key-fn]
   ;; Cond instead of case. For an unknown reason, case does not match event-key to Keyboard/* constants.
   ;; Instead it always drops to the default case
-  (when-let [key (condp = (int event-key)
-                   Keyboard/KEY_RETURN  :enter
-                   Keyboard/KEY_ESCAPE  :escape
-                   Keyboard/KEY_SPACE   :space
-                   (int Keyboard/KEY_BACK)    :backspace
-                   Keyboard/KEY_TAB     :tab
-                   Keyboard/KEY_F1      :f1
-                   Keyboard/KEY_F2      :f2
-                   Keyboard/KEY_F3      :f3
-                   Keyboard/KEY_F4      :f4
-                   Keyboard/KEY_F5      :f5
-                   Keyboard/KEY_F6      :f6
-                   Keyboard/KEY_F7      :f7
-                   Keyboard/KEY_F8      :f8
-                   Keyboard/KEY_F9      :f9
-                   Keyboard/KEY_F10     :f10
-                   Keyboard/KEY_F11     :f11
-                   Keyboard/KEY_F12     :f12
-                   Keyboard/KEY_UP      :up
-                   Keyboard/KEY_DOWN    :down
-                   Keyboard/KEY_LEFT    :left
-                   Keyboard/KEY_RIGHT   :right
-                   Keyboard/KEY_NUMPAD1 :numpad1
-                   Keyboard/KEY_NUMPAD2 :numpad2
-                   Keyboard/KEY_NUMPAD3 :numpad3
-                   Keyboard/KEY_NUMPAD4 :numpad4
-                   Keyboard/KEY_NUMPAD5 :numpad5
-                   Keyboard/KEY_NUMPAD6 :numpad6
-                   Keyboard/KEY_NUMPAD7 :numpad7
-                   Keyboard/KEY_NUMPAD8 :numpad8
-                   Keyboard/KEY_NUMPAD9 :numpad9
-                   ;; event-key didn't match, default to event-char if it is printable, else nil
-                   (when (<= (int (first " ")) (int event-char) (int \~))
-                     event-char))]
+  (when-let [key (zkeyboard/convert-key-code event-char event-key)]
     (log/info "key" key)
     (on-key-fn key)))
 
