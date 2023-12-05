@@ -21,9 +21,9 @@
         (< h 300) [x 0 c]
         (< h 360) [c 0 x]))))
 
-(def small-font-fn (constantly (zfont/construct (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 true))))
-(def medium-font-fn (constantly (zfont/construct (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2 true))))
-(def large-font-fn (constantly (zfont/construct (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 3 true))))
+(def small-font-fn (constantly (zfont/scale (zfont/cp-437 "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green true) 1)))
+(def medium-font-fn (constantly (zfont/scale (zfont/cp-437 "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green true) 2)))
+(def large-font-fn (constantly (zfont/scale (zfont/cp-437 "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green true) 3)))
 
 (defn size->width [size]
   (case size
@@ -45,7 +45,7 @@
        :columns 16
        :rows 16
        :pos [0 0]
-       :font medium-font-fn}]
+       :font small-font-fn}]
     {:title "Zaffre demo"
      :screen-width (size->width :medium)
      :screen-height (size->height :medium)
@@ -67,7 +67,7 @@
               (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
             (zutil/put-string terminal :text 12 0 (str key-in))
             (zutil/put-string terminal :rainbow 1 1 "Rainbow")))
-        (go-loop []
+        #_(go-loop []
           (dosync
             (doseq [x (range (count "Rainbow"))
                     :let [rgb (hsv->rgb (double (rand 360)) 1.0 1.0)]]

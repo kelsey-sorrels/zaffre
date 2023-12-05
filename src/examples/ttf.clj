@@ -9,7 +9,7 @@
   (:import (zaffre.font TTFFont)))
 
 ;(def font (TTFFont. "Ubuntu Mono" 16 true))
-(def font (zfont/construct (TTFFont. "https://github.com/kelsey-sorrels/robinson/raw/master/fonts/Boxy/Boxy.ttf" 16 true)))
+(def font (zfont/ttf-font "https://github.com/kelsey-sorrels/robinson/raw/master/fonts/Boxy/Boxy.ttf" 16 true))
 ;(def font (TTFFont. "/home/santos/src/robinson/fonts/Boxy/Boxy.ttf" 16 true))
 (defn -main [& _]
   (zgl/create-terminal

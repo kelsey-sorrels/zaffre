@@ -442,8 +442,11 @@
 (defn has-valid-ref? [config] (true? (get config :ref)))
 (defn has-valid-key? [config] (true? (get config :key)))
 
+(defprotocol PartialHash
+  (hash-type-and-props [this]))
+
 ;; ReactElement
-(defrecord ReactElement [id type key ref self source owner props]
+(defrecord ReactElement [id type key ref self source owner props hash-cache]
   Object
   (toString [this]
     (format "ReactElement: %s :props %s :state %s"
@@ -451,7 +454,32 @@
         (name (get this :type))
         (display-name (get this :type)))
       props
-      (get-state *updater* this))))
+      (get-state *updater* this)))
+  PartialHash
+  (hash-type-and-props [this]
+    (log/info "id" id "type" (if (component? type) (display-name type) type))
+    ;(log/info *updater*)
+    (log/info (get-state *updater* this))
+    (if-let [h @hash-cache]
+      h
+      (reset! hash-cache
+        (bit-xor
+         ;(rand-int 10000)
+         ; type
+         (hash type)
+         ; state
+         (hash (or (get-state *updater* this) 0))
+         ; props - recurse through children
+         (hash
+           (update props :children
+             (fn [children]
+               (reduce bit-xor
+                 0
+                 (map (fn [child]
+                   (if (instance? ReactElement child)
+                     (hash-type-and-props child)
+                     (hash child)))
+                   children))))))))))
 
 (defn element-id-str [element]
   {:pre [(element? element) (get element :id)]}
@@ -474,10 +502,10 @@
   (letfn [(element-children-or-nil [element] (concat (element-children element) (repeat nil)))]
     (let [elements (cons element more)
           children (map element-children-or-nil elements)
-          _ (assert (every? coll? children) (str "Non collection children " (vec (map type children))))
+          #_ (assert (every? coll? children) (str "Non collection children " (vec (map type children))))
           children (apply map vector children)
           children (vec (take-while (fn [v] (not-every? nil? v)) children))
-          new-children (vec (map (fn [child-vec] (apply f child-vec)) children))]
+          new-children (into [] (map (fn [child-vec] (apply f child-vec)) children))]
       new-children)))
 
 (defn map-in-children [f element & more]
@@ -529,7 +557,7 @@
         source (get config :source)
         ;; either a single children array arg or multiple children using & more
         children (remove nil? (if (not (empty? more)) (cons children more) children))
-        _ (assert (valid-children? type children))
+        #_ (assert (valid-children? type children))
         props  (deep-merge
                     {:children children}
                     (if type (get type :default-props {}) {})
@@ -537,7 +565,7 @@
                       (remove (fn [[prop-name _]]
                                 (reserved-prop? prop-name)))
                               config))
-        element (->ReactElement nil type key ref self source nil props)]
+        element (ReactElement. nil type key ref self source nil props (atom nil))]
     (assoc element :id (System/identityHashCode element))))
 
 (defn create-factory [type]

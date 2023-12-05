@@ -190,7 +190,7 @@
 
 
 ;; Map \character to [col row]
-(defn character->col-row
+(defn create-character->col-row
   [character-idxs]
   (reduce (fn [m [codepoint _ col row]]
             (assoc m (char codepoint) [col row]))
@@ -595,14 +595,21 @@
                          char-height
                          ;FIXME character-layout
                          nil
-                         (character->col-row char-idxs)
+                         (create-character->col-row char-idxs)
                          (zipmap (map char (keys codepoint->glyph-index)) (repeat transparent))))))
     Dirty
     (dirty? [this] (dirty? resource)))
 
 (defn ttf-font
-  [resource size transparent]
-  (->TTFFont resource size transparent))
+  [string-or-resource size transparent]
+  (->TTFFont
+    (cond
+      (string? string-or-resource)
+        (static-object (font-data string-or-resource))
+      :else
+        string-or-resource)
+    size
+    transparent))
 
 (defn merge-character->transparent [l r]
   (let [l-fn (if (fn? l) l (fn [r] (merge l r)))
@@ -669,8 +676,7 @@
                        (get glyph :character->transparent))
                 (rest rest-glyphs)))
             (do
-              (zimg/write-png composite-image "composite-texture.png")
-              (log/info "composite color-table" (mapv palette glyphs))
+              ;(zimg/write-png composite-image "composite-texture.png")
               (->GlyphGraphics
                 width
                 height

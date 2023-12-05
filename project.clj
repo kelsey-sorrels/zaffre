@@ -17,7 +17,7 @@
 (def LWJGL_NS "org.lwjgl")
 
 ;; Edit this to change the version.
-(def LWJGL_VERSION "3.2.2")
+(def LWJGL_VERSION "3.2.3")
 
 ;; Edit this to add/remove packages.
 (def LWJGL_MODULES ["lwjgl"
@@ -73,7 +73,7 @@
 (def all-dependencies
   (into ;; Add your non-LWJGL dependencies here
    '[[org.clojure/clojure "1.9.0"]
-     [org.clojure/core.cache "0.7.1"]
+     [org.clojure/core.cache "0.8.2"]
      [org.clojure/core.async "0.4.474"]
      [commons-io/commons-io "2.6"]
      [overtone/at-at "1.2.0"]
@@ -87,7 +87,7 @@
      [clojure-watch "0.1.14"]]
     (lwjgl-deps-with-natives)))
 
-(defproject zaffre "0.4.0-b8"
+(defproject zaffre "0.4.0-b10"
   :description "A fast Clojure console library"
   :url "https://github.com/kelsey-sorrels/zaffre"
   :license {:name "The MIT License (MIT)"

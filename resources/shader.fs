@@ -124,6 +124,7 @@ void main(void) {
     vec4 bg  = texelFetch(uBg, termXYZ, 0);
     if (paletteOffset != 0u) {
         uint colorIndex = uint(256u * fnt.r);
+        // colorTable is (256, 1) texture
         fg = texelFetch(uColorTable, ivec2(colorIndex + paletteOffset - 1u, 0), 0);
     }
 

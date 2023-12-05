@@ -9,13 +9,6 @@
   (:import (zaffre.terminal Terminal)
            (zaffre.font CompositeFont CP437Font TileSet TTFFont)))
 
-#_(def font (zfont/construct
-           (CompositeFont. [ztiles/pastiche-16x16
-                            ztiles/two-bit-tileset])))
-
-#_(def font (CompositeFont. [ztiles/pastiche-16x16
-                           ztiles/d-roguelike]))
-
 (def font (zfont/construct
             (CompositeFont. [ztiles/pastiche-16x16
                              ztiles/fantasy])))

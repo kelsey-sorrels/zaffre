@@ -7,8 +7,8 @@
             [zaffre.util :as zutil])
   (:import (zaffre.font CompositeFont)))
 
-(def font (CompositeFont. [ztiles/pastiche-16x16
-                           ztiles/fantasy]))
+(def font @ztiles/pastiche-16x16)
+
 (defn -main [& _]
   (zgl/create-terminal
     [{:id :app        ;; Setup a layer group `:app`
@@ -23,16 +23,39 @@
                                ;; is also 16x16
     (fn [terminal]     ;; Receive the terminal in a callback
       ;; Save the last key press in an atom
-      (let [last-key (atom nil)]
+      (let [last-key (atom nil)
+            mods (atom {:shift nil :control nil :alt nil})]
         ;; Every 33ms, draw a full frame
         (zat/do-frame terminal 33
           (let [key-in (or @last-key \?)]
             ;; Draw strings
             (zutil/put-string terminal :text 0 0 "Hello world")
-            (zutil/put-string terminal :text 12 0 (str key-in))))
+            (zutil/put-string terminal :text 0 1 (str key-in))
+            (zutil/put-string terminal :text 0 2 (str "shift:" (get @mods :shift)))
+            (zutil/put-string terminal :text 0 3 (str "control:" (get @mods :control)))
+            (zutil/put-string terminal :text 0 4 (str "alt:" (get @mods :alt)))))
         ;; Wire up terminal events to channels we read from
+        (zevents/add-event-listener terminal :keydown
+          (fn [new-key]
+            (println "keydown" new-key)
+            (when (contains? #{:lshift :rshift} new-key)
+              (swap! mods merge {:shift true}))
+            (when (contains? #{:lcontrol :rcontrol} new-key)
+              (swap! mods merge {:control true}))
+            (when (contains? #{:lalt :ralt} new-key)
+              (swap! mods merge {:alt true}))))
+        (zevents/add-event-listener terminal :keyup
+          (fn [new-key]
+          (println "keyup" new-key)
+            (when (contains? #{:lshift :rshift} new-key)
+              (swap! mods merge {:shift false}))
+            (when (contains? #{:lcontrol :rcontrol} new-key)
+              (swap! mods merge {:control false}))
+            (when (contains? #{:lalt :ralt} new-key)
+              (swap! mods merge {:alt false}))))
         (zevents/add-event-listener terminal :keypress
           (fn [new-key]
+            (println "keypress" new-key)
             ;; Save last key
             (reset! last-key new-key)
             ;; Make the `q` key quit the application

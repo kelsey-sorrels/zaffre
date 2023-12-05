@@ -71,3 +71,12 @@
      [:text {} "qrs"]
      [:text {} "tuv"]
      [:text {} "wxy"]]))
+
+(deftest should-wrap
+  (are [input expected] (= expected (ztext/word-wrap 26 input))
+    ;; pass through
+    "You begin crafting a weapon. You'll need to start with an item."
+    ["You begin crafting a "
+     "weapon. You'll need to "
+     "start with an item."]
+))

@@ -24,8 +24,9 @@
 	(let [size (max (int size) 1)]
       (if (<= (count text) size)
         [text]
-		(re-seq (re-pattern (str ".{1," size "}\\s|.{1," size "}"))
-				(clojure.string/replace text #"\n" " "))))
+		(let [lines (vec (re-seq (re-pattern (str ".{1," size "}\\s|.{1," size "}"))
+				           (clojure.string/replace (str text " ") #"\n" " ")))]
+          (update lines (dec (count lines)) (fn [line] (clojure.string/trimr line))))))
     []))
 
 ;; Cascade style into descendants

@@ -42,6 +42,14 @@
                 [[zcui/Popup {} [[:text {} ["popup"]]]]]
                 [])]
     (log/debug "UI render " fps)
+    #_(zc/csx
+        [:terminal {} [
+          [:group {:id :ui} [
+            [:layer {:id :main} [
+              [:view {} [
+                [:text {} ["Hello"]]
+                [:text {:style {:background-color (zcolor/color 0 255 0 255)}} [" "]]
+                [:text {:style {:background-color (zcolor/color 255 0 0 255)}} ["world"]]]]]]]]]])
     (zc/csx
       [zcui/InputSelect {:fps fps} [
         [:terminal {} [

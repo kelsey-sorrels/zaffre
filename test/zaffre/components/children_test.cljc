@@ -11,11 +11,10 @@
 
 (deftest should-be-called-for-each-child
   (let [zero (zc/csx [:div {:key "keyZero"}])
-        one nil
         two (zc/csx [:div {:key "keyTwo"}])
-        three nil
         four (zc/csx [:div {:key "keyFour"}])
-        instance (zc/csx [:div {} [zero one two three four]])]
-    (is (= [zero one two three four] (map identity (zc/element-children instance))))))
+        instance (zc/csx [:div {} [zero two four]])]
+    (is (= (map (fn [e] (dissoc e :id)) [zero two four])
+           (map (fn [e] (dissoc e :id)) (zc/element-children instance))))))
 
 

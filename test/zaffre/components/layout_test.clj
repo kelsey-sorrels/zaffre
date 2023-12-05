@@ -160,7 +160,8 @@
 (deftest border-test-center-child
   (are [in out] (= out (zcl/layout-element in))
     ;; test_border_center_child 
-    [:root {:style { :justify :center
+    [:root {:style {
+              :justify-content :center
               :align-items :center
               :border-start 10
               :border-end 20
@@ -172,7 +173,7 @@
                         :height 10}}]]]
 
     [:root {:style {
-              :justify :center
+              :justify-content :center
               :align-items :center
               :border-start 10
               :border-end 20

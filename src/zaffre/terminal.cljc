@@ -8,8 +8,8 @@
     (java.util Arrays)
     (org.lwjgl.glfw GLFW)))
 
-(defn blend-mode->byte [blend-mode]
-  (blend-mode {
+(def blend-mode->byte
+  {
     :normal 0x0
     :multiply 0x1
     :screen 0x2
@@ -26,8 +26,7 @@
     ;:saturation 0x13
     ;:color 0x14
     ;:luminosity 0x15
-    }
-    #_(assert false (str "Unknown blend-mode " blend-mode))))
+    #_(assert false (str "Unknown blend-mode " blend-mode))})
 
 (defprotocol IBuffer
   (num-cols [this])
@@ -87,19 +86,22 @@
           index (+ (* row num-cols) col)]
       (aget bg-buffer index)))
   (set! [this c blend-mode palette-offset fg bg col row]
-    (let [col (int col)
-          row (int row)]
-      (when (and (< -1 col) (< col num-cols)
-                 (< -1 row) (< row num-rows))
-        (let [index (+ (* row num-cols) col)
+    (let [col (long col)
+          row (long row)]
+      (when (and (< (long -1) col) (< col (long num-cols))
+                 (< (long -1) row) (< row (long num-rows)))
+        (let [index (+ (* row (long num-cols)) col)
               fg-rgba (cond
                            (integer? fg) fg
                            (vector? fg) (zcolor/color fg))
               bg-rgba (cond
                            (integer? bg) bg
-                           (vector? bg) (zcolor/color bg))]
+                           (vector? bg) (zcolor/color bg))
+              blend-mode (if (keyword? blend-mode)
+                           (blend-mode blend-mode->byte)
+                           blend-mode)]
           (aset character-buffer index (unchecked-char c))
-          (aset blend-mode-buffer index (unchecked-int (blend-mode->byte blend-mode)))
+          (aset blend-mode-buffer index (unchecked-int blend-mode))
           (aset palette-offset-buffer index (unchecked-int palette-offset))
           (aset fg-buffer index (unchecked-int fg-rgba))
           (aset bg-buffer index (unchecked-int bg-rgba))))))

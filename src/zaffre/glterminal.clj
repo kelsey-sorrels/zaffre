@@ -19,7 +19,7 @@
     (java.nio.charset Charset)
     (org.lwjgl.opengl GL GLUtil GL11 GL12 GL13 GL14 GL15 GL20 GL30 GL32)
     (org.lwjgl.glfw GLFW GLFWVidMode GLFWVidMode$Buffer GLFWImage GLFWImage$Buffer
-      GLFWDropCallback GLFWErrorCallback GLFWCharCallback GLFWKeyCallback GLFWMouseButtonCallback
+      GLFWDropCallback GLFWErrorCallback GLFWCharCallback GLFWCharModsCallback GLFWKeyCallback GLFWMouseButtonCallback
       GLFWCursorPosCallback GLFWFramebufferSizeCallback)
     (org.lwjgl.system Platform)
     (org.joml Matrix4f Vector3f)
@@ -33,10 +33,12 @@
 
 ;; GLFW won't maintain a strong reference to our callback objects, so we have to
 (def key-callback-atom (atom nil))
-(def char-callback-atom (atom nil))
+(def char-mods-callback-atom (atom nil))
 (def mouse-button-callback-atom (atom nil))
 (def cursor-pos-callback-atom (atom nil))
 (def drop-callback-atom (atom nil))
+
+(def empty-color-table-texture-image  (zimg/image 0 0))
 
 (defn flip-byte-buffer [^ByteBuffer byte-buffer]
   (let [buffer ^Buffer byte-buffer]
@@ -254,6 +256,8 @@
              x       (/ (- (.width vidmode) screen-width) 2)
              y       (/ (- (.height vidmode) screen-height) 2)]
          (GLFW/glfwSetWindowPos window x y)
+         ; Include numlock mod when receiving input
+         (GLFW/glfwSetInputMode window GLFW/GLFW_LOCK_KEY_MODS 1)
          window))
    (throw (RuntimeException. "Failed to create the GLFW window"))))
 
@@ -478,40 +482,39 @@
   (character [this])
   (fg-color [this])
   (bg-color [this])
-  (highlight [this])
   (blend-mode [this]))
 
 ; style #{:fg-bg ; reverse foreground and background colors
 ;        }
 ; blend-mode one of :normal, or :multiply
-(defrecord GLCharacter [character fg-color bg-color style blend-mode]
+(defrecord GLCharacter [c fg bg blend-mode]
   Object
   (toString [this]
     (pr-str this))
   IGLCharacter
-  (character [this] character)
-  (fg-color [this] fg-color)
-  (bg-color [this] bg-color)
-  (highlight [this] (contains? style :fg-bg))
+  (character [this] c)
+  (fg-color [this] fg)
+  (bg-color [this] bg)
   (blend-mode [this] blend-mode))
 
 (defn make-terminal-character
-  ([character fg-color bg-color style blend-mode]
+  ([character fg-color bg-color]
+  (make-terminal-character character fg-color, bg-color :normal))
+  ([character fg-color bg-color blend-mode]
    ; uncomment for debugging
    #_{:pre [(char? character)
           (vector? fg-color)
           (< 2 (count fg-color) 5)
           (vector? bg-color)
           (< 2 (count bg-color) 5)
-          (set? style)
           (contains? #{:normal :multiply} blend-mode)]}
-   (GLCharacter. character fg-color bg-color style blend-mode)))
+   (GLCharacter. character fg-color bg-color blend-mode)))
 
 ;; Normally this would be a record, but until http://dev.clojure.org/jira/browse/CLJ-1224 is fixed
 ;; it is not performant to memoize records because hashCode values are not cached and are recalculated
 ;; each time.
 
-(defrecord OpenGlTerminal [term-args
+(deftype OpenGlTerminal [term-args
                            window-size
                            framebuffer-size
                            monitor-fullscreen-sizes
@@ -530,6 +533,54 @@
                            destroyed
                            window
                            capabilities]
+
+
+  clojure.lang.ILookup
+  ;; valAt gives (get pm key) and (get pm key not-found) behavior
+   (valAt [this item] (get {:term-args                term-args
+                            :window-size              window-size
+                            :framebuffer-size         framebuffer-size
+                            :monitor-fullscreen-sizes monitor-fullscreen-sizes
+                            :group-map                group-map
+                            :group-order              group-order
+                            :group->font-texture      group->font-texture
+                            :group-id->index          group-id->index
+                            :layer-id->group          layer-id->group
+                            :layer-id->index          layer-id->index
+                            :cursor-xy                cursor-xy
+                            :fx-uniforms              fx-uniforms
+                            :gl                       gl
+                            :term-chan                term-chan
+                            :term-pub                 term-pub
+                            :gl-lock                  gl-lock
+                            :destroyed                destroyed
+                            :window                   window
+                            :capabilities             capabilities} item))
+   (valAt [this item not-found] (get {:term-args                term-args
+                                      :window-size              window-size
+                                      :framebuffer-size         framebuffer-size
+                                      :monitor-fullscreen-sizes monitor-fullscreen-sizes
+                                      :group-map                group-map
+                                      :group-order              group-order
+                                      :group->font-texture      group->font-texture
+                                      :group-id->index          group-id->index
+                                      :layer-id->group          layer-id->group
+                                      :layer-id->index          layer-id->index
+                                      :cursor-xy                cursor-xy
+                                      :fx-uniforms              fx-uniforms
+                                      :gl                       gl
+                                      :term-chan                term-chan
+                                      :term-pub                 term-pub
+                                      :gl-lock                  gl-lock
+                                      :destroyed                destroyed
+                                      :window                   window
+                                      :capabilities             capabilities} item not-found))
+
+  clojure.lang.IFn
+  ;;makes priority map usable as a function
+  (invoke [this k] (.valAt this k))
+  (invoke [this k not-found] (.valAt this k not-found))
+
   zt/Terminal
   (args [_]
     term-args)
@@ -553,16 +604,21 @@
                      gg           (if (zfont/glyph-graphics? font)
                                     font
                                     (zfont/glyph-graphics font))
+                     _ (log/info "gg" gg)
                      font-texture (or (get gg :font-texture)
                                       (texture-id-2d (get gg :font-texture-image)))
-                     color-table-texture (texture-id-2d (get gg :color-table-texture-image
-                                                             (zimg/image 0 0)))]
+                     color-table-texture (texture-id-2d (or (get gg :color-table-texture-image)
+                                                             empty-color-table-texture-image))]
                  ;(log/info "loaded font-texture for" group-id font-texture)
                  ;(log/info "using tile-names" (zfont/character-layout gg))
                  ;(log/info "using character->col-row" (zfont/character->col-row gg))
                  (dosync 
                    (alter (get group->font-texture group-id)
                           assoc :font-texture font-texture
+                                :font-texture-width (get gg :font-texture-width)
+                                :font-texture-height (get gg :font-texture-height)
+                                :character-width (get gg :character-width)
+                                :character-height (get gg :character-height)
                                 :color-table-texture color-table-texture
                                 :character->col-row (zfont/character->col-row gg)))
 
@@ -572,11 +628,11 @@
                  (GL11/glDeleteTextures (long old-color-table-texture))
                  (log/info "after")
                  gg))]
-       #_(async/put! term-chan (-> (select-keys gg [:font-texture-width
-                                                  :font-texture-height 
-                                                  :character-width
-                                                  :character-height])
-                                 (assoc :type :font-change)))))
+       (async/put! term-chan [(select-keys gg [:font-texture-width
+                                              :font-texture-height 
+                                              :character-width
+                                              :character-height])
+                              :font-change])))
   ;; characters is a list of {:c \character :x col :y row :fg [r g b [a]] :bg [r g b [a]]}
   (put-chars! [_ layer-id characters]
     {:pre [(is (not (nil? (get layer-id->group layer-id))) (format "Invalid layer-id %s" layer-id))
@@ -973,11 +1029,24 @@
     monitor-fullscreen-sizes)
   (destroy! [_]
     (reset! destroyed true)
-    (async/put! term-chan :close)
+    (async/put! term-chan [nil :close])
     (async/close! term-chan)
     (shutdown-agents))
   (destroyed? [_]
-    @destroyed))
+    @destroyed)
+  clojure.lang.IHashEq
+  (hasheq [this]
+    (hash [#_term-args
+           window-size
+           framebuffer-size
+           #_group-map
+           #_group-order
+           #_group->font-texture
+           #_group-id->index
+           #_layer-id->group
+           #_layer-id->index
+           #_destroyed])))
+
 (defmethod zt/do-frame-clear OpenGlTerminal [terminal] (zt/clear! terminal))
 
 (defn group-locations
@@ -1066,8 +1135,7 @@
         group->font-texture (into {}
                               (mapv (fn [[k v]]
                                       [k (ref (let [font ((get @v :font) (zlwjgl/platform))
-                                                    _    (log/info "Creating glyph-graphics for" font (zlwjgl/platform))
-                                                    empty-color-table-texture-image  (zimg/image 0 0)
+                                                    ;_    (log/info "Creating glyph-graphics for" font (zlwjgl/platform))
                                                     gg   (if (zfont/glyph-graphics? font)
                                                            font
                                                            (zfont/glyph-graphics font))
@@ -1086,15 +1154,16 @@
 
           term-chan           (async/chan (async/buffer 100))
           ;; Turn term-chan into a pub(lishable) channel
-          term-pub            (async/pub term-chan (fn [v]
+          term-pub            (async/pub term-chan (fn [[v action]]
+                                            ;(log/info "term-chan" v action)
                                             (cond
                                               (zkeyboard/is-keypress? v) :keypress
-                                              (keyword? v)               v
-                                              :else                      (get v :type))))
+                                              (keyword? action)          action
+                                              (keyword? v)               v)))
                                             
           on-key-fn           (or on-key-fn
-                                  (fn alt-on-key-fn [k]
-                                    (async/put! term-chan k)))
+                                  (fn alt-on-key-fn [k action]
+                                    (async/put! term-chan [k action])))
 
           ;; create width*height texture that gets updated each frame that determines which character to draw in each cell
           _ (log/info "Creating glyph array")
@@ -1220,11 +1289,25 @@
         _ (except-gl-errors "Shader fx uniforms init")
         key-callback          (proxy [GLFWKeyCallback] []
                                 (invoke [window key scancode action mods]
-                                  (when-let [key (zkeyboard/convert-key-code key scancode action mods)]
-                                    (on-key-fn key))))
-        char-callback         (proxy [GLFWCharCallback] []
-                                (invoke [window codepoint]
-                                  (on-key-fn (first (Character/toChars codepoint)))))
+                                  (let [converted-key (zkeyboard/convert-key-code key scancode action mods)
+                                        action (zkeyboard/convert-action action)
+                                        key-mods (zkeyboard/key-mods mods)]
+                                    (when (and converted-key
+                                            (contains? #{:keydown :keyup} action))
+                                      (log/info "key-callback" converted-key action mods key-mods)
+                                      (when (or (contains? #{:lshift :rshift :lcontrol :rcontrol :lalt :ralt} converted-key)
+                                                (= action :keydown))
+                                        (on-key-fn converted-key action))))))
+        char-mods-callback    (proxy [GLFWCharModsCallback] []
+                               (invoke [window codepoint mods]
+                                 (let [key-mods (zkeyboard/key-mods mods)
+                                       ch (first (Character/toChars codepoint))]
+                                   (log/info "char-mods-callback" codepoint mods key-mods)
+                                   ; of we got to a number by pressing shift then we're on the numpad
+                                   ; and this is handled by key-callback
+                                   (when-not (and (<= (int \0) (int ch) (int \9))
+                                            (contains? key-mods :shift))
+                                     (on-key-fn ch :keypress)))))
         mouse-button-callback (proxy [GLFWMouseButtonCallback] []
                                 (invoke [window button action mods]
                                   (let [state  (condp = (int action)
@@ -1236,7 +1319,7 @@
                                     (async/onto-chan
                                       term-chan
                                       (map (fn [[group-id col row]]
-                                             {:type state :button button :col col :row row :group-id group-id})
+                                             [{:button button :col col :row row :group-id group-id} state])
                                            new-group-locations)
                                       false)
                                     (when (= state :mouse-down)
@@ -1245,7 +1328,7 @@
                                       (async/onto-chan
                                         term-chan
                                         (map (fn [[group-id col row]]
-                                               {:type :click :button button :col col :row row :group-id group-id})
+                                               [{:button button :col col :row row :group-id group-id} :click])
                                              (clojure.set/intersection
                                                new-group-locations
                                                (apply group-locations group-map group->font-texture
@@ -1264,13 +1347,13 @@
                                     (async/onto-chan
                                       term-chan
                                       (map (fn [[group-id col row]]
-                                             {:type :mouse-leave :col col :row row :group-id group-id})
+                                             [{:col col :row row :group-id group-id} :mouse-leave])
                                            left-locations)
                                       false)
                                     (async/onto-chan
                                       term-chan
                                       (map (fn [[group-id col row]]
-                                             {:type :mouse-enter :col col :row row :group-id group-id})
+                                             [{:col col :row row :group-id group-id} :mouse-enter])
                                            entered-locations)
                                       false))))
         drop-callback         (proxy [GLFWDropCallback] []
@@ -1279,7 +1362,7 @@
                                     (log/info "names" (vec names))
                                     (async/onto-chan
                                       term-chan
-                                      [{:type :drag-and-drop :names names}]
+                                      [[{:names names} :drag-and-drop]]
                                       false))))
         framebuffer-size-callback
                               (proxy [GLFWFramebufferSizeCallback] []
@@ -1380,12 +1463,12 @@
         ;; Poll keyboard in background thread and offer input to key-chan
         ;; If gl-lock is false ie: the window has been closed, put :exit on the term-chan
         (reset! key-callback-atom key-callback)
-        (reset! char-callback-atom char-callback)
+        (reset! char-mods-callback-atom char-mods-callback)
         (reset! mouse-button-callback-atom mouse-button-callback)
         (reset! cursor-pos-callback-atom cursor-pos-callback)
         (reset! drop-callback-atom drop-callback)
         (GLFW/glfwSetKeyCallback window key-callback)
-        (GLFW/glfwSetCharCallback window char-callback)
+        (GLFW/glfwSetCharModsCallback window char-mods-callback)
         (GLFW/glfwSetMouseButtonCallback window mouse-button-callback)
         (GLFW/glfwSetCursorPosCallback window cursor-pos-callback)
         (GLFW/glfwSetDropCallback window drop-callback)

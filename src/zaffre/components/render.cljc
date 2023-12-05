@@ -1,6 +1,7 @@
 (ns zaffre.components.render
   (:require clojure.data
             [clojure.string]
+            [clojure.core.cache.wrapped :as cw]
             [clojure.test :refer [is]]
             [taoensso.timbre :as log]
             [zaffre.components :as zc]
@@ -8,6 +9,9 @@
             [zaffre.text :as ztext]
             [zaffre.terminal :as zt]
             [zaffre.util :as zu]))
+
+(def  ^:dynamic *on-error*
+  (fn [e] nil))
 
 (def default-style
   {:color (unchecked-int 0xffffffff) #_[255 255 255 255]
@@ -116,9 +120,10 @@
   ;(log/info "render-string-into-container" x y color background-color s)
   (when (between -1 y (zt/num-rows target))
     (let [max-x (int (zt/num-cols target))
-          row (int y)]
+          row (int y)
+          blend-mode (blend-mode zt/blend-mode->byte)]
       (loop [index 0 s s]
-        (let [col (int (+ x index))
+        (let [col (int (+ (int x) index))
               c   (first s)]
           (when (and c 
                      (between -1 col max-x))
@@ -136,7 +141,7 @@
         lines (ztext/word-wrap-text-tree width height (if (every? string? children)
                                                           [:text props (map (fn [child] [:text {} [child]]) children)]
                                                           text-element))]
-    (log/trace "render-text-into-container lines" (vec lines))
+    (log/debug "render-text-into-container lines" (vec lines))
     (zu/loop-with-index dy [line lines]
       (let [default-color (get default-style :color)
             default-background-color (get default-style :background-color)]
@@ -145,9 +150,12 @@
           ;; remove inc? for spaces
           (let [but-last (butlast line)
                 last-span (let [[s style _] (last line)
-                                s (clojure.string/trim s)]
+                                s s]
+                                ;s (clojure.string/trim s)]
                            [s style (count s)])
                 line (concat but-last (list last-span))
+                _ (log/trace "but-last" but-last)
+                _ (log/trace "last-span" last-span)
                 _ (log/trace "rendering line2" (vec line))
                 span-lengths (map (fn [[s _ length]] length) line)
                 line-length (reduce + 0 span-lengths)
@@ -165,7 +173,8 @@
                 (+ x dx) (+ y dy)
                 (or color default-color)
                 (or background-color default-background-color)
-                (clojure.string/trim s)
+                s
+                #_(clojure.string/trim s)
                 mix-blend-mode))))))))
 
 (defn render-img-into-container [target img-element]
@@ -176,6 +185,7 @@
   (let [[type {:keys [style zaffre/layout] :or {style {}} :as props} children] img-element
         {:keys [mix-blend-mode] :or {mix-blend-mode (get default-style :mix-blend-mode)}} style
         {:keys [x y width height overflow-bounds]} layout
+        blend-mode (mix-blend-mode zt/blend-mode->byte)
         overflow-bounds (or overflow-bounds (layout->bounds layout))
         [overflow-min-x overflow-min-y overflow-max-x overflow-max-y] overflow-bounds
         overflow-max-x (int overflow-max-x)
@@ -194,17 +204,23 @@
             row (+ y dy)]
         (when (and (< dy height) (not (empty? line)) (< min-y row max-y))
           #_(log/trace "rendering line" (vec line))
-          (zu/loop-with-index dx [{:keys [c fg bg] :as pixel} line]
-            (assert (char? c))
-            (assert (or (integer? fg) (vector? fg)))
-            (assert (or (integer? bg) (vector? bg)))
+          (zu/loop-with-index dx [pixel #_{:keys [c fg bg] :as pixel} line]
+            #_(assert (char? c))
+            #_(assert (or (integer? fg) (vector? fg)))
+            #_(assert (or (integer? bg) (vector? bg)))
             (let [max-x (min overflow-max-x num-cols-target)
                   x (int x)
                   dx (int dx)
                   col (int (+ x dx))]
               (when (< min-x col max-x)
                 #_(log/trace "rendering pixel x:" col " y:" row " " pixel " max-x:" max-x " max-y:" (zt/num-rows target))
-                (zt/set! target (get pixel :c) mix-blend-mode (get pixel :palette-offset 0) (get pixel :fg) (get pixel :bg) col row)))))))))
+                (zt/set! target
+                  (:c pixel)
+                  blend-mode
+                  (or (:palette-offset pixel) 0)
+                  (:fg pixel)
+                  (:bg pixel)
+                  col row)))))))))
 
 (defn element-seq [element]
   "Returns :view and top-level :text elements."
@@ -241,6 +257,12 @@
    :bottom-left  \u255A
    :bottom-right \u255D})
 
+(defn repeat-char
+  [n c]
+  (clojure.string/join (repeat n c)))
+
+(def repeat-char-m (memoize repeat-char))
+
 ;; render views
 (defmethod render-component-into-container :view
   [target [type {:keys [style zaffre/layout]}]]
@@ -254,7 +276,7 @@
       (when background-color
         (doseq [dy (range height)
                 :let [color (or color (get default-style :color))]]
-          (render-string-into-container target x (+ y dy) color background-color (clojure.string/join (repeat width " ")) mix-blend-mode)))
+          (render-string-into-container target x (+ y dy) color background-color (repeat-char-m width \ ) mix-blend-mode)))
       ; render border when set
       (when border-style
         (let [border-map (case border-style
@@ -265,8 +287,8 @@
             (render-string-into-container target x y color background-color
               (str (when (or (< 0 border) (< 0 border-left))
                      (get border-map :top-left))
-                   (clojure.string/join (repeat (- width (+ (or border border-left) (or border border-right)))
-                                                (get border-map :horizontal)))
+                   (repeat-char-m (- width (+ (or border border-left) (or border border-right)))
+                                  (get border-map :horizontal))
                    (when (or (< 0 border) (< 0 border-right))
                      (get border-map :top-right)))
                mix-blend-mode))
@@ -281,8 +303,8 @@
             (render-string-into-container target x (+ y height -1) color background-color
               (str (when (or (< 0 border) (< 0 border-left))
                      (get border-map :bottom-left))
-                   (clojure.string/join (repeat (- width (+ (or border border-left) (or border border-right)))
-                                                (get border-map :horizontal)))
+                   (repeat-char-m (- width (+ (or border border-left) (or border border-right)))
+                                  (get border-map :horizontal))
                    (when (or (< 0 border) (< 0 border-right))
                      (get border-map :bottom-right)))
               mix-blend-mode)))))
@@ -335,9 +357,13 @@
                    vec)]
     #_(log/trace "render-layer-into-container elements" elements)
     #_(log/trace "render-layer-into-container layer-en-place" (zc/tree->str layer-en-place))
+    #_(log/info "rendering" (count elements) "in layer")
     (doseq [element elements]
       #_(log/debug "render-layer-into-container element" element)
-      (render-component-into-container target element))
+      (try
+        (render-component-into-container target element)
+        (catch Throwable t
+          (*on-error* t))))
     elements))
 
 (defn log-layer [layer-id layer-container]
@@ -494,6 +520,17 @@
     (dissoc v :type)
     v))
 
+(defonce element-cache
+  (cw/lru-cache-factory {} :threshold 1024))
+
+(defn partial-hash
+  [element]
+  (cond
+    (nil? element) 0
+    (zc/element? element) (zc/hash-type-and-props element)
+    (zc/component? element) (assert false)
+    :else (hash element)))
+
 (defn render-recursively 
   ([element]
     (render-recursively nil element))
@@ -503,60 +540,74 @@
    {:post [(is (or (nil? %) (string? %) (and (zc/element? %) (check-elem existing element %))) (zc/element-display-name %))]}
     #_(when (= existing element)
       (log/warn "WARNING Existing = Element WARNING"))
-    (log/trace "render-recursively existing" (zc/element-display-name existing) (count (zc/element-children existing)) #_(without-type existing))
-    (log/trace "render-recursively element" (zc/element-display-name element) (count (zc/element-children element)) #_(without-type element))
+    #_(log/trace "render-recursively existing" (zc/element-display-name existing) (count (zc/element-children existing)) #_(without-type existing))
+    #_(log/trace "render-recursively element" (zc/element-display-name element) (count (zc/element-children element)) #_(without-type element))
     #_(log/trace "existing:\n" (zc/tree->str existing))
     #_(log/trace "element:\n" (zc/tree->str element))
-    (cond
-      (nil? element)
-        element
-      (string? element)
-        (do (log/trace "rendering string" element)
-        element)
-      ;; built-in?
-      (keyword? (get element :type))
-        (if (= (get element :type) :img)
-          ;; imgs have pre-rendered pixel children
-          (assoc element :id (get existing :id))
-          ;; render other built-ins by rendering their chldren
-          (let [rendered-children (zc/map-children (fn [child existing-child]
-                                                     (render-recursively existing-child element child))
-                                                   element
-                                                   existing)]
-            (-> element
-              (zc/assoc-children (remove nil? rendered-children))
-              (assoc
-                :id
-                (if (type-match? existing element)
-                  (first-element-id existing element)
-                  (get element :id))))))
-      :default
-        (let [;; Render one level
-              rendered-element (render (when (zc/element? existing) existing)
-                                       parent
-                                       element)
-              rendered-child (render-recursively (first (zc/element-children existing))
-                                                    element
-                                                    rendered-element)]
-          (log/trace "rendered element" (zc/element-display-name rendered-element))
-          (log/trace "element-id" (zc/element-id-str rendered-child))
-          (assert (is (zc/element? rendered-element)))
-          (assert (zc/element? rendered-child)
-            (str (zc/element-display-name element) " -> "
-                 (zc/element-display-name rendered-element) " -> "
-                 (zc/element-display-name rendered-child) "\n"
-                 rendered-child))
-          ; take the rendered element and assign it as the child to `element`.
-          ; render recursively, the rendered-element 
-          (-> element
-            (zc/assoc-children [rendered-child])
-            ;; assign existing id so that state lookup works
-            ;; FIXME find out why this kills Popup
-            (assoc
-              :id
-              (if (type-match? existing element)
-                (first-element-id existing element)
-                (get element :id))))))))
+    (try
+      (cw/lookup-or-miss
+        element-cache
+        [(partial-hash parent)
+         (partial-hash element)]
+        (fn render-element [_]
+          ;(log/info "rendering" (zc/element-display-name element))
+          ;(log/info "parent" (zc/tree->str parent))
+          ;(log/info "element" (zc/tree->str element))
+          (cond
+            (nil? element)
+              element
+            (string? element)
+              (do (log/trace "rendering string" element)
+              element)
+            ;; built-in?
+            (keyword? (get element :type))
+              (if (= (get element :type) :img)
+                ;; imgs have pre-rendered pixel children
+                (assoc element :id (get existing :id))
+                ;; render other built-ins by rendering their chldren
+                (let [rendered-children (zc/map-children (fn [child existing-child]
+                                                           (render-recursively existing-child element child))
+                                                         element
+                                                         existing)]
+                  (-> element
+                    (zc/assoc-children (remove nil? rendered-children))
+                    (assoc
+                      :id
+                      (if (type-match? existing element)
+                        (first-element-id existing element)
+                        (get element :id))))))
+            :default
+              (let [;; Render one level - turns element into another element or primative element
+                    rendered-element (render (when (zc/element? existing) existing)
+                                             parent
+                                             element)
+                    ; render recursively the rendered element
+                    rendered-tree (render-recursively (first (zc/element-children existing))
+                                                      element
+                                                      rendered-element)]
+                ;(log/info "props" (zc/props element))
+                (log/trace "rendered element" (zc/element-display-name rendered-element))
+                (log/trace "element-id" (zc/element-id-str rendered-tree))
+                (assert (is (zc/element? rendered-element)))
+                (assert (zc/element? rendered-tree)
+                  (str (zc/element-display-name element) " -> "
+                       (zc/element-display-name rendered-element) " -> "
+                       (zc/element-display-name rendered-tree) "\n"
+                       rendered-tree))
+                ; take the rendered tree and assign it as the child to `element`.
+                ; render recursively, the rendered-element 
+                (-> element
+                  (zc/assoc-children [rendered-tree])
+                  ;; assign existing id so that state lookup works
+                  ;; FIXME find out why this kills Popup
+                  (assoc
+                    :id
+                    (if (type-match? existing element)
+                      (first-element-id existing element)
+                      (get element :id))))))))
+      (catch Throwable t
+        (log/error t)
+        (*on-error* t)))))
 
 (defn extract-native-elements [element]
   (cond
