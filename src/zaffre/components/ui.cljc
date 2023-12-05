@@ -1,7 +1,7 @@
 (ns zaffre.components.ui
   (:require
     [overtone.at-at :as atat]
-    [gossamer.core-graal :as g]
+    [cashmere.core-graal :as cm]
     [clj-http.client :as client]
     [clojure.zip :as zip]
     [clojure.java.io :as jio]
@@ -40,11 +40,11 @@ maps))
     \
     event))
 
-(g/defcomponent Input
+(cm/defcomponent Input
   [props _]
-  (let [[value set-value!] (g/use-state (get props :value ""))
-        [focused set-focus!] (g/use-state (get props :focus false))
-        [show-cursor set-show-cursor!] (g/use-state false)
+  (let [[value set-value!] (cm/use-state (get props :value ""))
+        [focused set-focus!] (cm/use-state (get props :focus false))
+        [show-cursor set-show-cursor!] (cm/use-state false)
         max-length (or (get props :max-length) 28)
         duty-on 400
         duty-off 400
@@ -85,7 +85,7 @@ maps))
         cursor-fg (if (and focused show-cursor) cursor-fg :ref/on-surface)
         cursor (if (and focused show-cursor) cursor-char-on cursor-char-off)]
 
-     (g/use-effect (fn []
+     (cm/use-effect (fn []
        (go-loop []
          (<! (timeout 400))
          (set-show-cursor! not)
@@ -101,9 +101,9 @@ maps))
        [:text {:key "cursor" :style {:color cursor-fg :background-color cursor-bg}} (str cursor)]
        [:text {:key "rest"} (apply str (repeat (- width (count value)) "_"))]]))
 
-(g/defcomponent Button
+(cm/defcomponent Button
   [props _]
-  (let [[focused set-focus!] (g/use-state (get props :focus false))
+  (let [[focused set-focus!] (cm/use-state (get props :focus false))
         duty-on 400
         duty-off 400
         on-focus (fn [_] (set-focus! true))
@@ -132,11 +132,11 @@ maps))
         [:view {:key "button-content" :style element-style} children]
         [:text {:key "button-right" :style (merge element-style {:content :ref/button-right})} ""]]))
 
-(g/defcomponent Checkbox
+(cm/defcomponent Checkbox
   [props _]
-  (let [[selected set-selected!] (g/use-state (get props :checked false))
-        [focused set-focus!] (g/use-state (get props :focus false))
-        [show-cursor set-show-cursor!] (g/use-state false)
+  (let [[selected set-selected!] (cm/use-state (get props :checked false))
+        [focused set-focus!] (cm/use-state (get props :focus false))
+        [show-cursor set-show-cursor!] (cm/use-state false)
         duty-on 400
         duty-off 400
         on-focus (fn [_] (set-focus! true))
@@ -166,7 +166,7 @@ maps))
                 cursor-bg]} (get props :style)
         cursor (if (and focused show-cursor) (str cursor-char-on) (if selected :ref/checkbox-checked :ref/checkbox-unchecked))
         color (if selected :ref/secondary :ref/on-surface)]
-     (g/use-effect (fn []
+     (cm/use-effect (fn []
        (go-loop []
          (<! (timeout 400))
          (set-show-cursor! not)
@@ -182,11 +182,11 @@ maps))
                                            :color :ref/on-surface}} ""]]
         children)]))
 
-(g/defcomponent LoadingSpinner
+(cm/defcomponent LoadingSpinner
   [props _]
   (let [{:keys [speed characters] :or {speed 100 characters ["/" "-" "\\" "|"]}} props
-        [index set-index!] (g/use-state 0)]
-    (g/use-effect (fn []
+        [index set-index!] (cm/use-state 0)]
+    (cm/use-effect (fn []
       (go-loop []
         (<! (timeout speed))
         (set-index! (fn [index] 
@@ -194,11 +194,11 @@ maps))
         (recur))) [])
     [:text {:style {:color :ref/on-surface}} (nth characters index)]))
 
-(g/defcomponent Radio
+(cm/defcomponent Radio
   [props _]
-  (let [[selected set-selected!] (g/use-state (get props :checked false))
-        [focused set-focus!] (g/use-state (get props :focus false))
-        [show-cursor set-show-cursor!] (g/use-state false)
+  (let [[selected set-selected!] (cm/use-state (get props :checked false))
+        [focused set-focus!] (cm/use-state (get props :focus false))
+        [show-cursor set-show-cursor!] (cm/use-state false)
         duty-on 400
         duty-off 400
         on-focus (fn [_] (set-focus! true))
@@ -228,7 +228,7 @@ maps))
                 cursor-bg]} (get props :style)
         cursor (if (and focused show-cursor) (str cursor-char-on) (if selected :ref/radio-checked :ref/radio-unchecked))
         color (if selected :ref/secondary :ref/on-surface)]
-     (g/use-effect (fn []
+     (cm/use-effect (fn []
        (go-loop []
          (<! (timeout 400))
          (set-show-cursor! not)
@@ -244,7 +244,7 @@ maps))
                                            :color :ref/on-surface}} ""]]
         children)]))
 
-(g/defcomponent ProgressBar
+(cm/defcomponent ProgressBar
   [props _]
   (let [left (int (get props :value 0))
         right (- 100 left)]
@@ -263,12 +263,12 @@ maps))
                       :width (str right "%")
                       :height 1}}]]))
 
-(g/defcomponent Slider
+(cm/defcomponent Slider
   [props _]
   (let [initial-value (int (get props :initial-value 0))
-        [value set-value!] (g/use-state initial-value)
-        [focused set-focus!] (g/use-state (get props :focus false))
-       [show-cursor set-show-cursor!] (g/use-state false)
+        [value set-value!] (cm/use-state initial-value)
+        [focused set-focus!] (cm/use-state (get props :focus false))
+       [show-cursor set-show-cursor!] (cm/use-state false)
         {:keys [name style]} props
         {:keys [width] :or {width 40}} style
         duty-on 400
@@ -306,7 +306,7 @@ maps))
                 cursor-bg]} (get props :style)
         cursor (if (and focused show-cursor) (str cursor-char-on) :ref/slider-control)
         color :ref/secondary]
-     (g/use-effect (fn []
+     (cm/use-effect (fn []
        (go-loop []
          (<! (timeout 400))
          (set-show-cursor! not)
@@ -430,10 +430,10 @@ maps))
       (println (apply str (map :c line))))))
 
 ;; Dummy component for XYPlot
-(g/defcomponent LineSeries
+(cm/defcomponent LineSeries
   [_ _])
 
-(g/defcomponent XYPlot
+(cm/defcomponent XYPlot
   [props _]
   "[XYPlot {}
      [LineSeries {:style {:color ...} :data [0 1 2 3]}]
@@ -441,10 +441,10 @@ maps))
   (let [{:keys [min-y max-y style children]} props
         style-width (get style :width 0)
         style-height (get style :height 0)
-        [width set-width!] (g/use-state style-width)
-        [height set-height!] (g/use-state style-height)
-        r (g/use-ref nil)
-        img-characters (g/use-memo
+        [width set-width!] (cm/use-state style-width)
+        [height set-height!] (cm/use-state style-height)
+        r (cm/use-ref nil)
+        img-characters (cm/use-memo
           ; TODO: create img-characters based on data, width, height
           (fn []
             ; scale data from [min-y, max-y] to [0, height]
@@ -456,7 +456,7 @@ maps))
                                      children))
                               width height))
           [width height children])]
-    #_(g/use-effect (fn []
+    #_(cm/use-effect (fn []
       (log/info "ref" r)
       (when-let [layout (some-> r (get "current") (nth 3) deref)]
         (let [{:keys [x y width height]} layout]
@@ -478,13 +478,13 @@ maps))
             :height height
             :pixels (transpose img-characters)}]]))
 
-(g/defcomponent Dropdown
+(cm/defcomponent Dropdown
   [props _]
   (let [{:keys [children]} props
-        [index set-index!] (g/use-state 0)
-        [focused set-focus!] (g/use-state (get props :focus false))
-        [show-cursor set-show-cursor!] (g/use-state false)
-        [expanded set-expanded!] (g/use-state false)
+        [index set-index!] (cm/use-state 0)
+        [focused set-focus!] (cm/use-state (get props :focus false))
+        [show-cursor set-show-cursor!] (cm/use-state false)
+        [expanded set-expanded!] (cm/use-state false)
         on-focus (fn [_] (set-focus! true))
         on-blur (fn [_]
                   (set-focus! false)
@@ -522,7 +522,7 @@ maps))
                 cursor-bg]} (get props :style)
         cursor-fg (if (and focused show-cursor) cursor-fg :ref/on-surface)
         cursor (if (and focused show-cursor) cursor-char-on cursor-char-off)]
-     (g/use-effect (fn []
+     (cm/use-effect (fn []
        (go-loop []
          (<! (timeout 400))
          (set-show-cursor! not)
@@ -549,7 +549,7 @@ maps))
           [])))))
 
 ; Dummy component for Tree
-(g/defcomponent TreeItem
+(cm/defcomponent TreeItem
   [props _]
   (let [{:keys [children]} props]
     (log/info "TreeItem props" (dissoc props :children))
@@ -572,7 +572,7 @@ maps))
       (assoc-in component [1 :children]))
     root-component))
 
-(g/defcomponent Tree
+(cm/defcomponent Tree
   [props _]
   (let [{:keys [children]} props
         root-loc (tree-loc (first children))
@@ -597,7 +597,7 @@ maps))
              tree-edges
              items)))
 
-#_(g/defcomponent VScrollBar
+#_(cm/defcomponent VScrollBar
   [props _]
   (let [{:keys [height num-items pos]} props]
     [:view {:style {:display :flex
@@ -615,7 +615,7 @@ maps))
       [:view {}
         [:text {:style {:color (rcolor/color->rgb :highlight)}} ruicommon/down-arrow-char]]]))
 
-(g/defcomponent ScrollPane
+(cm/defcomponent ScrollPane
   [props _]
   (let [left (int (get props :value 0))
         right (- 100 left)]
@@ -663,10 +663,10 @@ maps))
 ; Adapted from https://dev.to/gethackteam/from-higher-order-components-hoc-to-react-hooks-2bm9
 (defn use-resource
   [src]
-  (let [[data set-data!] (g/use-state nil)
-        [error set-error!] (g/use-state nil)
-        [is-loading set-is-loading!] (g/use-state true)]
-    (g/use-effect (fn effect-fn []
+  (let [[data set-data!] (cm/use-state nil)
+        [error set-error!] (cm/use-state nil)
+        [is-loading set-is-loading!] (cm/use-state true)]
+    (cm/use-effect (fn effect-fn []
         (try
           (log/info "Using resource" src "data" data "error" error "is-loading" is-loading)
           ((if (clojure.string/starts-with? src "http")
@@ -693,11 +693,11 @@ maps))
      [])
     [data error is-loading]))
 
-(g/defcomponent NativeImage
+(cm/defcomponent NativeImage
   [props _]
   (let [{:keys [src data style]} props
         clip (get style :clip)
-        [width height img-characters :as memo] (g/use-memo
+        [width height img-characters :as memo] (cm/use-memo
           (fn []
             (let [img (ziu/load-image data)
                   clipped-img (if clip
@@ -732,7 +732,7 @@ maps))
             :height (/ height 2)
             :pixels img-characters}]))
 
-(g/defcomponent RexPaintImage
+(cm/defcomponent RexPaintImage
   [props _]
   (let [{:keys [data layer-index]} props
         layer-index (or layer-index 0)
@@ -775,14 +775,14 @@ maps))
       (log/trace "img-characters" pixels)
       (zc/csx [:img {:width width :height (/ height 2)} pixels])))}))
 
-(g/defcomponent DataImage
+(cm/defcomponent DataImage
   [props _]
   (let [{:keys [src data style]} props]
     (if (clojure.string/ends-with? src "xp")
       [RexPaintImage {:src src :data data :style style}]
       [NativeImage {:src src :data data :style style}])))
   
-(g/defcomponent Image
+(cm/defcomponent Image
   [props _]
   ;; passes :src :style, etc through
   (let [[data error is-loading] (use-resource (get props :src))]
@@ -801,7 +801,7 @@ maps))
         (log/error "Error rendering Image")
         (log/error t)))))
 
-(g/defcomponent Panel
+(cm/defcomponent Panel
   [props _]
   (let [{:keys [title border children]} props]
     #_(log/info "Panel props" props)
@@ -815,7 +815,7 @@ maps))
              (str "\u2524" title "\u251C")]
       children)]))
 
-(g/defcomponent InsetPanel
+(cm/defcomponent InsetPanel
   [props _]
   (let [{:keys [title border children]} props]
     #_(log/info "Panel props" props)
@@ -839,7 +839,7 @@ maps))
               [:text {:key "right" :style {:color :ref/background-overlay-4}} "\u251C"]]
       children)]))
 
-(g/defcomponent OutsetPanel
+(cm/defcomponent OutsetPanel
   [props _]
   (let [{:keys [title border children]} props]
     #_(log/info "Panel props" props)

@@ -7,9 +7,9 @@
             [clojure.test :refer [is]]
             [taoensso.timbre :as log]
             [zaffre.components :as zc]
-            [gossamer.core-graal :as g]
-            [gossamer.template :as gt]
-            [gossamer.element :as ge]
+            [cashmere.core-graal :as cm]
+            #_[cashmere.template :as cmt]
+            #_[cashmere.element :as cme]
             [zaffre.components.layout :as zl]
             [zaffre.color :as zcolor]
             [zaffre.text :as ztext]
@@ -854,7 +854,7 @@
           apply-in-context (atom nil)]
       (letfn [(on-render [container]
         (try
-          (let [root-element (g/clj-elements container)]
+          (let [root-element (cm/clj-elements container)]
             #_(log/info "root-element" root-element)
             ; Render elements to chars, update terminal layers
             ; Root style map lifted here to encourage caching
@@ -886,7 +886,7 @@
         (catch Throwable t
           (log/error t))))]
         (reset! apply-in-context
-          (g/render-with-context
+          (cm/render-with-context
             component
             props
             on-render))
@@ -939,5 +939,5 @@
 
 (defmacro defcomponent
   [compname args & body]
-  `(g/defcomponent ~compname ~args ~@body))
+  `(cm/defcomponent ~compname ~args ~@body))
  

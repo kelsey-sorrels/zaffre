@@ -78,7 +78,7 @@
      [commons-io/commons-io "2.6"]
      [overtone/at-at "1.2.0"]
      [kelsey-sorrels/tinter "0.1.1"]
-     [gossamer "0.1.0-SNAPSHOT"]
+     [cashmere "0.1.0-SNAPSHOT"]
      [rockpick "0.1.0"]
      [nio "1.0.4"]
      [clj-http "3.9.1"]
@@ -107,6 +107,7 @@
                #_"-XX:-OmitStackTraceInFastThrow"
                #_"-Djava.library.path=native/"]
               [#_"-Dclojure.debug=true"
+               "-agentpath:/home/santos/Downloads/YourKit-JavaProfiler-2020.7/bin/linux-x86-64/libyjpagent.so=disableall"
                "-XX:+UnlockExperimentalVMOptions"
                "-XX:+EnableJVMCI"
                "-XX:+EagerJVMCI"

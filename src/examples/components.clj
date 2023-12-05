@@ -12,7 +12,7 @@
             [zaffre.util :as zutil]
             clojure.inspector
             [clojure.core.async :refer [go-loop timeout <!]]
-            [gossamer.core-graal :as g]
+            [cashmere.core-graal :as cm]
             [taoensso.timbre :as log]
             [overtone.at-at :as atat])
   (:import (zaffre.font CompositeFont)
@@ -41,8 +41,8 @@
 (zcr/defcomponent Clock
   [props _]
   (let [formatter (DateTimeFormatter/ofPattern "yyyy-MM-dd HH:mm:ss.SSS")
-        [t set-t!] (g/use-state (.format (now) formatter))]
-    (g/use-effect (fn []
+        [t set-t!] (cm/use-state (.format (now) formatter))]
+    (cm/use-effect (fn []
       (future
         (loop []
           (let [next-t (.format (now) formatter)]
@@ -61,12 +61,12 @@
                               (assoc :fps (get state :frames))
                               (assoc :frames 0))
                     (assert false)))
-        [state dispatch! :as r] (g/use-reducer reducer {:frames 0 :fps 0})]
-    (g/use-effect (fn []
+        [state dispatch! :as r] (cm/use-reducer reducer {:frames 0 :fps 0})]
+    (cm/use-effect (fn []
       (zcr/request-animation-frame (fn []
         (dispatch! :frame))))
       #_[(get state :frames)])
-    (g/use-effect (fn []
+    (cm/use-effect (fn []
       (future
         (loop []
           #_(log/info "Fps tick")
@@ -79,8 +79,8 @@
 
 (defn use-random-data
   [width height]
-  (let[[line-data set-line-data!] (g/use-state (vec (map (partial * 0.2) (range width))))]
-    (g/use-effect (fn []
+  (let[[line-data set-line-data!] (cm/use-state (vec (map (partial * 0.2) (range width))))]
+    (cm/use-effect (fn []
       (go-loop []
         (<! (timeout 100))
         (try
@@ -107,7 +107,7 @@
   (zcolor/color 23 190 207) ;#17becf
 ])
 
-(g/defcomponent RandomLines
+(cm/defcomponent RandomLines
   [props _]
   (let [{:keys [style]} props
         style-width (get style :width 0)
