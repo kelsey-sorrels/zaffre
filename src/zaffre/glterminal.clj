@@ -47,6 +47,20 @@
            (Display/releaseContext))
          (monitor-exit lockee#)))))
 
+(defmacro with-gl-lock
+  "Executes exprs in an implicit do, while holding the monitor of x and aquiring/releasing the OpenGL context.
+  Will release the monitor of x in all circumstances."
+  [x & body]
+  `(let [lockee# ~x]
+     (try
+       (monitor-enter lockee#)
+       (Display/makeCurrent)
+       ~@body
+       (finally
+         (when @lockee#
+           (Display/releaseContext))
+         (monitor-exit lockee#)))))
+
 (defmacro defn-memoized [fn-name & body]
   "Def's a memoized fn. Same semantics as defn."
   `(def ~fn-name (memoize (fn ~@body))))
@@ -355,13 +369,14 @@
        ;; Signal to parent that display has been created
        (.countDown latch)
        (loop []
-         (if (with-gl-context gl-lock
-               ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
-               ; input on the thread that created the window
-               (Display/processMessages)
-               ;; Close the display if the close window button has been clicked
-               ;; or the gl-lock has been released programmatically (e.g. by destroy!)
-               (or (Display/isCloseRequested) (not @gl-lock)))
+         (if (or (with-gl-context gl-lock
+                   ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
+                   ; input on the thread that created the window
+                   (Display/processMessages)
+                   ;; Close the display if the close window button has been clicked
+                   ;; or the gl-lock has been released programmatically (e.g. by destroy!)
+                   (Display/isCloseRequested))
+                 (not @gl-lock))
            (do
              (log/info "Destroying display")
              (with-gl-context gl-lock
