@@ -622,6 +622,6 @@
                  (assoc-in [1 :style :height] rows)))
             #_(log-layer layer-container)
             ;; send layer changes to terminal
-            (zt/replace-chars! target id layer-container))))
+            (zt/put-layer! target id layer-container))))
       root-element)))
 
