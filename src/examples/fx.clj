@@ -7,8 +7,7 @@
             [clojure.core.async :as async :refer [go-loop]]
             clojure.string
             [taoensso.timbre :as log])
-  (:import (zaffre.terminal Terminal)
-           (zaffre.font CP437Font TTFFont)))
+  (:import (zaffre.terminal Terminal)))
 
 (defn hsv->rgb [h s v]
   (let [c (* v s)
@@ -32,7 +31,7 @@
   (let [l (norm v)]
     (map #(/ % l) v)))
 
-(def font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2 false))
+(def font (zfont/scale (zfont/cp-437 "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green false) 2))
 
 (defn -main [& _]
   (zgl/create-terminal
@@ -81,19 +80,17 @@
             (zutil/put-string terminal :text 12 0 (str key-in))
             ; fx (note the only characters we're drawing if full-cell boxes
             (doseq [y (range 16)]
-              (zutil/put-string terminal :dark 0 y (clojure.string/join (repeat 16 " ")))
-              (zutil/put-string terminal :light 0 y (clojure.string/join (repeat 16 " "))))
-            (zat/set-bg! terminal :light 8 8 [32 32 16])
-            (doseq [x (range 16)
-                    y (range 16)]
-                (zat/set-bg! terminal :dark x y [32, 32, 128])
-                (let [rlx (- lx x) ;; vector from x, y to lx, ly
-                      rly (- ly y)
-                      rlz 3
-                      rl  [rlx rly rlz]
-                      d   (norm rl) ; distance from [x y] to light
-                      i (min 1.0 (/ (* 8.5 (dot (unit [0 0 1]) (unit rl))) (* d d)))]
-                  (zat/set-bg! terminal :light x y (mapv (partial * i) [255 255 128]))))))
+              (zutil/put-string terminal :dark 0 y (clojure.string/join (repeat 16 " ")) [255 255 255] [32 32 128]))
+            (zat/put-chars! terminal :light
+              (for [x (range 16)
+                    y (range 16)
+                    :let [rlx (- lx x) ;; vector from x, y to lx, ly
+                          rly (- ly y)
+                          rlz 3
+                          rl  [rlx rly rlz]
+                          d   (norm rl) ; distance from [x y] to light
+                          i (* 255 (min 1.0 (/ (* 8.5 (dot (unit [0 0 1]) (unit rl))) (* d d))))]]
+                {:c \  :fg [0 0 0] :bg [255 255 128 i] :x x :y y :blend-mode :normal}))))
         ;; get key presses in fg thread
         (zevents/add-event-listener terminal :keypress
           (fn [new-key]
