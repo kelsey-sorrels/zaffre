@@ -1353,6 +1353,7 @@
                     (doseq [id (flatten [[fbo-texture] glyph-textures fg-textures bg-textures])]
                       (GL11/glDeleteTextures (int id))))
                   (GLFW/glfwDestroyWindow window)
+                  (zat/destroy! terminal)
                 (log/info "Exiting"))
               (do
                 (when-not (= @last-video-mode @window-size)
