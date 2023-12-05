@@ -71,10 +71,13 @@
 ;; View
 (defmethod dimensions :view [component]
   (let [type (first component)
+        {:keys [width height]} (second component)
         children (drop 2 component)
         child-dimensions (map dimensions children)]
-    [(reduce + 0 (map first child-dimensions))
-     (reduce max (map second child-dimensions))]))
+    [(or width
+         (reduce + 0 (map first child-dimensions)))
+     (or height
+         (reduce max (map second child-dimensions)))]))
 
 ;; Label
 (defmethod dimensions :label [component]
@@ -90,7 +93,7 @@
       props
       (let [offsets (cons 0 (reductions + (map (fn [child] (first (dimensions child))) children)))]
         (map (fn child-render [x child]
-               [:view {:x x} child])
+               [:view {:left x} child])
              offsets
              children)))))
         
@@ -158,10 +161,10 @@
   (let [{:keys [width height children]} props]
     (cons
       :view
-      (cons {:x 0 :y 0 :width width :height height}
+      (cons {:left 0 :top 0 :width width :height height}
         (map-indexed
           (fn [index child]
-            [:view {:y index} child])
+            [:view {:top index} child])
           children)))))
 
 ;; Input
