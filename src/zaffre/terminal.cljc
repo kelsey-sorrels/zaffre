@@ -1,5 +1,8 @@
 ;; Functions for rendering state to screen
-(ns zaffre.terminal)
+(ns zaffre.terminal
+  (:require
+   [taoensso.timbre :as log]))
+
 
 (defprotocol Terminal
   "Methods suffixed with ! indicate a change of state within the terminal. refresh! and destroy! are not transaction-safe and must not be called from within a transaction."

@@ -8,6 +8,8 @@
                  [kelsey-sorrels/lwjgl "3.0.0rc1"]
                  [commons-io/commons-io "2.5"]
                  ;[hello_lwjgl/lwjgl "3.0.0b1"]
+                 [overtone/at-at "1.2.0"]
+                 [kelsey-sorrels/tinter "0.1.1-SNAPSHOT"]
                  [nio "1.0.3"]
                  [org.joml/joml "1.7.1"]
                  [im.bci/pngdecoder "0.13"]

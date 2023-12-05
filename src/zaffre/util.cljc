@@ -20,3 +20,49 @@
                                             :y  y})
                                  string)]
      (zat/put-chars! screen layer-id characters))))
+
+
+;; Memoized function that returns the points between
+;; `[x1 y1]` and `[x2 y2]`
+(def line-segment (memoize
+  (fn
+   [start end]
+   (if (= start end)
+      []
+      (let [[x1 y1] start
+            [x2 y2] end
+            xdiff (- x2 x1)
+            ydiff (- y2 y1)
+            maxdiff (max (Math/abs xdiff) (Math/abs ydiff))
+            dx (/ xdiff maxdiff)
+            dy (/ ydiff maxdiff)]
+        (map (fn [i] [(Math/round (double (+ x1 (* i dx)))) (Math/round (double (+ y1 (* i dy))))])
+            (range (inc maxdiff))))))))
+
+;; A fast version of `line-segment`. Internally, shift the values so that
+;; `[x1 y1]` equals `[0 0]`, call `line-segment` and then shift everything back.
+;; It's fast because `(line-segment-fast [0 0] [5 5])` is effectively the same
+;; as `(line-segment [2 2] [7 7])` which plays nicely with memoization.
+(def line-segment-fast (memoize
+  (fn [start end]
+    "(line-segment-fast [1 1] [5 4])"
+    (let [[ox oy] start
+          [dx dy] end]
+      (map (fn [[x y]] [(+ ox x) (+ oy y)])
+          (line-segment [0 0] [(- dx ox) (- dy oy)]))))))
+
+;; A fast version of `line-segment`. Internally, shift the values so that
+;; `[x1 y1]` equals `[0 0]`, call `line-segment` and then shift everything back.
+;; It's fast because `(line-segment-fast [0 0] [5 5])` is effectively the same
+;; as `(line-segment [2 2] [7 7])` which plays nicely with memoization.
+(def line-segment-fast-without-endpoints (memoize
+  (fn [start end]
+    "(line-segment-fast [1 1] [5 4])"
+    (let [[ox oy] start
+          [dx dy] end]
+      (rest
+        (butlast
+          (map (fn [[x y]] [(+ ox x) (+ oy y)])
+               (line-segment [0 0] [(- dx ox) (- dy oy)]))))))))
+
+
