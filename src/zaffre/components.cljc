@@ -433,6 +433,7 @@
       (get-state *updater* this))))
 
 (defn element-id-str [element]
+  {:pre [(element? element) (get element :id)]}
   (format "%x" (get element :id)))
 
 (defn element-children [element]
@@ -444,6 +445,7 @@
 (defn element-without-children [element]
   (assoc-children element []))
 
+;; TODO: match children based on keys
 (defn map-children [f element & more]
   "Maps element's childrend and more's children calling (f element-child & more-children).
    Returns updated children."
@@ -589,7 +591,7 @@
   [element]
   {:pre [(element? element)]
    :post [(component-instance? %)]}
-  (log/trace "constructing component instance" (element-display-name element) (get element :id))
+  (log/trace "constructing component instance" (element-display-name element) (element-id-str element))
   (log/trace "*updater*" *updater*)
   (let [{:keys [type props]} element
         state (or (get-state *updater* element)
