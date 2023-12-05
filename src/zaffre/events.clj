@@ -1,5 +1,5 @@
 (ns zaffre.events
-  (:require [zaffre.aterminal :as zat]
+  (:require [zaffre.terminal :as zat]
             [clojure.core.async :as async :refer [go go-loop]]))
 
 (defn add-event-listener [terminal event-type f]

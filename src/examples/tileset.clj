@@ -1,5 +1,5 @@
 (ns examples.tileset
-  (:require [zaffre.aterminal :as zat]
+  (:require [zaffre.terminal :as zat]
             [zaffre.glterminal :as zgl]
             [zaffre.font :as zfont]
             [zaffre.tilesets :as ztiles]
@@ -7,7 +7,7 @@
             [zaffre.util :as zutil]
             [clojure.core.async :as async :refer [go-loop]]
             [taoensso.timbre :as log])
-  (:import (zaffre.aterminal ATerminal)
+  (:import (zaffre.terminal Terminal)
            (zaffre.font CompositeFont CP437Font TileSet TTFFont)))
 
 (defn hsv->rgb [h s v]
@@ -38,7 +38,7 @@
 
 (defn -main [& _]
   ;; render in background thread
-  (zgl/make-terminal
+  (zgl/create-terminal
     {:app {
       :layers  [:ui :0 :1 :2 :3]
       :columns 31

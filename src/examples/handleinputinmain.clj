@@ -1,11 +1,11 @@
 (ns examples.handleinputinmain
-  (:require [zaffre.aterminal :as zat]
+  (:require [zaffre.terminal :as zat]
             [zaffre.glterminal :as zgl]
             [zaffre.font :as zfont]
             [zaffre.util :as zutil]
             [clojure.core.async :as async :refer [go-loop]]
             [taoensso.timbre :as log])
-  (:import (zaffre.aterminal ATerminal)
+  (:import (zaffre.terminal Terminal)
            (zaffre.font CP437Font TTFFont)))
 
 (defn hsv->rgb [h s v]
@@ -22,7 +22,7 @@
 
 (defn -main [& _]
   ;; render in background thread
-   (let [terminal   (zgl/make-terminal [:text :rainbow]
+   (let [terminal   (zgl/create-terminal [:text :rainbow]
                                        {:title "Zaffre demo"
                                         :columns 80 :rows 24
                                         :default-fg-color [250 250 250]

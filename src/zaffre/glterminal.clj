@@ -1,6 +1,6 @@
 ; Functions for rendering characters to screen
 (ns zaffre.glterminal
-  (:require [zaffre.aterminal :as zat]
+  (:require [zaffre.terminal :as zat]
             [zaffre.font :as zfont]
             [zaffre.util :as zutil]
             [zaffre.imageutil :as zimgutil]
@@ -20,7 +20,7 @@
     (org.joml Matrix4f Vector3f)
     (java.io File FileInputStream FileOutputStream)
     (java.awt.image BufferedImage)
-    (zaffre.aterminal ATerminal)
+    (zaffre.terminal Terminal)
     (zaffre.font CP437Font TTFFont))
   (:gen-class))
 
@@ -519,7 +519,7 @@
                            destroyed
                            window
                            capabilities]
-  zat/ATerminal
+  zat/Terminal
   (get-size [_]
     [0 0])
   (alter-group-pos! [_ group-id f]

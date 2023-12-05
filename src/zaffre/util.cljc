@@ -1,7 +1,7 @@
 (ns zaffre.util
-  (:require [zaffre.aterminal :as zat]
+  (:require [zaffre.terminal :as zat]
             clojure.set)
-  (:import (zaffre.aterminal ATerminal)))
+  (:import (zaffre.terminal Terminal)))
 
 (defn next-pow-2 [v]
   (int (Math/pow 2 (Math/ceil (/ (Math/log v) (Math/log 2))))))
