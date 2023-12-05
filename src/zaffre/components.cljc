@@ -102,6 +102,7 @@
   (component-will-update [this next-props next-state])
   (get-snapshot-before-update [this])
   (component-did-update [this prev-props prev-state])
+  (get-derived-state-from-props [this next-props prev-state])
   ;; Unmounting
   (component-will-unmount [this])
   ;; Error Handling
@@ -136,9 +137,10 @@
                       component-will-unmount
                       component-did-catch
                       default-props
+                      get-initial-state
+                      get-derived-state-from-props
                       display-name
-                      props
-                      initial-state]
+                      props]
   Object
   (toString [this]
     (format "Component %s :props %s"
@@ -163,6 +165,8 @@
     (get-snapshot-before-update this))
   (component-did-update [this prev-props prev-state]
     ((get this :component-did-update) this prev-props prev-state))
+  (get-derived-state-from-props [this next-props prev-state]
+    ((get this :get-derived-state-from-props) this next-props prev-state))
   ;; Unmounting
   (component-will-unmount [this]
     ((get this :component-will-unmount) this))
@@ -176,7 +180,7 @@
 
   ConstructorMethods
   (create-instance [this]
-    (->ComponentInstance this props initial-state))
+    (->ComponentInstance this props (get-initial-state)))
   (create-instance [this state]
     (->ComponentInstance this props state)))
 
@@ -209,6 +213,8 @@
     ((get component :get-snapshot-before-update this)))
   (component-did-update [this prev-props prev-state]
     ((get component :component-did-update) this prev-props prev-state))
+  (get-derived-state-from-props [this next-props prev-state]
+    ((get component :get-derived-state-from-props) this next-props prev-state))
   ;; Unmounting
   (component-will-unmount [this]
     ((get component :component-will-unmount) this))
@@ -293,7 +299,8 @@
   :component-will-unmount (fn [this] nil)
   :component-did-catch (fn [this error info] nil)
   :get-default-props (fn [] {})
-  :get-initial-state (fn [] nil)})
+  :get-initial-state (fn [] nil)
+  :get-derived-state-from-props (fn [this next-props prev-state] prev-state)})
 
 (defn create-react-class
   [opts]
@@ -301,49 +308,39 @@
                   (filter (fn [k] (clojure.string/starts-with? (name k) "on-"))
                           (keys opts)))
     "Found unsupported event")
-  (let [component-will-mount         (get opts :component-will-mount
-                                       (get default-opts :component-will-mount))
-        render                       (get opts :render
-                                       (get default-opts :render))
-        component-did-mount          (get opts :component-did-mount
-                                       (get default-opts :component-did-mount))
-        component-will-receive-props (get opts :component-will-receive-props
-                                       (get default-opts :component-will-receive-props))
-        should-component-update?     (get opts :should-component-update?
-                                       (get default-opts :should-component-update?))
-        component-will-update        (get opts :component-will-update
-                                       (get default-opts :component-will-update))
-        component-did-mount          (get opts :component-did-mount
-                                       (get default-opts :component-did-mount))
-        get-snapshot-before-update   (get opts :get-snapshot-before-update
-                                       (get default-opts :get-snapshot-before-update))
-        component-did-update         (get opts :component-did-update
-                                       (get default-opts :component-did-update))
-        component-will-unmount       (get opts :component-will-unmount
-                                       (get default-opts :component-will-unmount))
-        component-did-catch          (get opts :component-did-catch
-                                        (get default-opts :component-did-catch))
-        default-props                ((get opts :get-default-props
-                                        (get default-opts :get-default-props)))
-        initial-state                ((get opts :get-initial-state
-                                        (get default-opts :get-initial-state)))
-        display-name                 (get opts :display-name "")]
-        
-    (->Component *updater*
-                 component-will-mount
-                 render
-                 component-did-mount
-                 component-will-receive-props
-                 should-component-update?
-                 component-will-update
-                 get-snapshot-before-update
-                 component-did-update
-                 component-will-unmount
-                 component-did-catch
-                 default-props
-                 display-name
-                 props
-                 initial-state)))
+  (letfn [(get-opts [k] (get opts k (get default-opts k)))]
+    (let [component-will-mount         (get-opts :component-will-mount)
+          render                       (get opts :render)
+          component-did-mount          (get-opts :component-did-mount)
+          component-will-receive-props (get-opts :component-will-receive-props)
+          should-component-update?     (get-opts :should-component-update?)
+          component-will-update        (get-opts :component-will-update)
+          component-did-mount          (get-opts :component-did-mount)
+          get-snapshot-before-update   (get-opts :get-snapshot-before-update)
+          component-did-update         (get-opts :component-did-update)
+          component-will-unmount       (get-opts :component-will-unmount)
+          component-did-catch          (get-opts :component-did-catch)
+          default-props                ((get-opts :get-default-props))
+          get-initial-state            (get-opts :get-initial-state)
+          get-derived-state-from-props (get-opts :get-derived-state-from-props)
+          display-name                 (get opts :display-name "")]
+      (assert render "Class specification must implement a `render` method.")
+      (->Component *updater*
+                   component-will-mount
+                   render
+                   component-did-mount
+                   component-will-receive-props
+                   should-component-update?
+                   component-will-update
+                   get-snapshot-before-update
+                   component-did-update
+                   component-will-unmount
+                   component-did-catch
+                   default-props
+                   get-initial-state
+                   get-derived-state-from-props
+                   display-name
+                   props))))
 
 (defn fn->component [render & more]
   (let [display-name (first more)]
