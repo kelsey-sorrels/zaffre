@@ -71,8 +71,8 @@ maps))
                                :flex-direction :row
                                :cursor-char-on \u2592
                                :cursor-char-off \_
-                               :cursor-fg (zcolor/color 255 255 255 255)
-                               :cursor-bg (zcolor/color 0 0 0 255)}}
+                               :cursor-fg :ref/secondary
+                               :cursor-bg :ref/surface}}
         props (assoc (merge default-props props)
                 :style (merge (:style default-props)
                               (:style props)))
@@ -81,7 +81,7 @@ maps))
                 cursor-char-off
                 cursor-fg
                 cursor-bg]} (get props :style)
-        cursor-fg (if (and focused show-cursor) cursor-fg (zcolor/color 255 255 255))
+        cursor-fg (if (and focused show-cursor) cursor-fg :ref/on-surface)
         cursor (if (and focused show-cursor) cursor-char-on cursor-char-off)]
 
      (g/use-effect (fn []
@@ -435,7 +435,7 @@ maps))
                     :style {:position :absolute
                             :height 1 :width (+ 2 (count title))
                             :top -1 :left 1}}
-             (str "|" title "|")]
+             (str "\u2524" title "\u251C")]
       children)]))
 
 ;; style taken from https://www.nucleo.com.au/using-flexbox-for-modal-dialogs/
