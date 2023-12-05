@@ -14,4 +14,8 @@
   :lein-release {:deploy-via :lein-deploy
                  :scm :git
                  :build-uberjar true}
-  :jvm-opts ["-XstartOnFirstThread" "-Dorg.lwjgl.opengl.Display.enableHighDPI=true"])
+  :jvm-opts ~(if (-> (System/getProperty "os.name")
+                    (.toLowerCase)
+                    (.contains "mac"))
+              ["-XstartOnFirstThread" "-Dorg.lwjgl.opengl.Display.enableHighDPI=true"]
+              []))
