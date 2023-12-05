@@ -71,19 +71,21 @@
                      :linux (linux-font-paths)
                      :macosx (macosx-font-paths)
                      :window (windows-font-paths))]
-    (remove nil?
-      (for [path font-paths
-            ^File file (files path)
-            :when (some (fn [extension] (.endsWith (.getAbsolutePath file)  extension))
-                        extensions)]
-        (let [^Path file-path (.toPath file)]
-          (if (Files/isSymbolicLink file-path)
-            (let [^Path link (Files/readSymbolicLink file-path)]
-              (try 
-                (Files/readSymbolicLink link)
-                (catch IOException e
-                  nil)))
-            (.toPath file)))))))
+    (filter (fn [^Path path]
+              (.exists (File. (str path))))
+      (remove nil?
+        (for [path font-paths
+              ^File file (files path)
+              :when (some (fn [extension] (.endsWith (.getAbsolutePath file)  extension))
+                          extensions)]
+          (let [^Path file-path (.toPath file)]
+            (if (Files/isSymbolicLink file-path)
+              (let [^Path link (Files/readSymbolicLink file-path)]
+                (try 
+                  (Files/readSymbolicLink link)
+                  (catch IOException e
+                    nil)))
+              (.toPath file))))))))
 
 (declare make-font)
 (declare font-data)
