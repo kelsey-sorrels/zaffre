@@ -3,6 +3,7 @@
     [overtone.at-at :as atat]
     [gossamer.core-graal :as g]
     [clj-http.client :as client]
+    [clojure.zip :as zip]
     [clojure.java.io :as jio]
     [clojure.core.cache :as cache]
     [clojure.core.async :refer [go-loop timeout <!]]
@@ -547,6 +548,55 @@ maps))
                children)]]
           [])))))
 
+; Dummy component for Tree
+(g/defcomponent TreeItem
+  [props _]
+  (let [{:keys [children]} props]
+    (log/info "TreeItem props" (dissoc props :children))
+    (log/info "TreeItem children" (vec children))
+    [:view (-> props
+             (dissoc :children)
+             (assoc :gossamer.components/type :tree-item))
+      children]))
+
+(defn tree-loc
+  [root-component]
+  (zip/zipper
+    (fn [component]
+      (log/info "Tree has-children?" component)
+      (and (vector? component)
+           (= :tree-item (get-in component [2 :gossamer.components/type]))))
+    (fn [component]
+      (get-in component [1 :children]))
+    (fn [component children]
+      (assoc-in component [1 :children]))
+    root-component))
+
+(g/defcomponent Tree
+  [props _]
+  (let [{:keys [children]} props
+        root-loc (tree-loc (first children))
+        items (->> root-loc zc/zipper-descendants (map zip/node))
+        tree-edges (zc/tree-edges root-loc)]
+      (log/info "tree-root" (first children))
+      (log/info "tree items" (count items) (vec items))
+      [:view (merge (select-keys props [:key])
+                    {:style {:display :flex
+                             :flex-direction :column}})]
+        ; for each item
+        (map (fn [edges item]
+               (log/info "tree-item" edges item)
+               ; return a view
+               [:view {:key item
+                       :style {:display :flex
+                               :flex-direction :row}}
+                 ; proceeded by tree edges
+                 [:text {:key "edges"} (str edges)]
+                 ; followed by item
+                 (assoc item 2 [])])
+             tree-edges
+             items)))
+
 #_(g/defcomponent VScrollBar
   [props _]
   (let [{:keys [height num-items pos]} props]
@@ -754,8 +804,8 @@ maps))
 (g/defcomponent Panel
   [props _]
   (let [{:keys [title border children]} props]
-    (log/info "Panel props" props)
-    (log/info "Panel children" children)
+    #_(log/info "Panel props" props)
+    #_(log/info "Panel children" children)
     [:view {:style {:border (or border 1)
                     :background-color :ref/surface}}
       (cons [:text {:key "panel-title"
@@ -768,10 +818,11 @@ maps))
 (g/defcomponent InsetPanel
   [props _]
   (let [{:keys [title border children]} props]
-    (log/info "Panel props" props)
-    (log/info "Panel children" children)
+    #_(log/info "Panel props" props)
+    #_(log/info "Panel children" children)
     [:view {:key (get props :key "inset-panel")
             :style {:border (or border 1)
+                    :border-style :single
                     :border-color-top :ref/background-overlay-4
                     :border-color-left :ref/background-overlay-4
                     :border-color-bottom :ref/surface-overlay-4
@@ -791,10 +842,11 @@ maps))
 (g/defcomponent OutsetPanel
   [props _]
   (let [{:keys [title border children]} props]
-    (log/info "Panel props" props)
-    (log/info "Panel children" children)
+    #_(log/info "Panel props" props)
+    #_(log/info "Panel children" children)
     [:view {:key (get props :key)
             :style {:border (or border 1)
+                    :border-style :single
                     :border-color-top :ref/surface-overlay-4
                     :border-color-left :ref/surface-overlay-4
                     :border-color-bottom :ref/background-overlay-4
@@ -830,7 +882,8 @@ maps))
                                   :margin-top 10
                                   ;:margin-bottom 10
                                   :padding 0
-                                  :border 1 :border-style :single
+                                  :border 1
+                                  :border-style :single
                                   :max-height "90%"
                                   :max-width "90%"}
                                 style)}

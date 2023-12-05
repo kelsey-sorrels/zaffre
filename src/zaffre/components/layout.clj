@@ -297,7 +297,9 @@
   (let [[type
          {:keys [style] :as props}
          children
-         host-dom :as styled-element] (if (nil? parent)
+         host-dom
+         requires-layout
+         :as styled-element] (if (nil? parent)
                                         (-> element
                                           (assoc-in [1 :style :width] max-width)
                                           (assoc-in [1 :style :height] max-height))
@@ -344,7 +346,8 @@
                    child))
                  children))
              [])
-             host-dom]) {:node node})]
+             host-dom
+             requires-layout]) {:node node})]
       ;; if no parent, then calculate layout before returning
       (when (nil? parent)
         #_(log/info "build-yoga-tree YGNodeCalculateLayout" result)
@@ -360,7 +363,7 @@
   ([parent-layout-x parent-layout-y yoga-tree]
     #_(log/info "transfer-layout" yoga-tree)
     (if-let [node (-> yoga-tree meta :node)]
-      (let [[type props children host-dom] yoga-tree
+      (let [[type props children host-dom requires-layout] yoga-tree
             style (get props :style)
             layout (get style :layout-type :static)
             left (Yoga/YGNodeLayoutGetLeft node)
@@ -398,7 +401,8 @@
            (mapv (partial transfer-layout layout-x layout-y)
                  children)
            [])
-         host-dom])
+         host-dom
+         requires-layout])
       yoga-tree)))
 
 (def yoga-logger

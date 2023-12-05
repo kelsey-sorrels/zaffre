@@ -788,7 +788,7 @@
         (str (clojure.string/join (tree-edges z))
              (cond
                (element? node)
-                 (first node)
+                 (str (first node) (nth node 3) (nth node 4))
                (map-entry? node)
                  (first node)
                (map? node)
