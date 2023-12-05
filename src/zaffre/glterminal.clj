@@ -820,7 +820,7 @@
             false
             (position-matrix-buffer
               [(- (/ framebuffer-width 2)) (- (/ framebuffer-height 2)) -1.0 0.0]
-              [framebuffer-width framebuffer-height 1.0]
+              [screen-width screen-height 1.0]
               mv-matrix-buffer))
           (except-gl-errors (str "u-fb-MVMatrix - glUniformMatrix4  " u-fb-MVMatrix))
           (GL20/glEnableVertexAttribArray 0);pos-vertex-attribute
