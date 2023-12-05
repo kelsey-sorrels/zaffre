@@ -2,12 +2,100 @@
 
 uniform sampler2D uFont;
 uniform sampler2DArray uFg, uBg;
-uniform usampler2DArray uGlyphs;
+uniform usampler2DArray uGlyphs, uPalette;
 uniform vec2 fontSize, termDimensions, fontTextureDimensions, glyphTextureDimensions;
 uniform int numLayers;
 
 in vec2 vTextureCoord;
 out vec4 outcolor;
+
+float multiply(float Cb, float Cs) {
+    return Cb * Cs;
+}
+
+vec3 multiply(vec3 Cb, vec3 Cs) {
+    return Cb * Cs;
+}
+
+float screen(float Cb, float Cs) {
+  return Cb + Cs - (Cb * Cs);
+}
+
+vec3 screen(vec3 Cb, vec3 Cs) {
+  return Cb + Cs - (Cb * Cs);
+}
+
+
+float color_dodge(float Cb, float Cs) {
+	if(Cb == 0) {
+		return 0;
+    } else if(Cs == 1) {
+		return 1;
+	} else {
+		return min(1, Cb / (1 - Cs));
+    }
+}
+
+vec3 color_dodge(vec3 Cb, vec3 Cs) {
+    return vec3(color_dodge(Cb.r, Cs.r), color_dodge(Cb.g, Cs.g), color_dodge(Cb.b, Cs.b));
+}
+
+float color_burn(float Cb, float Cs) {
+	if (Cb == 1) {
+		return 1;
+    } else if (Cs == 0) {
+		return 0;
+	} else {
+		return 1 - min(1, (1 - Cb ) /  Cs);
+    }
+}
+
+vec3 color_burn(vec3 Cb, vec3 Cs) {
+    return vec3(color_burn(Cb.r, Cs.r), color_burn(Cb.g, Cs.g), color_burn(Cb.b, Cs.b));
+}
+
+float hard_light(float Cb, float Cs) {
+    if (Cs <= 0.5) {
+        return multiply(Cb, 2 * Cs);
+    } else {
+        return screen(Cb, 2 * Cs - 1);
+    }
+}
+
+vec3 hard_light(vec3 Cb, vec3 Cs) {
+    return vec3(hard_light(Cb.r, Cs.r), hard_light(Cb.g, Cs.g), hard_light(Cb.b, Cs.b));
+}
+
+vec3 overlay(vec3 Cb, vec3 Cs) {
+    return hard_light(Cs, Cb);
+}
+
+float soft_light(float Cb, float Cs) {
+    float D;
+    if (Cb <= 0.25) {
+        D = ((16 * Cb - 12) * Cb + 4) * Cb;
+    } else {
+        D = sqrt(Cb);
+    }
+
+    if (Cb <= 0.25) {
+        return Cb - (1 - 2 * Cs) * Cb * (1 - Cb);
+    } else {
+        return Cb + (2 * Cs - 1) * (D - Cb);
+    }
+}
+
+vec3 soft_light(vec3 Cb, vec3 Cs) {
+    return vec3(soft_light(Cb.r, Cs.r), soft_light(Cb.g, Cs.g), soft_light(Cb.b, Cs.b));
+}
+
+vec3 difference(vec3 Cb, vec3 Cs) {
+    return abs(Cb - Cs);
+}
+
+vec3 exclusion(vec3 Cb, vec3 Cs) {
+    return Cb + Cs - 2 * Cb * Cs;
+}
 
 void main(void) {
   // width and height of the screen in pixels
@@ -21,9 +109,10 @@ void main(void) {
   //int numLayers = 1;
   for (uint i = 0u; i < uint(numLayers); i++) {
     ivec3 termXYZ = ivec3(termXY.x, termXY.y, (i + 0u));
-    uvec3 glyphXYT = texelFetch(uGlyphs, termXYZ, 0).xyz;
-    uint glyphType = glyphXYT.z;
-    ivec2 fontIndex = ivec2(glyphXYT.xy);
+    uvec4 glyphXYTP = texelFetch(uGlyphs, termXYZ, 0);
+    uint paletteIndex = glyphXYTP.w;
+    uint glyphType = glyphXYTP.z;
+    ivec2 fontIndex = ivec2(glyphXYTP.xy);
     ivec2 fontXY = ivec2(int(fontIndex.x) * charSize.x, int(fontIndex.y) * charSize.y);
     // calc the position of the fragment relative to the terminal cell
     ivec2 charXY = ivec2(fract(vTextureCoord.x * termDimensions.x) * charSize.x,
@@ -31,6 +120,9 @@ void main(void) {
     vec4 fnt = texelFetch(uFont, fontXY + charXY, 0);
 
     vec4 fg  = texelFetch(uFg, termXYZ, 0);
+    if (paletteIndex != 0) {
+        fg = texelFetch(uPalette, vec2(paletteIndex, fg.r), 0);
+    }
     vec4 bg  = texelFetch(uBg, termXYZ, 0);
     uint r = uint(256u * result.r);
 
@@ -48,19 +140,73 @@ void main(void) {
     float Fa, Fb;
     vec3 blend;
 
+    Fa = 1;
+    Fb = 1 - Cs.a;
     switch (glyphType) {
       case 0u:
         // src_over (normal)
-        Fa = 1;
-        Fb = 1 - Cs.a;
         blend = Cs.rgb;
         break;
       case 1u:
         // multiply
-        Fa = 1;
-        Fb = 1 - Cs.a;
-        blend = result.rgb * Cs.rgb;
+        blend = multiply(result.rgb, Cs.rgb);
         break;
+      case 0x2u:
+        // screen 
+        blend = screen(result.rgb, Cs.rgb);
+        break;
+      case 0x3u:
+        // overlay 
+        blend = overlay(result.rgb, Cs.rgb);
+        break;
+      case 0x4u:
+        // darken 
+        blend = min(result.rgb, Cs.rgb);
+        break;
+      case 0x5u:
+        // lighten 
+        blend = max(result.rgb, Cs.rgb);
+        break;
+      case 0x6u:
+        // color-dodge 
+        blend = color_dodge(result.rgb, Cs.rgb);
+        break;
+      case 0x7u:
+        // color-burn 
+        blend = color_burn(result.rgb, Cs.rgb);
+        break;
+      case 0x8u:
+        // hard-light 
+        blend = hard_light(result.rgb, Cs.rgb);
+        break;
+      case 0x9u:
+        // soft-light 
+        blend = soft_light(result.rgb, Cs.rgb);
+        break;
+      case 0x10u:
+        // difference 
+        blend = difference(result.rgb, Cs.rgb);
+        break;
+      case 0x11u:
+        // exclusion 
+        blend = exclusion(result.rgb, Cs.rgb);
+        break;
+      /*case 0x12:
+        // hue 
+        blend = ;
+        break;
+      case 0x13:
+        // saturation 
+        blend = ;
+        break;
+      case 0x14:
+        // color 
+        blend = ;
+        break;
+      case 0x15}:
+        // luminosity 
+        blend = ;
+        break;*/
     }
 
     // Apply the blend in place

@@ -11,7 +11,22 @@
 (defn blend-mode->byte [blend-mode]
   (blend-mode {
     :normal 0x0
-    :multiply 0x1}
+    :multiply 0x1
+    :screen 0x2
+    :overlay 0x3
+    :darken 0x4
+    :lighten 0x5
+    :color-dodge 0x6
+    :color-burn 0x7
+    :hard-light 0x8
+    :soft-light 0x9
+    :difference 0x10
+    :exclusion 0x11
+    ;:hue 0x12
+    ;:saturation 0x13
+    ;:color 0x14
+    ;:luminosity 0x15
+    }
     #_(assert false (str "Unknown blend-mode " blend-mode))))
 
 (defprotocol IBuffer
