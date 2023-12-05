@@ -78,6 +78,7 @@
      [commons-io/commons-io "2.6"]
      [overtone/at-at "1.2.0"]
      [kelsey-sorrels/tinter "0.1.1"]
+     [gossamer "0.1.0-SNAPSHOT"]
      [rockpick "0.1.0"]
      [nio "1.0.4"]
      [clj-http "3.9.1"]
@@ -102,6 +103,7 @@
                     (.contains "mac"))
               ["-XstartOnFirstThread"
                "-Dorg.lwjgl.opengl.Display.enableHighDPI=true"
+               "-XX:-OmitStackTraceInFastThrow"
                #_"-Djava.library.path=native/"]
               ["-Dclojure.debug=true"
                #_"-Djava.library.path=native/"]))

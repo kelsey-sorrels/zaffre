@@ -3,7 +3,7 @@
             [zaffre.components :as zc]
             [zaffre.components.events :as zce]
             [zaffre.components.ui :as zcui]
-            [zaffre.components.render :as zcr]
+            [zaffre.components.render2 :as zcr]
             [zaffre.glterminal :as zgl]
             [zaffre.events :as zevents]
             [zaffre.color :as zcolor]
@@ -35,22 +35,14 @@
 (def updater (zc/empty-state))
 
 (binding [zc/*updater* updater]
-(zc/def-component UI
-  [this]
-  (let [{:keys [fps show-popup text-value text-value-on-change]} (zc/props this)
-        popup (if show-popup
+(defn UI
+  [{:keys [fps show-popup text-value text-value-on-change]}]
+  (let [popup (if show-popup
                 [[zcui/Popup {} [[:text {} ["popup"]]]]]
                 [])]
     (log/debug "UI render " fps)
+    [:view {} "Hello world"]
     #_(zc/csx
-        [:terminal {} [
-          [:group {:id :ui} [
-            [:layer {:id :main} [
-              [:view {} [
-                [:text {} ["Hello"]]
-                [:text {:style {:background-color (zcolor/color 0 255 0 255)}} [" "]]
-                [:text {:style {:background-color (zcolor/color 255 0 0 255)}} ["world"]]]]]]]]]])
-    (zc/csx
       [zcui/InputSelect {:fps fps} [
         [:terminal {} [
           [:group {:id :ui} [
@@ -142,6 +134,7 @@
                                                          :position :relative}} [
                                            [:text {} ["*"]]]]]]]]]]]]
 ]]]]]]))))
+
 (defn -main [& _]
   (zgl/create-terminal
     [{:id :ui
@@ -155,67 +148,69 @@
      :screen-height (* height 16)
      :effects []}
     (fn [terminal] ;; Receive the terminal in a callback
-      (binding [zc/*updater* updater]
-        ;; Save the last key press in an atom
-        (let [first-render (atom true)
-              last-key (atom nil)
-              width (atom 16)
-              frames (atom 0)
-              fps (atom 0)
-              show-popup (atom true)
-              text-value (atom "")
-              on-change-text-value (fn [e] (reset! text-value (get e :value)))
-              last-dom (atom nil)
-              key-event-queue (atom [])
-              fps-fn (atat/every 1000
-                                 #(do
-                                   (log/info "frames " @frames)
-                                   (reset! fps @frames)
-                                   (reset! frames 0))
-                                 zc/*pool*)]
-          ;; Every 20ms, draw a full frame
-          (zat/do-frame terminal 0
-            (binding [zc/*updater* updater]
-              #_(when (= @frames 2) (System/exit 0))
-              (let [key-in (or @last-key \?)
-                    [key-events _] (reset-vals! key-event-queue [])
-                    ui (zc/csx [UI {:fps @fps
-                                    :show-popup @show-popup
-                                    :text-value @text-value
-                                    :text-value-on-change on-change-text-value}])
-                    dom (zcr/render-into-container terminal
-                          @last-dom
-                          ui)]
-                (assert (zc/element? ui))
-                (when @first-render
-                  (reset! first-render false)
-                  ;; Select the first Input
-                  (when-let [first-input-element (first (zcui/input-element-seq dom))]
-                    (binding [zc/*current-owner* first-input-element]
-                      (let [instance (zc/construct-instance first-input-element)]
-                        (zc/set-state! instance {:focused true})))))
-                (reset! last-dom dom)
-                ;; pump all terminal events to elements
-                (zce/send-events-to-dom key-events dom)
-                (log/trace "--- End of Frame ---")
-                (swap! frames inc))))
-              
-          ;; Wire up terminal events to channels we read from
-          (zevents/add-event-listener terminal :keypress
-            (fn [new-key]
-              ;; add to event queue
-              (swap! key-event-queue #(conj % new-key))
-              ;; Save last key
-              (reset! last-key new-key)
-              ;; Make the `q` key quit the application
-              (case new-key
-                \t (log/set-level! :trace)
-                \d (log/set-level! :debug)
-                \i (log/set-level! :info)
-                \s (clojure.inspector/inspect-tree @last-dom)
-                \q (do
-                     (atat/stop fps-fn)
-                     (atat/stop-and-reset-pool! zc/*pool* :strategy :kill)
-                     (zat/destroy! terminal))
-                nil))))))))
+      ;; Save the last key press in an atom
+      (let [first-render (atom true)
+            last-key (atom nil)
+            width (atom 16)
+            frames (atom 0)
+            fps (atom 0)
+            show-popup (atom true)
+            text-value (atom "")
+            on-change-text-value (fn [e] (reset! text-value (get e :value)))
+            last-dom (atom nil)
+            key-event-queue (atom [])
+            fps-fn (atat/every 1000
+                               #(do
+                                 (log/info "frames " @frames)
+                                 (reset! fps @frames)
+                                 (reset! frames 0))
+                               zc/*pool*)
+            context (zcr/context terminal frames)]
+        (zcr/render context
+          [UI {:fps @fps
+               :show-popup @show-popup
+               :text-value @text-value
+               :text-value-on-change on-change-text-value}])
+
+        ;; Every 20ms, draw a full frame
+        #_(zat/do-frame terminal 20
+          (binding [zc/*updater* updater]
+            #_(when (= @frames 2) (System/exit 0))
+            (let [key-in (or @last-key \?)
+                  [key-events _] (reset-vals! key-event-queue [])
+                  dom (zcr/render-into-container terminal
+                        @last-dom
+                        ui)]
+              (assert (zc/element? ui))
+              (when @first-render
+                (reset! first-render false)
+                ;; Select the first Input
+                (when-let [first-input-element (first (zcui/input-element-seq dom))]
+                  (binding [zc/*current-owner* first-input-element]
+                    (let [instance (zc/construct-instance first-input-element)]
+                      (zc/set-state! instance {:focused true})))))
+              (reset! last-dom dom)
+              ;; pump all terminal events to elements
+              (zce/send-events-to-dom key-events dom)
+              (log/trace "--- End of Frame ---")
+              (swap! frames inc))))
+            
+        ;; Wire up terminal events to channels we read from
+        (zevents/add-event-listener terminal :keypress
+          (fn [new-key]
+            ;; add to event queue
+            (swap! key-event-queue #(conj % new-key))
+            ;; Save last key
+            (reset! last-key new-key)
+            ;; Make the `q` key quit the application
+            (case new-key
+              \t (log/set-level! :trace)
+              \d (log/set-level! :debug)
+              \i (log/set-level! :info)
+              \s (clojure.inspector/inspect-tree @last-dom)
+              \q (do
+                   (atat/stop fps-fn)
+                   (atat/stop-and-reset-pool! zc/*pool* :strategy :kill)
+                   (zat/destroy! terminal))
+              nil)))))))
 
