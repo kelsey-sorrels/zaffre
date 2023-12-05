@@ -3,27 +3,15 @@
   (:require 
             [clojure.core.async :refer :all :as async :exclude [map into]]
             [zaffre.color :as zcolor]
-            ;[robinson.viewport :as rv]
             [zaffre.terminal :as zat]
-            [zaffre.animation.animatedterminal :as zaat]
             [zaffre.util :as zutil]
             [taoensso.timbre :as log]
-            [overtone.at-at :as atat])
-  #?(:clj
-     (:import  ;zaffre.terminal.Terminal
-               zaffre.animation.animatedterminal.AAnimatedTerminal
-               zaffre.animation.animatedterminal.AId
-               zaffre.animation.animatedterminal.AEffect
-               zaffre.animation.animatedterminal.AFilter
-               zaffre.animation.animatedterminal.AMask
-               zaffre.animation.animatedterminal.ARequiresState
-               zaffre.animation.animatedterminal.APalette)))
+            [overtone.at-at :as atat]))
 
 
 #?(:clj
 (set! *warn-on-reflection* true))
 
-(def frame-count (atom 0))
 (def ^:dynamic *rain-rate* 0.96)
 
 
@@ -35,7 +23,7 @@
   (let [[vw vh] (size terminal)]
     (repeat vh (vec (repeat vw nil)))))
 
-(defn lantern-flicker [opts x y fg]
+#_(defn lantern-flicker [opts x y fg]
   {:post [(vector? %)]}
   (if (get opts :lantern-flicker)
     (let [v                   (int (* 50 (/ (Math/abs (hash @frame-count)) Integer/MAX_VALUE)))
@@ -49,13 +37,6 @@
       (zcolor/darken-rgb fg
                          (min 1 (/ 2 (max 1 distance)))))
     fg))
-
-(defn night-tint [opts x y fg]
-  (if-let [day? (get opts :night-tint)]
-    (zcolor/night-tint fg day?)
-    fg))
-
-(defn no-op-filter [_ _ _ bg] bg)
 
 
 ;;; Effects
@@ -172,43 +153,6 @@
            nil)
          (rain-transition advanced-cell old-cell))))))))
 
-(defn render-rand-fg
-  [terminal layer-id x y cell-opts cell-palette palette]
-  (let [color-ids (get @palette cell-palette)
-        i         (int (/ @frame-count 10))
-        n         (mod (Math/abs (hash (+ x (* 13 y) (* 17 i)))) (count color-ids))
-        color-id  (nth color-ids n)
-        fg-rgb    (->> (zcolor/color->rgb color-id)
-                    (lantern-flicker cell-opts x y)
-                    (vignette cell-opts x y)
-                    (night-tint cell-opts x y))]
-    (zat/set-fg! terminal layer-id x y fg-rgb)))
-
-(defrecord RandFgEffect
-  [terminal mask opts palette]
-  AId
-  (id [this]
-    :rand-fg)
-  AEffect
-  (apply-effect! [this terminal]
-    (let [[vw vh]    (size terminal)]
-      (doseq [[y line mask-line] (map vector (range) @opts @mask)
-              [x cell-opts mask?] (map vector (range) line mask-line)
-              :let               [cell-palette  (get cell-opts :palette)]
-              :when              cell-palette]
-        (render-rand-fg terminal :map x y cell-opts cell-palette palette))))
-  APalette
-  (update-palette! [this f]
-    (swap! palette f)
-    this))
-
-(defn make-rand-fg-effect
-  [terminal opts]
-  (let [[vw vh]   (size terminal)
-        mask      (atom (repeat vh (repeat vw true)))
-        palette   (atom {})]
-    (RandFgEffect. terminal mask opts palette)))
-
 (defprotocol ACmdStream
   (stream [this]))
 
@@ -238,139 +182,50 @@
     (fn [terminal]
       (RainEffect. terminal layer-id rain-state))))
 
-(defn swap-rain-mask! [terminal f]
-  (zaat/swap-matching-effect-or-filter! terminal
-                              (fn [fx] (= (zaat/id fx) :rain))
-                              (fn [rain-fx] (zaat/swap-mask! rain-fx f))))
-
-(defn reset-rain-mask! [terminal v]
-  (zaat/swap-matching-effect-or-filter! terminal
-                              (fn [fx] (= (zaat/id fx) :rain))
-                              (fn [rain-fx]
-                                (let [[columns rows] (size terminal)]
-                                  (zaat/reset-mask! rain-fx (repeat rows (repeat columns v)))))))
-
-(defn transform [terminal mask state transforms]
-  #_(println (format "drawing %d transforms" (count transforms)))
-  (doseq [transform transforms]
-    (let [path (zutil/line-segment-fast-without-endpoints (get transform :from-xy) (get transform :to-xy))
-          n    (int (/ @frame-count 1))]
-      (when (< n (count path))
-        #_(log/info "n" n "count path" (count path))
-        (let [[vx vy] path #_(rv/world-xy->screen-xy state (nth path n))]
-          (when (or true (get-in mask [vy vx]))
-            #_(println "drawing * @ " vx vy)
-            ;(zat/set-char! terminal :fx vx vy \*)
-            (zat/set-fg! terminal :fx vx vy (zcolor/color->rgb :white))
-            (zat/set-bg! terminal :fx vx vy (zcolor/color->rgb :black))))))))
-  
 (defrecord TransformEffect
-  [terminal mask state]
-  AId
-  (id [this]
-    :transform)
-  AEffect
-  (apply-effect! [this terminal]
-    (dosync 
-      (when-let [state @state]
-        (transform terminal @mask state (get-in state [:fx :transform])))))
-  AMask
-  (swap-mask! [this f]
-    (swap! mask f)
-    ;(println "=====================")
-    ;(doseq [line @mask]
-    ;  (println (mapv (fn [v] (if v 1 0)) line)))
-    this)
-  (reset-mask! [this new-mask]
-    (reset! mask new-mask)
-    this)
-  ARequiresState
-  (reset-state! [this new-state]
-    (reset! state new-state)
-    this)
-  Object
-  (toString [this]
-    (format "TransformEffect terminal, mask, state")))
+  [terminal layer-id ch from to duration]
+  ACmdStream
+  (stream [this]
+    (let [path (zutil/line-segment-fast-without-endpoints from to)
+          dt   (* 1000 (/ duration (count path)))]
+      (go-loop [[x y] (first path) xys (next path)]
+        (zat/clear! terminal layer-id)
+        (zat/put-chars! terminal layer-id [(assoc ch :x x :y y)])
+        (zat/refresh! terminal)
+        (<! (timeout dt))
+        (if xys
+          (recur (first xys) (next xys)))))))
 
 (defn make-transform-effect
-  [terminal cell-opts]
-  (let [[vw vh]    (size terminal)
-        mask       (atom (repeat vh (repeat vw true)))]
-    (TransformEffect. terminal mask (atom nil))))
-
-(defn blink [terminal state blinks]
-  ;(prinln (format "drawing %d blinks" (count blinks)))
-  (doseq [blink blinks]
-    #_(println @frame-count (mod @frame-count 15))
-    (when (< (mod @frame-count 15) 7)
-      (let [[vx vy] (get blink :xy)]
-          #_(println "drawing * @ " vx vy)
-          (zat/put-chars! terminal :fx [{:x vx :y vy :c \space}])))))
+  [terminal layer-id ch from to duration]
+    (fn [terminal]
+      (TransformEffect. terminal layer-id ch from to duration)))
 
 (defrecord BlinkEffect
-  [terminal state]
-  AId
-  (id [this]
-    :blink)
-  AEffect
-  (apply-effect! [this terminal]
-    (dosync 
-      (when-let [state @state]
-        (blink terminal state (get-in state [:fx :blink])))))
-  ARequiresState
-  (reset-state! [this new-state]
-    (reset! state new-state)
-    this)
-  Object
-  (toString [this]
-    (format "BlinkEffect terminal, state")))
+  [terminal layer-id characters initial intervals]
+  ACmdStream
+  (stream [this]
+    (let [dt 1000]
+      (go-loop [state initial]
+        (zat/clear! terminal layer-id)
+        (when state
+          (zat/put-chars! terminal layer-id characters))
+        (zat/refresh! terminal)
+        (<! (timeout dt))
+        (recur (not state))))))
 
 (defn make-blink-effect
-  [terminal cell-opts]
-  (let [[vw vh]    (size terminal)]
-    (BlinkEffect. terminal (atom nil))))
-
-(defn blip [terminal state blips]
-  (doseq [blip blips]
-    (let [[vx vy] blip #_(rv/world-xy->screen-xy state (get blip :xy))]
-      ;(println "drawing blip" blip "@" vx vy "frame-count" @frame-count)
-      ;; get the last instant before @frame-count
-      (when-let [instant (->> (get blip :instants)
-                              (filter (fn [instant]
-                                        (< (get instant :time) @frame-count)))
-                              (sort-by (fn [instant]
-                                         (get instant :time)))
-                              last)]
-        ;(println "drawing instant" instant)
-        #_(when-let [ch (get instant :ch)]
-          (zat/set-char! terminal :fx vx vy ch))
-        (when-let [fg (get instant :fg)]
-          (zat/set-fg! terminal :fx vx vy fg))
-        (when-let [bg (get instant :bg)]
-          (zat/set-bg! terminal :fx vx vy bg))))))
-    
-(defrecord BlipEffect
-  [terminal state]
-  AId
-  (id [this]
-    :blip)
-  AEffect
-  (apply-effect! [this terminal]
-    (dosync 
-      (when-let [state @state]
-        (blip terminal state (get-in state [:fx :blip])))))
-  ARequiresState
-  (reset-state! [this new-state]
-    (reset! state new-state)
-    this)
-  Object
-  (toString [this]
-    (format "BlipEffect terminal, state")))
+  ([layer-id characters]
+    (make-blink-effect layer-id characters true))
+  ([layer-id characters initial]
+    (make-blink-effect layer-id characters initial (constantly 1000)))
+  ([layer-id characters initial intervals]
+    (fn [terminal]
+      (BlinkEffect. terminal layer-id characters initial intervals))))
 
 (defn make-blip-effect
-  [terminal cell-opts]
-  (let [[vw vh]    (size terminal)]
-    (BlipEffect. terminal (atom nil))))
+  [layer-id characters duration]
+  (make-blink-effect layer-id characters [duration]))
 
 ;;; Queue cmds in a chan and foreard them to dst-chan on `(refresh)`.
 (defrecord WrappedAnimatedTerminal [terminal cmds dst-chan]
@@ -410,7 +265,8 @@
             effects-cmd-chan (chan 1000)
             wrapped-term    (WrappedAnimatedTerminal. terminal (atom []) cmd-chan)
             effects-term    (WrappedAnimatedTerminal. terminal (atom []) cmd-chan)
-            effects         (atom [((make-rain-effect :fx 16 16) effects-term)])]
+            ;effects         (atom [((make-rain-effect :fx 16 16) effects-term)])]
+            effects         (atom [((make-blink-effect :fx [{:x 8 :y 8 :c \* :fg [128 128 0] :bg [0 0 0]}] true) effects-term)])]
         #_(log/info "overriding terminal")
         #_(log/info "effects" @effects "filters" @filters)
         ;; start effects
