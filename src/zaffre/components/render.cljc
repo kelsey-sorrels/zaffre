@@ -29,7 +29,7 @@
   (apply str (interpose " > " (reverse (env-path env)))))
 
 ;; Primitive elements
-(def primitive-elements #{:terminal :group :layer :view :string})
+(def primitive-elements #{:terminal :group :layer :view :text})
 (defn primitive? [component]
   (or (string? component)
       (contains? primitive-elements (first component))))
@@ -60,7 +60,7 @@
   (log/trace "render-primitive" (env-path->str env) component)
   (caching-render component render-state
     (if (string? component)
-      [:string {:children [component]}]
+      [:text {:children [component]}]
       (let [[type props & children] component
             wrapped-env (wrap-env env component type)]
         [type
@@ -129,7 +129,7 @@
   ([target env component]
       (cond
         ;; render strings
-        (= :string (first component))
+        (= :text (first component))
           (let [[type {:keys [children]} :as props] component]
             (doseq [child children]
               (render-string-into-container target env child)))

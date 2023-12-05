@@ -61,11 +61,11 @@
 (defmethod render-comp :raw-string [type props]
 
 ;; String
-(defmethod dimensions :string [component]
+(defmethod dimensions :text [component]
   (let [type (first component)]
     [(count type) 1]))
-  [:string {} type])
-(defmethod render-comp :string [type props]
+  [:text {} type])
+(defmethod render-comp :text [type props]
   [type props])
 
 ;; View
