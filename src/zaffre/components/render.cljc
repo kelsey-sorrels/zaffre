@@ -2,8 +2,15 @@
   (:require [clojure.test :refer [is]]
             [taoensso.timbre :as log]
             [zaffre.components :as zc]
-            [zaffre.terminal :as zt]))
+            [zaffre.components.layout :as zl]
+            [zaffre.text :as ztext]
+            [zaffre.terminal :as zt])
+  (:import [java.text.AttributedString]))
 
+(def default-style
+  {:fg [255 255 255 255]
+   :bg [0 0 0 255]
+})
 
 ;; Primitive elements
 (def primitive-elements #{:terminal :group :layer :view :text})
@@ -11,96 +18,100 @@
   (or (string? component)
       (contains? primitive-elements (first component))))
 
-(defn flatten-text [parent-style element]
-  "Splits text into words and flattens all child text element"
-  (lazy-seq
-    (if (string? element)
-      (let [words (clojure.string/split (clojure.string/trim element) #"\s+")]
-        (interpose
-          [:text (assoc parent-style :zaffre/children [" "])]
-          (map (fn [word] [:text (assoc parent-style :zaffre/children [word])])
-            words)))
-      (let [[type {:keys [style zaffre/children]}] element]
-        (if (= type :text)
-          (mapcat (partial flatten-text (merge parent-style style)) children)
-          (assert false (format "found non-text element %s" type)))))))
-
-(defn text-length [text-element]
-  (-> text-element second :zaffre/children first count))
-
-(defn space? [text-element]
-  (= " " (-> text-element second :zaffre/children first)))
-
-;; Adapted from https://www.rosettacode.org/wiki/Word_wrap#Clojure
-(defn wrap-lines [size style text]
-  "Text elements may only contain child text elements"
-  (loop [left size line [] lines []
-         words (or (flatten-text style text)
-                   [[:text {:zaffre/children [""]}]])]
-    (log/trace "wrap-lines words" left style (vec words))
-    (if-let [word (first words)]
-      (let [wlen (text-length word)
-            spacing (if (== left size) "" " ")
-            alen (+ (count spacing) wlen)]
-        (log/trace "wlen" wlen "spacing" spacing "alen" alen)
-        (if (<= alen left)
-          (recur (- left alen) (conj line word) lines (next words))
-          (if (space? word)
-            (recur size [] (conj lines line) (next words))
-            (recur (- size wlen) [word] (conj lines line) (next words)))))
-      (if (seq line)
-        (conj lines line)
-        words))))
-
 (defn render-string-into-container [target x y fg bg s]
+  {:pre [(number? x)
+         (number? y)
+         (vector? fg)
+         (vector? bg)
+         (string? s)]}
   (when (< y (count target))
     (let [target-line (aget target y)
           max-x (count target-line)]
-    (log/trace "render-string-into-container" x y fg bg s)
     (loop [index 0 s s]
       (let [target-index (+ x index)]
         (when (and (seq s) (< target-index max-x))
           (aset target-line target-index {:c (first s) :fg fg :bg bg})
           (recur (inc index) (rest s))))))))
 
-(def default-style
-  {:fg [255 255 255 255]
-   :bg [0 0 0 255]
-})
-
-(defn render-text-into-container [target text]
-  (log/debug "render-text-into-container" text)
-  (let [[type {:keys [zaffre/style zaffre/layout zaffre/children] :as props}] text
+(defn render-text-into-container [target text-element]
+  (log/trace "render-text-into-container" text-element)
+  (let [[type {:keys [zaffre/layout] :as props} children] text-element
         {:keys [x y width height]} layout
-        style (merge default-style style)
-        lines (wrap-lines width
-                          style
-                          text)]
-    (log/debug "render-text-into-container lines" lines)
+        lines (ztext/word-wrap-text-tree width height text-element)]
+    (log/trace "render-text-into-container lines" (vec lines))
     (doseq [[dy line] (map-indexed vector lines)]
-      ;; remove inc? for spaces
-      (let [offsets (cons 0 (reductions + (map (fn [word] (inc (count (last word)))) line)))]
-        (doseq [[dx {:keys [fg bg text]}] (map vector offsets line)]
-          (when (< dy height)
-            (render-string-into-container target (+ x dx) (+ y dy) fg bg text)))))))
+      (when (< dy height)
+        (log/trace "rendering line" (vec line))
+        ;; remove inc? for spaces
+        (let [span-lengths (map (fn [[_ _ length]] length) line)
+              offsets (cons 0 (reductions + span-lengths))]
+          (log/trace "lengths" (vec span-lengths))
+          (log/trace "offsets" offsets)
+          (doseq [[dx [s {:keys [fg bg]} _]] (map vector offsets line)]
+            (render-string-into-container
+              target
+              (+ x dx) (+ y dy)
+              (or fg (get default-style :fg))
+              (or bg (get default-style :bg))
+              s)))))))
 
 
-(defn component-seq [component]
-  (tree-seq (fn [[_ {:keys [zaffre/children]}]] (every? (comp not string?) children))
-            (fn [[_ {:keys [zaffre/children]}]] children)
-            component))
+(defn element-seq [element]
+  "Returns :view and top-level :text elements."
+  (tree-seq (fn [[type _ _]] (not= type :text))
+            (fn [[_ _ children]] children)
+            element))
 
-(defmulti render-component-into-container (fn [target [type]] type))
+(defmulti render-component-into-container (fn [_ element] (first element)))
 
 ;; render text
 (defmethod render-component-into-container :text
-  [target [type {:keys [zaffre/children zaffre/style zaffre/layout]}]]
-  (doseq [child children]
-    (render-text-into-container target child)))
+  [target text-element]
+  (render-text-into-container target text-element))
+
+;; Border
+(def single-border
+  {:horizontal   \u2500
+   :vertical     \u2502
+   :top-left     \u250C
+   :top-right    \u2510
+   :bottom-left  \u2514
+   :bottom-right \u2518})
+
+(def double-border
+  {:horizontal   \u2550
+   :vertical     \u2551
+   :top-left     \u2554
+   :top-right    \u2557
+   :bottom-left  \u255A
+   :bottom-right \u255D})
 
 ;; render views
 (defmethod render-component-into-container :view
-  [target [type {:keys [zaffre/style zaffre/layout]}]]
+  [target [type {:keys [style zaffre/layout]}]]
+    (let [{:keys [x y width height]} layout
+          {:keys [fg bg border]} style]
+      ;; render background when set
+      (when bg
+        (doseq [dy (range height)
+                :let [fg (or fg (get default-style :fg))]]
+          (render-string-into-container target x (+ y dy) fg bg (repeat width " "))))
+      ; render border when set
+      (when border
+        (let [{:keys [fg bg border]} (merge default-style style)
+              border (case border
+                        1 single-border
+                        2 double-border)]
+          ; render top
+          (render-string-into-container target x y fg bg
+            (str (get border :top-left) (apply str (repeat (- width 2) (get border :horizontal))) (get border :top-right)))
+          ; render middle
+          (doseq [dy (range (- height 2))]
+            (render-string-into-container target x (+ y dy 1) fg bg (str (get border :vertical)))
+            (render-string-into-container target (+ x width -1) (+ y dy 1) fg bg (str (get border :vertical))))
+          ; render bottom
+          (render-string-into-container target x (+ y height -1) fg bg
+            (str (get border :bottom-left) (apply str (repeat (- width 2) (get border :horizontal))) (get border :bottom-right))))))
     nil)
 
 ;; Do nothing for :layer
@@ -115,12 +126,24 @@
 
 (defn render-layer-into-container
   [target layer]
-  (log/debug "render-layer-into-container" layer)
-  (let [descendants (vec (component-seq layer))]
-    (log/debug "render-layer-into-container descendants" descendants))
-  (doseq [descendant (component-seq layer)]
-    (render-component-into-container target descendant)))
+  (log/trace "render-layer-into-container" layer)
+  (let [layer-en-place (zl/layout-element layer)
+        elements (vec (element-seq layer-en-place))]
+    (log/trace "render-layer-into-container elements" elements)
+    (doseq [element elements]
+      (log/debug "render-layer-into-container element" element)
+      (render-component-into-container target element))))
                     
+(defn log-layer [layer-container]
+  (doseq [y (range (alength layer-container))
+          :let [line (aget layer-container y)]]
+    (doseq [x (range (alength line))
+            :let [{:keys [c]} (aget line x)]]
+      (if-not (nil? c)
+        (print c)
+        (print \u0000)))
+    (println "")))
+  
 (defn layer-info [group-info]
   "Given a terminal's group info, create a map layer-id->{:columns rows}."
   (into {}
@@ -137,7 +160,7 @@
 (defn construct-instance [element]
   {:pre [(zc/element? element)]
    :post [(zc/component-instance? %)]}
-  (log/debug "constructing component instance" (str element))
+  (log/trace "constructing component instance" (str element))
   (let [{:keys [type props]} element
         state (or (zc/get-state zc/*updater* element)
                   (when (zc/component? type)
@@ -146,7 +169,7 @@
                         (zc/enqueue-set-state! element s nil)
                         zc/update-state!
                         (zc/get-state element)))))
-        _ (log/debug "construct-component element type" (str type))
+        _ (log/trace "construct-component element type" (str type))
         instance (if (fn? type)
                    (zc/create-instance (assoc (zc/fn->component type) :props props))
                    (zc/create-instance (assoc type :props props) state))]
@@ -166,22 +189,22 @@
 ;; render a single element if needed
 (defn render [existing parent element]
   (if (type-match? existing element)
-    (log/debug "type-match? true")
-    (log/debug "type-mismatch" (get existing :type) (get element :type)))
+    (log/trace "type-match? true")
+    (log/trace "type-mismatch" (get existing :type) (get element :type)))
   (if (props-without-children-match? existing element)
-   (log/debug "props-without-children-match? true")
-   (log/debug "props-without-children-mismatch" (get (zc/element-without-children existing) :props)
+   (log/trace "props-without-children-match? true")
+   (log/trace "props-without-children-mismatch" (get (zc/element-without-children existing) :props)
                                                (get (zc/element-without-children element) :props)))
   (if (state-changed? element)
-    (log/debug "state-changed" (zc/get-state zc/*updater* existing) (zc/get-state zc/*updater* element))
-    (log/debug "state-changed? false"))
+    (log/trace "state-changed" (zc/get-state zc/*updater* existing) (zc/get-state zc/*updater* element))
+    (log/trace "state-changed? false"))
   ;; if element = existing, no-op return element
   (cond
     ;; identical to existing element. do nothing
     (and (type-match? existing element)
          (props-without-children-match? existing element)
          (not (state-changed? element)))
-      (do (log/debug "identical returning existing")
+      (do (log/trace "identical returning existing")
       (get-in existing [:props :children 0]))
     ;; same type, new props?
     (and (type-match? existing element)
@@ -189,7 +212,7 @@
            (not (props-without-children-match? existing element))
            (state-changed? element)))
       ;; updating
-      (let [_ (log/debug "same type, different-props")
+      (let [_ (log/trace "same type, different-props")
             instance (construct-instance element)
             prev-props (get existing :props)
             next-props (get element :props)
@@ -206,9 +229,9 @@
          element))
     ;; initial render
     :default
-    (let [_ (log/debug "initial-render")
+    (let [_ (log/trace "initial-render")
           instance (construct-instance element)
-          _ (log/debug "constructed component")
+          _ (log/trace "constructed component")
           ;; derive state from props
           derived-state (let [next-props (get element :props)
                               prev-state (zc/get-state zc/*updater* element)]
@@ -218,7 +241,7 @@
               zc/update-state!
               (zc/get-state element))
           _ (zc/component-will-mount instance)
-          _ (log/debug "rendering component" (str instance))
+          _ (log/trace "rendering component" (str instance))
           next-element (zc/render instance)
           _ (zc/component-did-mount instance)]
       next-element)))
@@ -243,21 +266,17 @@
   ([existing element]
     (render-recursively existing nil element))
   ([existing parent element]
-    (log/debug "render-recursively existing" (display-name (get existing :type)) #_(without-type existing))
-    (log/debug "render-recursively element" (display-name (get element :type)) #_(without-type element))
+    (log/trace "render-recursively existing" (display-name (get existing :type)) #_(without-type existing))
+    (log/trace "render-recursively element" (display-name (get element :type)) #_(without-type element))
     (cond
       (nil? element)
         element
       (string? element)
-        (do (log/debug "rendering string")
+        (do (log/trace "rendering string" element)
         element)
       ;; built-in?
       (keyword? (get element :type))
-        (let [_ (log/debug "rendering element")
-              _ (log/debug "rendered element" (get element :type))
-              rendered-children (zc/map-children (fn [child existing-child]
-                                                   (log/debug "mapped child" child)
-                                                   (log/debug "mapped existing-child" existing-child)
+        (let [rendered-children (zc/map-children (fn [child existing-child]
                                                    (render-recursively existing-child element child))
                                                  element
                                                  existing)]
@@ -269,14 +288,11 @@
             (zc/assoc-children existing rendered-children)
             (zc/assoc-children element rendered-children)))
       :default
-        (let [_ (log/debug "rendering element")
-              ;; Render one level
+        (let [;; Render one level
               rendered-element (render existing parent element)]
-          (log/debug "rendered element" (str (get rendered-element :type)))
+          (log/trace "rendered element" (str (get rendered-element :type)))
           (if false #_existing
             (zc/assoc-children rendered-element (zc/map-children (fn [child existing-child]
-                                                                   (log/debug "mapped child" (str child))
-                                                                   (log/debug "mapped existing-child" (str existing-child))
                                                                    (render-recursively existing-child element child))
                                                                  rendered-element
                                                                  existing))
@@ -293,7 +309,10 @@
     (= :text (get element :type))
       [[:text
        (dissoc (get element :props {}) :children)
-       (filter string? (zc/element-children element))]]
+       (let [children (zc/element-children element)]
+         (if (every? string? children)
+           children
+           (mapcat extract-native-elements children)))]]
     (keyword? (get element :type))
       [[(get element :type)
        (dissoc (get element :props {}) :children)
@@ -302,40 +321,45 @@
       (vec (mapcat extract-native-elements (zc/element-children element)))))
 
 ;; Renders component into container. Does not call refresh! on container
-#_(defn render-into-container
+(defn render-into-container
   [target component]
   (let [group-info (zt/groups target)
         layer-info (layer-info group-info)
         ;; render to native elements
         root-element (render-recursively component)
-        {:keys [type] :as terminal-root-element} (extract-native-elements root-element)
-        groups (zc/element-children terminal-element)]
-    (log/trace "render-into-container" terminal-element)
+        [[type props groups] & _] (extract-native-elements root-element)]
+    (log/trace "render-into-container" root-element)
     (assert (= type :terminal)
             (format "Root component not :terminal found %s instead" type))
     ;; for each group in terminal
-    (doseq [[type {:keys [group-id pos zaffre/children]}] groups
-            :let [layers children
-                  {:keys [columns rows]} (get group-info group-id)]]
+    (doseq [[type {:keys [id pos]} layers] groups
+            :let [{:keys [columns rows]} (get group-info id)]]
       (assert (= type :group)
               (format "Expected :group found %s instead" type))
-      (log/info "rendering group" group-id)
+      (log/trace "rendering group" id)
       ;; update group pos
       (when pos
-        (zt/alter-group-pos! target group-id pos))
+        (zt/alter-group-pos! target id pos))
       ;; for each layer in group
-      (doseq [[type {:keys [layer-id zaffre/style]} :as layer] layers] (assert (= type :layer)
+      (doseq [[type {:keys [id style]} :as layer] layers]
+        (assert (= type :layer)
                 (format "Expected :layer found %s instead" type))
         ;; create a container to hold cells
         (let [layer-container (object-array rows)
               ;; merge layer width height into layer's style
-              {:keys [columns rows]} (get layer-info layer-id)
+              {:keys [columns rows]} (get layer-info id)
               style (merge style {:width columns :height rows})]
           (doseq [i (range rows)]
             (aset layer-container i (object-array columns)))
-          (log/info "render-into-container - layer" layer-id)
+          (log/trace "render-into-container - layer" id)
           ;; render layer into layer-container
-          (render-layer-into-container layer-container  (assoc-in layer [1 :zaffre/style] style))
+          (render-layer-into-container
+             layer-container
+             (-> layer
+               (assoc-in [1 :style :width] columns)
+               (assoc-in [1 :style :height] rows)))
+          #_(log-layer layer-container)
           ;; replace chars in layer
-          (zt/replace-chars!  layer-id layer-container))))))
+          (zt/replace-chars! target id layer-container))))
+    root-element))
 

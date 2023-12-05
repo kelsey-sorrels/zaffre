@@ -1,7 +1,8 @@
 (ns zaffre.components.layout
   (:require [clojure.test :refer [is]]
             [taoensso.timbre :as log]
-            [zaffre.components :as zc])
+            [zaffre.components :as zc]
+            [zaffre.text :as ztext])
   (:import (org.lwjgl.system MemoryStack)
            (org.lwjgl.util.yoga
              YGMeasureFunc
@@ -26,22 +27,26 @@
 
 (defmethod measure-text :unrestricted
   [width width-mode height height-mode text]
+    (log/debug "measure-text :unrestricted" width height text)
     [(count text) 1])
 
 (defmethod measure-text :width-restricted
   [width width-mode height height-mode text]
-    [(count text) 1])
+    (log/debug "measure-text :width-restricted" width height text)
+    [width (count (ztext/word-wrap width text))])
 
 ;; TODO: Use https://cstheory.stackexchange.com/questions/10385/break-text-evenly-into-certain-number-of-lines
 (defmethod measure-text :height-restricted
   [width width-mode height height-mode text]
+    (log/debug "measure-text :height-restricted" width height text)
     (let [words (clojure.string/split (clojure.string/trim text) #"\s+")]
       ;; Split by number of words and then find max line length
       [(reduce max 0 (map count (partition height words))) height]))
 
 (defmethod measure-text :bi-restricted
   [width width-mode height height-mode text]
-    [width height])
+    (log/debug "measure-text :bi-restricted" width height text)
+    [width (min height (count (ztext/word-wrap width text)))])
 
 (defn text-measure-func [text]
   (YGMeasureFunc/create (reify YGMeasureFuncI
@@ -113,6 +118,12 @@
     :scroll Yoga/YGOverflowScroll
     (assert false (str value " not a valid yoga overflow value"))))
 
+(defn yoga-display [value]
+  (case value
+    :flex Yoga/YGDisplayFlex
+    :none Yoga/YGDisplayNone
+    (assert false (str value " not a valid yoga display value"))))
+
 (defn yoga-position-type [value]
   (case value
     :relative Yoga/YGPositionTypeRelative
@@ -128,12 +139,12 @@
 
 (defn copy-property [style k type f]
   (when-let [value (get style k)]
-    (log/info "copying property" k value)
+    (log/trace "copying property" k value)
     (f (type value))))
 
 (defn copy-property-or-percent [style k type f f-percent]
   (when-let [value (type (get style k))]
-    (log/info "copying property" k value)
+    (log/trace "copying property" k value)
     (cond
       (number? value)
         (f value)
@@ -220,7 +231,7 @@
   (copy-property style :position-type yoga-position-type
     #(Yoga/YGNodeStyleSetPositionType node %))
 
-  (log/info "style" style "position-keys" (vec (position-keys style)))
+  (log/trace "style" style "position-keys" (vec (position-keys style)))
   (doseq [position-key (position-keys style)]
     (copy-property-or-percent style position-key identity
       #(Yoga/YGNodeStyleSetPosition node (yoga-edge position-key) %)
@@ -255,6 +266,8 @@
 
   ;  void setDisplay(YogaDisplay display) {
   ;      YGNodeStyleSetDisplay(node, display.value);
+  (copy-property style :display yoga-display
+    #(Yoga/YGNodeStyleSetDisplay node %))
 
   (copy-property style :justify yoga-justify
     #(Yoga/YGNodeStyleSetJustifyContent node %)))
@@ -262,14 +275,14 @@
 (defn build-yoga-tree [parent index element]
   "Takes [type props] elements and annotates them with yoga nodes like
    [type props node]. Does this recursively to the element's children"
-  (log/info "build-yoga-tree" index element)
-  (let [[type {:keys [zaffre/style zaffre/children] :as props}] element
+  (log/trace "build-yoga-tree" index element)
+  (let [[type {:keys [style] :as props} children] element
         node (Yoga/YGNodeNew)]
     (Yoga/YGNodeStyleSetFlexDirection node Yoga/YGFlexDirectionColumn)
 
     ;; set style
     (style-node style node)
-    (log/info "build-yoga-tree children" children)
+    (log/trace "build-yoga-tree children" children)
 
     (when parent
       (Yoga/YGNodeInsertChild parent node index))
@@ -277,17 +290,17 @@
     (when (and (= type :text) (every? string? children))
       (Yoga/YGNodeSetMeasureFunc node (text-measure-func (first children))))
 
-    (log/info "node" node)
+    (log/trace "node" node)
     [type
+     props
      (if children
-       (assoc props :zaffre/children
          ;; force eager evaluation so that entire tree is created
          (vec (map-indexed (fn [index child]
            (if (sequential? child)
              (build-yoga-tree node index child)
              child))
-           children)))
-       props)
+           children))
+       [])
      node]))
 
 (defn transfer-layout
@@ -297,9 +310,9 @@
   ([yoga-tree]
     (transfer-layout 0 0 yoga-tree))
   ([parent-layout-x parent-layout-y yoga-tree]
-    (log/info "transfer-layout" yoga-tree)
-    (if (and (sequential? yoga-tree) (= 3 (count yoga-tree)))
-      (let [[type {:keys [zaffre/children] :as props} node] yoga-tree
+    (log/trace "transfer-layout" yoga-tree)
+    (if (and (sequential? yoga-tree) (= 4 (count yoga-tree)))
+      (let [[type props children node] yoga-tree
             left (Yoga/YGNodeLayoutGetLeft node)
             top  (Yoga/YGNodeLayoutGetTop node)
             layout-x (+ parent-layout-x left)
@@ -312,20 +325,22 @@
                                   :y layout-y
                                   :width layout-width
                                   :height layout-height})]
+        (log/trace "layout params" {:left left :top top
+                                   :layout-x layout-x :layout-y layout-y
+                                   :layout-width layout-width :layout-height layout-height})
         (Yoga/YGNodeFree node)
         [type
+         props-with-layout
          (if children
-           (assoc props-with-layout
-             :zaffre/children
-             (vec (map (partial transfer-layout layout-x layout-y)
-                       children)))
-           props-with-layout)])
+           (vec (map (partial transfer-layout layout-x layout-y)
+                     children))
+           [])])
       yoga-tree)))
 
 (defn layout-element [element]
   (let [yoga-tree (build-yoga-tree nil nil element)
         root-node (last yoga-tree)]
-    (log/info "yoga-tree" yoga-tree)
+    (log/trace "yoga-tree" yoga-tree)
     (Yoga/YGNodeCalculateLayout root-node Yoga/YGUndefined Yoga/YGUndefined Yoga/YGDirectionLTR)
     (transfer-layout yoga-tree)))
 
