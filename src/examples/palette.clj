@@ -7,10 +7,9 @@
             [zaffre.events :as zevents]
             [zaffre.util :as zutil]
             [taoensso.timbre :as log])
-  (:import (zaffre.terminal Terminal)
-           (zaffre.font CompositeFont CP437Font TileSet TTFFont)))
+  (:import (zaffre.terminal Terminal)))
 
-(def tileset-bw
+(defn tileset-bw []
   (zfont/scale
     (zfont/tileset
       "dev-resources/Tileset_BW.png"
@@ -20,8 +19,8 @@
       (zfont/dynamic-pal "dev-resources/Tileset_BW.pal"))
     2))
 
-(def font (CompositeFont. [@ztiles/pastiche-16x16
-                           tileset-bw]))
+(def font (zfont/composite [@ztiles/pastiche-16x16
+                            (tileset-bw)]))
 
 (defn palette-chars
   [glyph-graphics palette-offset]
@@ -63,8 +62,9 @@
                            :2 (atom {})
                            :3 (atom {})}
 
+            palette-font  (tileset-bw)
             font-graphics (atom (zfont/glyph-graphics font))
-            palette-graphics (atom (zfont/glyph-graphics tileset-bw))
+            palette-graphics (atom (zfont/glyph-graphics palette-font))
             current-layer (atom :0)
             current-tile  (atom (let [tile-names (zfont/character-layout @palette-graphics)]
                                   (log/info "tile-names" tile-names)
@@ -72,9 +72,9 @@
             palette-offset (atom 0)]
         ;; Every 33ms, draw a full frame
         (zat/do-frame terminal 33
-          (when (or (zfont/dirty? tileset-bw)
+          (when (or (zfont/dirty? palette-font)
                     (zfont/dirty? font))
-            (reset! palette-graphics (zfont/glyph-graphics tileset-bw))
+            (reset! palette-graphics (zfont/glyph-graphics palette-font))
             (reset! font-graphics (zfont/glyph-graphics font))
             (zat/alter-group-font! terminal :app (constantly @font-graphics)))
           (zat/put-chars! terminal :ui (palette-chars @palette-graphics @palette-offset))
@@ -83,7 +83,6 @@
           (when @current-tile
             (zutil/put-string terminal :ui 16 26 (str @current-tile)))
           (zat/put-chars! terminal :ui color-table-chars)
-          (log/info (vec color-table-chars))
           (zat/put-chars! terminal :0 (map (fn [[[col row] t]]
                                              {:c t :fg [255 255 255] :bg [0 0 0 0] :x col :y row :palette-offset @palette-offset})
                                            @(get layers :0)))
