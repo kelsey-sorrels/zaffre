@@ -10,31 +10,23 @@
   (:import (zaffre.terminal Terminal)
            (zaffre.font CompositeFont CP437Font TileSet TTFFont)))
 
-(defn hsv->rgb [h s v]
-  (let [c (* v s)
-        x (* c (- 1.0 (Math/abs (double (dec (mod (/ h 60.0) 2.0))))))]
-    (mapv (comp int (partial * 255))
-      (cond
-        (< h  60) [c x 0]
-        (< h 120) [x c 0]
-        (< h 180) [0 c x]
-        (< h 240) [0 x c]
-        (< h 300) [x 0 c]
-        (< h 360) [c 0 x]))))
-
-
-#_(def font (CompositeFont. [ztiles/pastiche-16x16
-                           ztiles/two-bit-tileset]))
+#_(def font (zfont/construct
+           (CompositeFont. [ztiles/pastiche-16x16
+                            ztiles/two-bit-tileset])))
 
 #_(def font (CompositeFont. [ztiles/pastiche-16x16
                            ztiles/d-roguelike]))
 
-(def font (CompositeFont. [ztiles/pastiche-16x16
-                           ztiles/fantasy]))
+(def font (zfont/construct
+            (CompositeFont. [ztiles/pastiche-16x16
+                             ztiles/fantasy])))
 
 (def palette (for [[row line] (map-indexed vector ztiles/fantasy-map)
                    [col id]   (map-indexed vector line)]
                {:c id :fg [255 255 255] :bg [0 0 0] :x col :y row}))
+
+(log/info font)
+(log/info "palette" (vec palette))
 
 (defn -main [& _]
   ;; render in background thread
@@ -46,8 +38,8 @@
       :pos     [0 0]
       :font    (constantly font)}}
     {:title            "Zaffre demo"
-     :screen-width     (* 33 16)
-     :screen-height    (* 35 16)
+     :screen-width     (* 32 16)
+     :screen-height    (* 33 16)
      :default-fg-color [250 250 250]
      :default-bg-color [5 5 8]}
     (fn [terminal]
@@ -65,7 +57,8 @@
                           (dosync
                             (zat/clear! terminal)
                             (zutil/put-string terminal :ui 2 30 (format "layer: %s" (str @current-layer)))
-                            (zutil/put-string terminal :ui 16 30 (str @current-tile))
+                            (when @current-tile
+                              (zutil/put-string terminal :ui 16 30 (str @current-tile)))
                             (zat/put-chars! terminal :ui palette)
                             (zat/put-chars! terminal :ui [{:c @current-tile :fg [255 255 255] :bg [128 128 128] :x 0 :y 30}])
                             (zat/put-chars! terminal :0 (map (fn [[[col row] t]]
@@ -77,7 +70,7 @@
                             (zat/put-chars! terminal :2 (map (fn [[[col row] t]]
                                                                {:c t :fg [255 255 255] :bg [0 0 0] :x col :y row})
                                                              @(get layers :2)))
-                            #_(zat/put-chars! terminal :3 (map (fn [[[col row] t]]
+                            (zat/put-chars! terminal :3 (map (fn [[[col row] t]]
                                                                {:c t :fg [255 255 255] :bg [0 0 0] :x col :y row})
                                                              @(get layers :3)))
                             (zat/refresh! terminal))

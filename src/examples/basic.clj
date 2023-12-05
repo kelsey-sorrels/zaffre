@@ -5,8 +5,11 @@
             [zaffre.font :as zfont]
             [zaffre.tilesets :as ztiles]
             [zaffre.util :as zutil]
-            [clojure.core.async :as async :refer [<! <!! go-loop]]))
+            [clojure.core.async :as async :refer [<! <!! go-loop]])
+  (:import (zaffre.font CompositeFont)))
 
+(def font (CompositeFont. [ztiles/pastiche-16x16
+                           ztiles/fantasy]))
 (defn -main [& _]
    (zgl/create-terminal
      {:app {           ;; Setup a layer group `:app`
@@ -14,7 +17,7 @@
        :columns 16     ;; 16 characters wide
        :rows 16        ;; 16 characters tall
        :pos [0 0]      ;; With no position offset
-       :font (constantly ztiles/pastiche-16x16)}} ;; Give the group a nice font
+       :font (constantly font)}} ;; Give the group a nice font
      {:title "Zaffre demo"     ;; Set the window title
       :screen-width (* 16 16)  ;; Screen dimentions in pixels
       :screen-height (* 16 16)} ;; Since our font is 16x16 and our layer group
