@@ -828,7 +828,7 @@
                 (when (nil? @last-render)
                   #_(log/info "finding autofocus in" (mapv zip/node (zipper-descendants (zipper-elements root-element))))
                   ;; set initial focused element
-                  (let [[initial-tab-index initial-element-loc]
+                  (when-let [[initial-tab-index initial-element-loc]
                           (->> root-element
                             tabable-elements
                             (map-indexed vector)
@@ -845,6 +845,9 @@
                 ; Store last render for event handlers
                 (reset! last-render root-element)
                 ; Store last layout for event handlers
+                (log/info "layout-elements")
+                (doseq [elem layout-elements]
+                  (log/info "layout-element" elem))
                 (reset! last-layout layout-elements))))
           ; Draw terminal frame
           (zt/refresh! terminal)

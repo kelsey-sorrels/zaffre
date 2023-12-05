@@ -89,18 +89,19 @@
       [:group {:id :ui}
         [:layer {:id :main}
           [:view {:key "inputs"}
-            [Clock {:key "clock"}]
-            [FPSMeter {:key "fpsmeter"}]
-            [zcui/Input {:key "input1"
-                         :autofocus true
-                         :style {:cursor-fg (zcolor/color 244 208 65 255)}
-                         :on-change text-value-on-change} []]
-            [zcui/Input {:key "input2"
-                         :style {:cursor-fg (zcolor/color 65 244 208)}
-                         :on-change text-value-on-change} []]
-            #_[zcui/Input {:key "input3"
-                         :style {:cursor-fg (zcolor/color 208 65 244)}
-                         :on-change text-value-on-change} []]]
+            #_[Clock {:key "clock"}]
+            #_[FPSMeter {:key "fpsmeter"}]
+            [zcui/Panel {:key "input-panel" :title "Inputs"}
+              [zcui/Input {:key "input1"
+                           :autofocus true
+                           :style {:cursor-fg (zcolor/color 244 208 65 255)}
+                           :on-change text-value-on-change} []]
+              [zcui/Input {:key "input2"
+                           :style {:cursor-fg (zcolor/color 65 244 208)}
+                           :on-change text-value-on-change} []]
+              [zcui/Input {:key "input3"
+                           :style {:cursor-fg (zcolor/color 208 65 244)}
+                           :on-change text-value-on-change} []]]]
           #_[:view {:key "images"
                   :style {:border 1
                           :border-style :single

@@ -74,8 +74,8 @@ maps))
                                :cursor-fg (zcolor/color 255 255 255 255)
                                :cursor-bg (zcolor/color 0 0 0 255)}}
         props (assoc (merge default-props props)
-                :style (merge (:style props)
-                              (:style default-props)))
+                :style (merge (:style default-props)
+                              (:style props)))
         {:keys [width
                 cursor-char-on
                 cursor-char-off
@@ -269,6 +269,19 @@ maps))
       (catch Throwable t
         (log/error "Error rendering Image")
         (log/error t)))))
+
+(g/defcomponent Panel
+  [props _]
+  (let [{:keys [title border children]} props]
+    (log/info "Panel props" props)
+    (log/info "Panel children" children)
+    [:view {:style {:border (or border 1)}}
+      (cons [:text {:key "panel-title"
+                    :style {:position :absolute
+                            :height 1 :width (+ 2 (count title))
+                            :top -1 :left 1}}
+             (str "|" title "|")]
+      children)]))
 
 ;; style taken from https://www.nucleo.com.au/using-flexbox-for-modal-dialogs/
 (def Popup (zc/create-react-class {
