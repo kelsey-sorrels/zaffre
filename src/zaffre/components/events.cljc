@@ -5,37 +5,18 @@
             [zaffre.components.ui :as zcui]
             [zaffre.terminal :as zt]))
 
-;; Transform :text tree into a sequence by walking the tree
-(defn element-tree-seq [element]
-  (let [element-seq (tree-seq zc/element?
-                              zc/element-children
-                              element)]
-    element-seq))
-
-;; Return only the leaf nodes from text-tree-seq
-(defn filter-element-tree [p element]
-  (let [elements (element-tree-seq element)]
-    (filter p elements)))
-
-(defn input-element-seq [dom]
-  (filter-element-tree (fn [{:keys [type]}]
-                         (= type zcui/Input))
-                        dom))
-
 (defn send-event-to-dom [event dom]
   (log/info "send-events-to-dom" event)
-  (let [selected-input-index 0
-        input-elements (input-element-seq dom)]
-    ;(log/trace "input-elements" (type input-elements) (vec input-elements))
-    (when-let [selected-input-element (nth input-elements selected-input-index)]
-      (let [instance (zc/construct-instance selected-input-element)
+  ;; Find InputSelect element
+  (when-let [input-select-elem (zcui/input-select-element dom)]
+    (binding [zc/*current-owner* input-select-elem]
+      (let [instance (zc/construct-instance input-select-elem)
             {:keys [on-keypress]} (zc/props instance)]
-        ;; call :on-* to dom elements updating state
-        (log/trace "on-keypress" on-keypress #_#_"instance" instance)
-        (binding [zc/*current-owner* selected-input-element]
-          (on-keypress
-            (assoc instance :updater zc/*updater*)
-            {:key event}))))))
+        (log/info "send-event-to-dom on-keypress" on-keypress)
+        ;; Send key event to InputSelect instance
+        (on-keypress
+          (assoc instance :updater zc/*updater*)
+          {:key event :dom dom})))))
 
 (defn send-events-to-dom [events dom]
   (doseq [event events]
