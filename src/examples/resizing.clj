@@ -118,7 +118,7 @@
                (zat/set-window-size! terminal {:width @swidth  :height @sheight}))
           \] (do
                (swap! swidth inc)
-               ;(swap! sheight inc)
+               (swap! sheight inc)
                (zat/set-window-size! terminal {:width @swidth  :height @sheight}))
           \[ (do
                (swap! swidth dec)

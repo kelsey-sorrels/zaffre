@@ -30,14 +30,15 @@
   ([t d & body]
     `(let [terminal# ~t
            sleep-time# ~d]
-       (go-loop []
-         (when-not (destroyed? terminal#)
-           (dosync
-             (clear! terminal#)
-             ~@body
-             (refresh! terminal#))
-           (Thread/sleep sleep-time#)
-           (recur))))))
+       (future
+         (loop []
+           (when-not (destroyed? terminal#)
+             (dosync
+               (clear! terminal#)
+               ~@body
+               (refresh! terminal#))
+             (Thread/sleep sleep-time#)
+             (recur)))))))
 
 ;; namespace with only a protocol gets optimized out, causing missing dependencies.
 ;; add a dummp def to prevent this ns from being optimized away.
