@@ -19,6 +19,7 @@
 (def default-style
   {:color (unchecked-int 0xffffffff) #_[255 255 255 255]
    :background-color (unchecked-int 0x000000ff) #_[0 0 0 255]
+   :background-char \ 
    :border-style :single
    :border 0
    :border-left 0
@@ -253,6 +254,7 @@
   [target [type {:keys [style zaffre/layout]}]]
     (let [{:keys [x y width height]} layout
           {:keys [color background-color
+                  background-char
                   border border-style
                   border-top border-bottom
                   border-left border-right
@@ -261,7 +263,7 @@
       (when background-color
         (doseq [dy (range height)
                 :let [color (or color (get default-style :color))]]
-          (render-string-into-container target x (+ y dy) color background-color (clojure.string/join (repeat width " ")) mix-blend-mode)))
+          (render-string-into-container target x (+ y dy) color background-color (clojure.string/join (repeat width background-char)) mix-blend-mode)))
       ; render border when set
       (when border-style
         (let [border-map (case border-style
@@ -678,18 +680,19 @@
        (<= miny row (dec maxy)))))
 
 (defn handle-click [layout-elements event]
-  (let [{:keys [col row]} event
-        hits (filter (partial in-element? col row) (reverse layout-elements))]
-    #_(clojure.inspector/inspect-tree layout-elements)
-    (log/info col row)
-    (log/info "hits:" (count hits))
-    (doseq [hit hits]
-      (when-let [on-click (-> hit second :on-click)]
-        (on-click {:client-x (- col (-> hit second :zaffre/layout :x))
-                   :client-y (- row (-> hit second :zaffre/layout :y))
-                   :screen-x col
-                   :screen-y row
-                   :target hit})))))
+  (let [{:keys [col row]} event]
+    (when (and col row)
+      (let [hits (filter (partial in-element? col row) (reverse layout-elements))]
+        #_(clojure.inspector/inspect-tree layout-elements)
+        (log/info col row)
+        (log/info "hits:" (count hits))
+        (doseq [hit hits]
+          (when-let [on-click (-> hit second :on-click)]
+            (on-click {:client-x (- col (-> hit second :zaffre/layout :x))
+                       :client-y (- row (-> hit second :zaffre/layout :y))
+                       :screen-x col
+                       :screen-y row
+                       :target hit})))))))
 
 (defn handle-mouse-enter [layout-elements event]
   (let [{:keys [col row]} event
@@ -702,6 +705,7 @@
 
 
 (defn handle-mouse-leave [layout-elements event]
+  (log/info "handle-mouse-leave" (vec layout-elements))
   (let [{:keys [col row]} event
         hits (filter (partial in-element? col row) (reverse layout-elements))]
     (log/trace (count hits) "hits")

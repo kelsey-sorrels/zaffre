@@ -133,7 +133,6 @@ maps))
                 cursor-fg
                 cursor-bg]} (get props :style)
         cursor (if (and focused show-cursor) cursor-char-on (if selected "x" " "))]
-     (log/info "Checkbox selected" selected "focus" focused "cursor" cursor)
      (g/use-effect (fn []
        (go-loop []
          (<! (timeout 400))
@@ -177,7 +176,6 @@ maps))
                 cursor-fg
                 cursor-bg]} (get props :style)
         cursor (if (and focused show-cursor) cursor-char-on (if selected "x" " "))]
-     (log/info "Radio selected" selected "focus" focused "cursor" cursor)
      (g/use-effect (fn []
        (go-loop []
          (<! (timeout 400))
@@ -187,6 +185,24 @@ maps))
     [:view props
       (cons [:text {:key "radio-text"} (str "[" cursor "]")]
         children)]))
+
+(g/defcomponent ProgressBar
+  [props _]
+  (let [left (int (get props :value 0))
+        right (- 100 left)]
+    ; FIXME copy key (props?) into view
+    [:view {:key "progress-bar"
+            :style {:display :flex
+                    :flex-direction :row}}
+      [:view {:key "left"
+              :style {:background-char \ 
+                      :background-color (zcolor/color 255 255 255)
+                      :width (str left "%")
+                      :height 1}}]
+      [:view {:key "right"
+              :style {:background-char \u2592
+                      :width (str right "%")
+                      :height 1}}]]))
 
 (defn async-load-file
   [path on-load on-error]

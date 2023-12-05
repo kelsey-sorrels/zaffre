@@ -77,7 +77,9 @@
           (dispatch! :update)
           (Thread/sleep 1000)
           (recur)))) [])
-    [:text {} (str "fps: " (get state :fps))]))
+    [:view {}
+      [:text {:key "fps"} (str "fps: " (get state :fps))]
+      [zcui/ProgressBar {:key "fps-bar" :value (/ (get state :fps) 10)}]]))
 
 (zcr/defcomponent UI
   [{:keys [fps show-popup text-value text-value-on-change]} _]
