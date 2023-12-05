@@ -1,5 +1,6 @@
 (ns zaffre.imageutil
-  (:require [clojure.java.io :as jio]
+  (:require [clj-http.client :as client]
+            [clojure.java.io :as jio]
             [taoensso.timbre :as log]
             [clojure.test :refer [is]])
   (:import (java.lang AutoCloseable)
@@ -55,13 +56,14 @@
         c           (BufferUtils/createIntBuffer 1)
         buffer      (->
                       location
-                      jio/input-stream
-                      IOUtils/toByteArray
+                      (client/get {:as :byte-array})
+                      :body
                       ByteBuffer/wrap)
         direct-buffer (BufferUtils/createByteBuffer (.limit buffer))]
     (doto direct-buffer
       (.put buffer)
       (.flip))
+    (log/info "loaded image data" direct-buffer)
     (let [byte-buffer (STBImage/stbi_load_from_memory direct-buffer w h c 0)
           width       (.get w)
           height      (.get h)

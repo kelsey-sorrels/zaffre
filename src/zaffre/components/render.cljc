@@ -296,44 +296,44 @@
       (map extract-native-elements (zc/element-children element))))
 
 ;; Renders component into container. Does not call refresh! on container
-;(defn render-into-container
-;  [target render-state component]
-;  (let [root-element (render-component render-state component)
-;        group-info (zt/groups target)
-;        layer-info (layer-info group-info)
-;        [type {:keys [zaffre/children]} :as terminal-element]
-;          (render
-;            {:style default-style}
-;            render-state
-;            component)
-;        groups children]
-;    (log/trace "render-into-container" terminal-element)
-;    (assert (= type :terminal)
-;            (format "Root component not :terminal found %s instead" type))
-;    ;; for each group in terminal
-;    (doseq [[type {:keys [group-id pos zaffre/children]}] groups
-;            :let [layers children
-;                  {:keys [columns rows]} (get group-info group-id)]]
-;      (assert (= type :group)
-;              (format "Expected :group found %s instead" type))
-;      (log/info "rendering group" group-id)
-;      ;; update group pos
-;      (when pos
-;        (zt/alter-group-pos! target group-id pos))
-;      ;; for each layer in group
-;      (doseq [[type {:keys [layer-id zaffre/style]} :as layer] layers]
-;        (assert (= type :layer)
-;                (format "Expected :layer found %s instead" type))
-;        ;; create a container to hold cells
-;        (let [layer-container (object-array rows)
-;              ;; merge layer width height into layer's style
-;              {:keys [columns rows]} (get layer-info layer-id)
-;              style (merge style {:width columns :height rows})]
-;          (doseq [i (range rows)]
-;            (aset layer-container i (object-array columns)))
-;          (log/info "render-into-container - layer" layer-id)
-;          ;; render layer into layer-container
-;          (render-layer-into-container layer-container  (assoc-in layer [1 :zaffre/style] style))
-;          ;; replace chars in layer
-;          (zt/replace-chars!  layer-id layer-container))))))
+(defn render-into-container
+  [target render-state component]
+  (let [root-element (render-component render-state component)
+        group-info (zt/groups target)
+        layer-info (layer-info group-info)
+        [type {:keys [zaffre/children]} :as terminal-element]
+          (render
+            {:style default-style}
+            render-state
+            component)
+        groups children]
+    (log/trace "render-into-container" terminal-element)
+    (assert (= type :terminal)
+            (format "Root component not :terminal found %s instead" type))
+    ;; for each group in terminal
+    (doseq [[type {:keys [group-id pos zaffre/children]}] groups
+            :let [layers children
+                  {:keys [columns rows]} (get group-info group-id)]]
+      (assert (= type :group)
+              (format "Expected :group found %s instead" type))
+      (log/info "rendering group" group-id)
+      ;; update group pos
+      (when pos
+        (zt/alter-group-pos! target group-id pos))
+      ;; for each layer in group
+      (doseq [[type {:keys [layer-id zaffre/style]} :as layer] layers]
+        (assert (= type :layer)
+                (format "Expected :layer found %s instead" type))
+        ;; create a container to hold cells
+        (let [layer-container (object-array rows)
+              ;; merge layer width height into layer's style
+              {:keys [columns rows]} (get layer-info layer-id)
+              style (merge style {:width columns :height rows})]
+          (doseq [i (range rows)]
+            (aset layer-container i (object-array columns)))
+          (log/info "render-into-container - layer" layer-id)
+          ;; render layer into layer-container
+          (render-layer-into-container layer-container  (assoc-in layer [1 :zaffre/style] style))
+          ;; replace chars in layer
+          (zt/replace-chars!  layer-id layer-container))))))
 
