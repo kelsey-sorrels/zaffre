@@ -321,7 +321,7 @@
     [LWJGLUtil/PLATFORM_WINDOWS true]
       (System/setProperty "org.lwjgl.librarypath", (.getAbsolutePath (File. "natives/windows/x86_64"))))))
 
-(defn- init-display [title screen-width screen-height icon-paths gl-lock close-ref]
+(defn- init-display [title screen-width screen-height icon-paths gl-lock]
   (let [pixel-format       (PixelFormat.)
         context-attributes (ContextAttribs. 3 0)
         icon-array         (when icon-paths
@@ -359,7 +359,7 @@
                ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
                ; input on the thread that created the window
                (Display/processMessages)
-               (or (Display/isCloseRequested) @close-ref))
+               (or (Display/isCloseRequested) (not @gl-lock)))
            (do
              (log/info "Destroying display")
              (with-gl-context gl-lock
@@ -521,8 +521,7 @@
                            cursor-xy
                            gl
                            key-chan
-                           gl-lock
-                           close]
+                           gl-lock]
   zat/ATerminal
   (get-size [_]
     [columns rows])
@@ -743,7 +742,7 @@
                            line))
                    cm))))
   (destroy! [_]
-    (ref-set close true)))
+    (reset! gl-lock false)))
 
 
 (defn make-terminal
@@ -792,8 +791,6 @@
                                                    (make-font else-font Font/PLAIN font-size)))
           ;; false if Display is destoyed
           gl-lock            (atom true)
-          ; Used to request Display destruction.
-          close-ref          (ref false)
           {:keys [screen-width
                   screen-height
                   character-width
@@ -802,7 +799,7 @@
                   font-texture-height
                   font-texture-image]} (get @font-textures (font-key @normal-font))
           _                  (log/info "screen size" screen-width "x" screen-height)
-          _                  (init-display title screen-width screen-height icon-paths gl-lock close-ref)
+          _                  (init-display title screen-width screen-height icon-paths gl-lock)
 
           font-texture       (with-gl-context gl-lock (texture-id font-texture-image))
           _                  (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture font-texture)))
@@ -895,8 +892,7 @@
                                    :fg-image-data fg-image-data
                                    :bg-image-data bg-image-data}}
                            key-chan
-                           gl-lock
-                           close-ref)]
+                           gl-lock)]
       ;; Access to terminal will be multi threaded. Release context so that other threads can access it)))
       (Display/releaseContext)
       ;; Start font file change listener thread
