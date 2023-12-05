@@ -714,14 +714,14 @@
               (doseq [line (partition (* 4 texture-columns) layer)]
                 (log/info (vec line))))
             (try
-              (log/info "y" (+ y-pos (- framebuffer-height (* rows character-height)) (- (/ framebuffer-height 2)))
+              #_(log/info "y" (+ y-pos #_(- framebuffer-height (* rows character-height)) (- (/ framebuffer-height 2)))
                 "y-pos" y-pos "fb-h" framebuffer-height "rows" rows "ch-h" character-height)
               (GL20/glUniformMatrix4fv
                 u-MVMatrix
                 false
                 (position-matrix-buffer
                   [(+ x-pos (- (/ framebuffer-width 2)))
-                   (+ y-pos (- framebuffer-height (* rows character-height)) (- (/ framebuffer-height 2)))
+                   (+ y-pos #_(- framebuffer-height (* rows character-height)) (- (/ framebuffer-height 2)))
                    -1.0
                    0.0]
                   [framebuffer-width framebuffer-height 1.0]
