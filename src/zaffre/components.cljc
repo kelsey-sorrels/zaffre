@@ -20,6 +20,7 @@
 
 ;; State
 (defprotocol IUpdater
+  (immediate-set-state! [this element partial-state])
   (enqueue-set-state! [this element partial-state callback])
   (enqueue-remove-state! [this element])
   (update-state! [this])
@@ -43,6 +44,13 @@
                  (format "%x: %s"(System/identityHashCode k) v))
                (get updater :prev-state))))))
   IUpdater
+  (immediate-set-state! [this element partial-state]
+    {:pre [(element? element) (get element :id)
+           (map? partial-state)]}
+    (let [k (get element :id)]
+      (swap! a (fn [updater]
+                 (update-in updater [:s k] #(deep-merge % partial-state))))
+      this))
   (enqueue-set-state! [this element partial-state callback]
     {:pre [(element? element) (get element :id)
            (or (map? partial-state)
@@ -125,6 +133,9 @@
 
 (defrecord NoopUpdater []
   IUpdater
+  (immediate-set-state! [this element partial-state]
+    (assert (-> element :id some?) "Element must not be nil")
+      this)
   (enqueue-set-state! [this element partial-state callback]
     (assert (-> element :id some?) "Element must not be nil")
       this)
@@ -144,6 +155,8 @@
 
 (defrecord AlwaysThrowUpdater []
   IUpdater
+  (immediate-set-state! [this element partial-state]
+    (assert false))
   (enqueue-set-state! [this element partial-state callback]
     (assert false))
   (enqueue-remove-state! [this element]
@@ -596,7 +609,7 @@
                   (when (component? type)
                     (when-let [s ((get type :get-initial-state))]
                       (log/trace "construct-instance state" s)
-                        (enqueue-set-state! *updater* element s nil)
+                        (immediate-set-state! *updater* element s)
                         s)))
         _ (log/trace "construct-component element type" (component-display-name type) state)
         instance (if (fn? type)

@@ -7,9 +7,8 @@
 (deftest layout-test
   (are [in out] (= out (zcl/layout-element in))
     ;; empty text
-    [:text {:zaffre/children []}] 
-    [:text {:zaffre/children []
-            :zaffre/layout {
+    [:text {} []] 
+    [:text {:zaffre/layout {
               :x 0.0
               :y 0.0
               :width 0.0
@@ -17,32 +16,32 @@
 
     ;; nested test
     [:layer {:layer-id :main
-             :zaffre/style {:width 10}
-             :zaffre/children [
-               [:text {:zaffre/children ["16"]}]
-               [:view {:zaffre/style {
+             :style {:width 10}
+             :children [
+               [:text {} ["16"]]
+               [:view {:style {
                          :left 1
                          :top 1
-                         :width 16}
-                       :zaffre/children [
-                         [:text {:zaffre/children [
-                           [:text {:zaffre/children ["Lorem ipsum dolor sit amet"]}]]}]]}]]}]
+                         :width 16}}
+                       [
+                         [:text {} [
+                           [:text {} ["Lorem ipsum dolor sit amet"]]]]]]]}]
 
     [:layer {:layer-id :main
-             :zaffre/style {:width 10}
+             :style {:width 10}
              :zaffre/layout {
                :x 0.0
                :y 0.0
                :width 10.0
-               :height 0.0}
-             :zaffre/children [
+               :height 0.0}}
+             [
                [:text {:zaffre/layout {
                          :x 0.0
                          :y 0.0
                          :width 10.0
-                         :height 0.0}
-                       :zaffre/children ["16"]}]
-               [:view {:zaffre/style {
+                         :height 0.0}}
+                       ["16"]]
+               [:view {:style {
                          :left 1
                          :top 1
                          :width 16}
@@ -50,36 +49,36 @@
                          :x 0.0
                          :y 0.0
                          :width 16.0
-                         :height 0.0}
-                       :zaffre/children [
+                         :height 0.0}}
+                       [
                          [:text {:zaffre/layout {
                                    :x 0.0
                                    :y 0.0
                                    :width 16.0
-                                   :height 0.0}
-                                 :zaffre/children [
+                                   :height 0.0}}
+                                 [
                            [:text {:zaffre/layout {
                                    :x 0.0
                                    :y 0.0
                                    :width 16.0
-                                   :height 0.0}
-                                 :zaffre/children ["Lorem ipsum dolor sit amet"]}]]}]]}]]}]))
+                                   :height 0.0}}
+                                 ["Lorem ipsum dolor sit amet"]]]]]]]]))
 
 (deftest absolute-position-test
   (are [in out] (= out (zcl/layout-element in))
-    [:root {:zaffre/style {
+    [:root {:style {
               :width 100
               :height 100
               :direction :ltr}
-            :zaffre/children [
-              [:child {:zaffre/style {
-                        :position-type :absolute
-                        :position-start 10
-                        :position-top 10
+            :children [
+              [:child {:style {
+                        :position :absolute
+                        :flex-start 10
+                        :top 10
                         :width 10
                         :height 10}}]]}]
     
-    [:root {:zaffre/style {
+    [:root {:style {
               :width 100
               :height 100
               :direction :ltr}
@@ -88,11 +87,11 @@
               :y 0.0
               :width 100.0
               :height 100.0}
-            :zaffre/children [
-              [:child {:zaffre/style {
-                        :position-type :absolute
-                        :position-start 10
-                        :position-top 10
+            :children [
+              [:child {:style {
+                        :position :absolute
+                        :flex-start 10
+                        :top 10
                         :width 10
                         :height 10}
                        :zaffre/layout {
@@ -104,29 +103,29 @@
 (deftest align-items-test
   (are [in out] (= out (zcl/layout-element in))
     ;; test_align_baseline_double_nested_child
-    [:root {:zaffre/style {
+    [:root {:style {
               :width 100
               :height 100
               :flex-direction :row
               :align-items :baseline
               :direction :ltr}
-            :zaffre/children [
-              [:child0 {:zaffre/style {
+            :children [
+              [:child0 {:style {
                           :width 50
                           :height 50}
-                        :zaffre/children [
-                          [:child00 {:zaffre/style {
+                        :children [
+                          [:child00 {:style {
                                       :width 50
                                       :height 20}}]]}]
-              [:child1 {:zaffre/style {
+              [:child1 {:style {
                           :width 50
                           :height 20}
-                        :zaffre/children [
-                          [:child10 {:zaffre/style {
+                        :children [
+                          [:child10 {:style {
                                       :width 50
                                       :height 15}}]]}]]}]
                         
-    [:root {:zaffre/style {
+    [:root {:style {
               :width 100
               :height 100
               :flex-direction :row
@@ -137,8 +136,8 @@
               :y 0.0
               :width 100.0
               :height 100.0}
-            :zaffre/children [
-              [:child0 {:zaffre/style {
+            :children [
+              [:child0 {:style {
                           :width 50
                           :height 50}
                         :zaffre/layout {
@@ -146,8 +145,8 @@
                           :y 0.0
                           :width 50.0
                           :height 50.0}
-                        :zaffre/children [
-                          [:child00 {:zaffre/style {
+                        :children [
+                          [:child00 {:style {
                                       :width 50
                                       :height 20}
                                      :zaffre/layout {
@@ -155,7 +154,7 @@
                                        :y 0.0
                                        :width 50.0
                                        :height 20.0}}]]}]
-              [:child1 {:zaffre/style {
+              [:child1 {:style {
                           :width 50
                           :height 20}
                         :zaffre/layout {
@@ -163,8 +162,8 @@
                           :y 5.0
                           :width 50.0
                           :height 20.0}
-                        :zaffre/children [
-                          [:child10 {:zaffre/style {
+                        :children [
+                          [:child10 {:style {
                                       :width 50
                                       :height 15}
                                      :zaffre/layout {
@@ -173,22 +172,22 @@
                                        :width 50.0
                                        :height 15.0}}]]}]]}]))
 
-(deftest border-test
+(deftest border-test-center-child
   (are [in out] (= out (zcl/layout-element in))
     ;; test_border_center_child 
-    [:root {:zaffre/style { :justify :center
+    [:root {:style { :justify :center
               :align-items :center
               :border-start 10
               :border-end 20
               :border-bottom 20
               :width 100
               :height 100}
-            :zaffre/children [
-              [:child {:zaffre/style {
+            :children [
+              [:child {:style {
                         :width 10
                         :height 10}}]]}]
 
-    [:root {:zaffre/style {
+    [:root {:style {
               :justify :center
               :align-items :center
               :border-start 10
@@ -201,8 +200,8 @@
               :y 0.0
               :width 100.0
               :height 100.0}
-            :zaffre/children [
-              [:child {:zaffre/style {
+            :children [
+              [:child {:style {
                         :width 10
                         :height 10}
                        :zaffre/layout {
@@ -211,23 +210,23 @@
                         :width 10.0
                         :height 10.0}}]]}]))
 
-(deftest border-test
+(deftest border-test-row-reverse
   (are [in out] (= out (zcl/layout-element in))
     ;; test_flex_direction_row_reverse
-    [:root {:zaffre/style {
+    [:root {:style {
               :direction :ltr
               :flex-direction :row-reverse
               :width 100
               :height 100}
-            :zaffre/children [
-              [:child0 {:zaffre/style {
+            :children [
+              [:child0 {:style {
                         :width 10}}]
-              [:child1 {:zaffre/style {
+              [:child1 {:style {
                         :width 10}}]
-              [:child2 {:zaffre/style {
+              [:child2 {:style {
                         :width 10}}]]}]
 
-    [:root {:zaffre/style {
+    [:root {:style {
               :direction :ltr
               :flex-direction :row-reverse
               :width 100
@@ -237,22 +236,22 @@
               :y 0.0
               :width 100.0
               :height 100.0}
-            :zaffre/children [
-              [:child0 {:zaffre/style {
+            :children [
+              [:child0 {:style {
                           :width 10}
                         :zaffre/layout {
                           :x 90.0
                           :y 0.0
                           :width 10.0
                           :height 100.0}}]
-              [:child1 {:zaffre/style {
+              [:child1 {:style {
                          :width 10}
                         :zaffre/layout {
                           :x 80.0
                           :y 0.0
                           :width 10.0
                           :height 100.0}}]
-              [:child2 {:zaffre/style {
+              [:child2 {:style {
                          :width 10}
                         :zaffre/layout {
                           :x 70.0
@@ -263,22 +262,22 @@
 (deftest margin-test
   (are [in out] (= out (zcl/layout-element in))
     ;; test_margin_auto_left_stretching_child
-    [:root {:zaffre/style {
+    [:root {:style {
               :align-items :center
               :direction :ltr
               :width 200
               :height 200}
-            :zaffre/children [
-              [:child0 {:zaffre/style {
+            :children [
+              [:child0 {:style {
                         :flex-grow 1
                         :flex-shrink 1
                         :flex-basis "0%"
                         :margin-left :auto}}]
-              [:child1 {:zaffre/style {
+              [:child1 {:style {
                         :width 50
                         :height 50}}]]}]
 
-    [:root {:zaffre/style {
+    [:root {:style {
               :align-items :center
               :direction :ltr
               :width 200
@@ -288,8 +287,8 @@
               :y 0.0
               :width 200.0
               :height 200.0}
-            :zaffre/children [
-              [:child0 {:zaffre/style {
+            :children [
+              [:child0 {:style {
                           :flex-grow 1
                           :flex-shrink 1
                           :flex-basis "0%"
@@ -299,7 +298,7 @@
                           :y 0.0
                           :width 0.0
                           :height 150.0}}]
-              [:child1 {:zaffre/style {
+              [:child1 {:style {
                           :width 50
                           :height 50}
                         :zaffre/layout {

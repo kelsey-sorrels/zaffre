@@ -45,13 +45,14 @@
                   :get-initial-state (fn [] {:count 1})
                   :get-derived-state-from-props
                     (fn [this next-props prev-state]
+                      (println "get-derived-state-from-props" next-props prev-state)
                       {:count (+ (get prev-state :count) (get next-props :increment-by))})
                   :render (fn [this]
-                            (let [{:keys [count]} (zc/state this)]
-                            (zc/csx [:div {} [(str "count:" count)]])))})
+                            (let [{:keys [count]} (zc/state this)
+                                  value (str "count:" count)]
+                            (zc/csx [:text {} [value]])))})
           elem (zc/csx [Component {:increment-by 1}])
           rendered-elem (zcr/render-recursively nil nil elem)]
-      (zc/update-state! zc/*updater*)
-      (is (= "count:1" (get-in rendered-elem [:props :children 0 :props :children 0]))))))
+      (is (= "count:1" (first (get-in rendered-elem [:props :children 0 :props :children ])))))))
 
   

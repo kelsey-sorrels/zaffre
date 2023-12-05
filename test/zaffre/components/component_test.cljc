@@ -22,7 +22,7 @@
   (let [elem {:id :test}
         s  (-> (zc/empty-state)
                (zc/enqueue-set-state! elem nil #(assoc % :k :v)))]
-    (is (= (-> s :a deref :q count)) 1)
+    (is (= (-> s :a deref :q count) 1))
     (is (= (-> s :a deref :s) {}))))
 
 (deftest should-update-state-with-callback
@@ -37,7 +37,7 @@
   (let [elem {:id :test}
         s  (-> (zc/empty-state)
                (zc/enqueue-set-state! elem {:k :v} nil))]
-    (is (= (-> s :a deref :q count)) 1)
+    (is (= (-> s :a deref :q count) 1))
     (is (= (-> s :a deref :s) {}))))
 
 (deftest should-update-state-with-partial
