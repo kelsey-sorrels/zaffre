@@ -98,7 +98,6 @@
                  :scm :git
                  :build-uberjar true}
   :global-vars {*warn-on-reflection* true}
-  :java-cmd "/home/santos/Downloads/graalvm-ce-java11-20.1.0/bin/java"
   :jvm-opts ~(if (-> (System/getProperty "os.name")
                     (.toLowerCase)
                     (.contains "mac"))
