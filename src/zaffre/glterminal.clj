@@ -254,7 +254,6 @@
              (let [framebuffer-width (.get width-buffer)
                    framebuffer-height (.get height-buffer)]
                (GL11/glViewport 0 0 framebuffer-width framebuffer-height)
-               (GLFW/glfwMakeContextCurrent 0)
                ;; Signal to parent that display has been created
                [window
                 capabilities
@@ -943,21 +942,19 @@
         _                   (log/info "window" window "capabilities" capabilities)
         _                   (log/info "framebuffer size" framebuffer-width "x" framebuffer-height)
         framebuffer-size    (atom [framebuffer-width framebuffer-height])
-        monitor-fullscreen-sizes (with-gl-context gl-lock window capabilities
-                                   (glfw-fullscreen-sizes))
+        monitor-fullscreen-sizes (glfw-fullscreen-sizes)
         _                   (log/info "monitor-fullscreen-sizes" monitor-fullscreen-sizes)
 
-        group->font-texture (with-gl-context gl-lock window capabilities
-                              (into {}
-                                (mapv (fn [[k v]]
-                                        [k (ref (let [font ((get @v :font) (platform))
-                                                      gg   (if (zfont/glyph-graphics? font)
-                                                               font
-                                                               (zfont/glyph-graphics font))
-                                                      font-texture (texture-id-2d (get gg :font-texture-image))]
-                                                  (log/info "loaded font-texture for" k font-texture (select-keys gg [:font-texture-width :font-texture-height :character-width :character-height]))
-                                               (assoc gg :font-texture font-texture)))])
-                                   group-map)))
+        group->font-texture (into {}
+                              (mapv (fn [[k v]]
+                                      [k (ref (let [font ((get @v :font) (platform))
+                                                    gg   (if (zfont/glyph-graphics? font)
+                                                             font
+                                                             (zfont/glyph-graphics font))
+                                                    font-texture (texture-id-2d (get gg :font-texture-image))]
+                                                (log/info "loaded font-texture for" k font-texture (select-keys gg [:font-texture-width :font-texture-height :character-width :character-height]))
+                                             (assoc gg :font-texture font-texture)))])
+                                 group-map))
         ;; create empty character maps
         layer-character-map-cleared (into {}
                                       (for [[id group-ref] layer-id->group
@@ -1004,48 +1001,44 @@
                                     np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
                                 (log/info "creating buffer for bg textures" np2-columns "x" np2-rows) "x" np2-layers
                                 (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 np2-layers))))
-        glyph-textures      (with-gl-context gl-lock window capabilities
-                              (mapv (fn [layer-group glyph-image-data]
-                                      (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                            np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
-                                            np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
-                                        (log/info "creating glyph texture" np2-columns "x" np2-rows "x" np2-layers)
-                                        (xy-texture-id np2-columns np2-rows np2-layers glyph-image-data)))
-                                    (vals group-map)
-                                    glyph-image-data))
-        fg-textures         (with-gl-context gl-lock window capabilities
-                              (mapv (fn [layer-group fg-image-data]
-                                      (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                            np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
-                                            np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
-                                        (log/info "creating fg texture" np2-columns "x" np2-rows "x" np2-layers)
-                                        (texture-id np2-columns np2-rows np2-layers fg-image-data)))
-                                    (vals group-map)
-                                    fg-image-data))
-        bg-textures         (with-gl-context gl-lock window capabilities
-                              (mapv (fn [layer-group bg-image-data]
-                                      (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                            np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
-                                            np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
-                                        (log/info "creating bg texture" np2-columns "x" np2-rows "x" np2-layers)
-                                        (texture-id np2-columns np2-rows np2-layers bg-image-data)))
-                                    (vals group-map)
-                                    bg-image-data))
-        [fbo-id fbo-texture]
-                            (with-gl-context gl-lock window capabilities (fbo-texture framebuffer-width framebuffer-height))
+        glyph-textures      (mapv (fn [layer-group glyph-image-data]
+                                    (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                          np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                          np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
+                                      (log/info "creating glyph texture" np2-columns "x" np2-rows "x" np2-layers)
+                                      (xy-texture-id np2-columns np2-rows np2-layers glyph-image-data)))
+                                  (vals group-map)
+                                  glyph-image-data)
+        fg-textures        (mapv (fn [layer-group fg-image-data]
+                                   (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                         np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                         np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
+                                     (log/info "creating fg texture" np2-columns "x" np2-rows "x" np2-layers)
+                                     (texture-id np2-columns np2-rows np2-layers fg-image-data)))
+                                 (vals group-map)
+                                 fg-image-data)
+        bg-textures         (mapv (fn [layer-group bg-image-data]
+                                    (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                          np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                          np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
+                                      (log/info "creating bg texture" np2-columns "x" np2-rows "x" np2-layers)
+                                      (texture-id np2-columns np2-rows np2-layers bg-image-data)))
+                                  (vals group-map)
+                                  bg-image-data)
+        [fbo-id fbo-texture] (fbo-texture framebuffer-width framebuffer-height)
         ; init shaders
         [^int pgm-id
-         ^int fb-pgm-id]                   (with-gl-context gl-lock window capabilities (init-shaders (get fx-shader :name)))
-        pos-vertex-attribute               (with-gl-context gl-lock window capabilities (GL20/glGetAttribLocation pgm-id "aVertexPosition"))
-        texture-coords-vertex-attribute    (with-gl-context gl-lock window capabilities (GL20/glGetAttribLocation pgm-id "aTextureCoord"))
-        fb-pos-vertex-attribute            (with-gl-context gl-lock window capabilities (GL20/glGetAttribLocation fb-pgm-id "aVertexPosition"))
-        fb-texture-coords-vertex-attribute (with-gl-context gl-lock window capabilities (GL20/glGetAttribLocation fb-pgm-id "aTextureCoord"))
+         ^int fb-pgm-id]      (init-shaders (get fx-shader :name))
+        pos-vertex-attribute  (GL20/glGetAttribLocation pgm-id "aVertexPosition")
+        texture-coords-vertex-attribute    (GL20/glGetAttribLocation pgm-id "aTextureCoord")
+        fb-pos-vertex-attribute            (GL20/glGetAttribLocation fb-pgm-id "aVertexPosition")
+        fb-texture-coords-vertex-attribute (GL20/glGetAttribLocation fb-pgm-id "aTextureCoord")
 
         ;; We just need one vertex buffer, a texture-mapped quad will suffice for drawing the terminal.
         {:keys [vertices-vbo-id
                 vertices-count
                 texture-coords-vbo-id
-                vao-id]}   (with-gl-context gl-lock window capabilities (init-buffers))
+                vao-id]}   (init-buffers)
         [glyph-tex-dim
          u-MVMatrix
          u-PMatrix
@@ -1056,47 +1049,43 @@
          u-num-layers
          font-size
          term-dim
-         font-tex-dim]     (with-gl-context gl-lock window capabilities
-                             (mapv #(GL20/glGetUniformLocation pgm-id (str %))
-                                   ["glyphTextureDimensions"
-                                    "uMVMatrix"
-                                    "uPMatrix"
-                                    "uFont"
-                                    "uGlyphs"
-                                    "uFg"
-                                    "uBg"
-                                    "numLayers"
-                                    "fontSize"
-                                    "termDimensions"
-                                    "fontTextureDimensions"]))
+         font-tex-dim]     (mapv #(GL20/glGetUniformLocation pgm-id (str %))
+                                 ["glyphTextureDimensions"
+                                  "uMVMatrix"
+                                  "uPMatrix"
+                                  "uFont"
+                                  "uGlyphs"
+                                  "uFg"
+                                  "uBg"
+                                  "numLayers"
+                                  "fontSize"
+                                  "termDimensions"
+                                  "fontTextureDimensions"])
         [u-fb
          u-fb-MVMatrix
-         u-fb-PMatrix]     (with-gl-context gl-lock window capabilities
-                             (mapv #(GL20/glGetUniformLocation fb-pgm-id (str %))
-                                   ["uFb"
-                                    "uMVMatrix"
-                                    "uPMatrix"]))
+         u-fb-PMatrix]     (mapv #(GL20/glGetUniformLocation fb-pgm-id (str %))
+                                 ["uFb"
+                                  "uMVMatrix"
+                                  "uPMatrix"])
         ;; map from uniform name (string) to [value atom, uniform location]
         fx-uniforms        (reduce (fn [uniforms [uniform-name value]]
                                      (assoc uniforms
                                             uniform-name
                                             [(atom value)
-                                             (with-gl-context gl-lock window capabilities
-                                               (log/info "getting location of uniform" uniform-name)
-                                               (let [location (GL20/glGetUniformLocation fb-pgm-id (str uniform-name))]
-                                                 (assert (not (neg? location)) (str "Could not find location for uniform " uniform-name location))
-                                                 (log/info "got location of uniform" uniform-name location)
-                                                 location))]))
+                                             (log/info "getting location of uniform" uniform-name)
+                                             (let [location (GL20/glGetUniformLocation fb-pgm-id (str uniform-name))]
+                                               (assert (not (neg? location)) (str "Could not find location for uniform " uniform-name location))
+                                               (log/info "got location of uniform" uniform-name location)
+                                               location)]))
                                    {}
                                    (get fx-shader :uniforms))
-        _                  (with-gl-context gl-lock window capabilities
-                             (doseq [idx (range (GL20/glGetProgrami fb-pgm-id GL20/GL_ACTIVE_UNIFORMS))]
-                               (let [length-buffer (BufferUtils/createIntBuffer 1)
-                                     size-buffer (BufferUtils/createIntBuffer 1)
-                                     type-buffer (BufferUtils/createIntBuffer 1)
-                                     name-buffer (BufferUtils/createByteBuffer 100)
-                                     uniform-name (GL20/glGetActiveUniform fb-pgm-id idx 256 size-buffer type-buffer)]
-                               (log/info "Found uniform" uniform-name))))
+        _                  (doseq [idx (range (GL20/glGetProgrami fb-pgm-id GL20/GL_ACTIVE_UNIFORMS))]
+                             (let [length-buffer (BufferUtils/createIntBuffer 1)
+                                   size-buffer (BufferUtils/createIntBuffer 1)
+                                   type-buffer (BufferUtils/createIntBuffer 1)
+                                   name-buffer (BufferUtils/createByteBuffer 100)
+                                   uniform-name (GL20/glGetActiveUniform fb-pgm-id idx 256 size-buffer type-buffer)]
+                               (log/info "Found uniform" uniform-name)))
         key-callback          (proxy [GLFWKeyCallback] []
                                 (invoke [window key scancode action mods]
                                   (when-let [key (zkeyboard/convert-key-code key scancode action mods)]
@@ -1163,8 +1152,7 @@
                             :attributes {:pos-vertex-attribute pos-vertex-attribute
                                          :texture-coords-vertex-attribute texture-coords-vertex-attribute
                                          :fb-pos-vertex-attribute fb-pos-vertex-attribute
-                                         :fb-texture-coords-vertex-attribute fb-texture-coords-vertex-attribute
-}
+                                         :fb-texture-coords-vertex-attribute fb-texture-coords-vertex-attribute}
                             :program-id pgm-id
                             :fb-program-id fb-pgm-id
                             :uniforms {:u-MVMatrix u-MVMatrix
@@ -1210,105 +1198,107 @@
                                             destroyed
                                             window
                                             capabilities)]
-    ;; Access to terminal will be multi threaded. Release context so that other threads can access it)))
-    (when fullscreen
-      (zat/set-window-size! terminal (first (zat/fullscreen-sizes terminal))))
-    ;; Start font file change listener thread
-    ; TODO: fix resource reloader
-    #_(cwc/start-watch [{:path "./fonts"
-                       :event-types [:modify]
-                       :bootstrap (fn [path] (println "Starting to watch " path))
-                       :callback (fn [_ filename]
-                                   (println "Reloading font" filename)
-                                   (reset! normal-font
-                                           (make-font filename Font/PLAIN font-size)))
-                       :options {:recursive true}}])
-    ;; Poll keyboard in background thread and offer input to key-chan
-    ;; If gl-lock is false ie: the window has been closed, put :exit on the term-chan
-    (reset! key-callback-atom key-callback)
-    (reset! char-callback-atom char-callback)
-    (reset! mouse-button-callback-atom mouse-button-callback)
-    (reset! cursor-pos-callback-atom cursor-pos-callback)
-    (GLFW/glfwSetKeyCallback window key-callback)
-    (GLFW/glfwSetCharCallback window char-callback)
-    (GLFW/glfwSetMouseButtonCallback window mouse-button-callback)
-    (GLFW/glfwSetCursorPosCallback window cursor-pos-callback)
-    (future
-      ;; Wait for main thread loop to start
-      (.await latch)
-      (f terminal))
-    (let [primary-video-mode (with-gl-context gl-lock window capabilities
-                               (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor)))
-          current-video-mode (atom (with-gl-context gl-lock window capabilities
-                                     (glfw-current-monitor window)))]
-      (log/info "current-video-mode" @current-video-mode)
-      (reset! window-size @current-video-mode)
-      (loop []
-        (.countDown latch)
-        (if (with-gl-context gl-lock window capabilities
-              (except-gl-errors "Start of loop")
-              ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
-              ; input on the thread that created the window
-              (GLFW/glfwPollEvents)
-              ;; Close the display if the close window button has been clicked
-              ;; or the gl-lock has been released programmatically (e.g. by destroy!)
-              (or (GLFW/glfwWindowShouldClose window) @destroyed))
-          (do
-            (log/info "Destroying display")
-            (with-gl-context gl-lock window capabilities
-              (reset! gl-lock false)
-              ;; TODO: Clean up textures and programs
-              ;;(let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id vao-id fbo-id]} :buffers
-              ;;       {:keys [font-texture glyph-texture fg-texture bg-texture fbo-texture]} :textures
-              ;;       program-id :program-id
-              ;;       fb-program-id :fb-program-id} gl]
-                (doseq [id [pgm-id fb-pgm-id]]
-                  (GL20/glDeleteProgram (int id)))
-                (doseq [id (flatten [[fbo-texture] glyph-textures fg-textures bg-textures])]
-                  (GL11/glDeleteTextures (int id))))
-              (GLFW/glfwDestroyWindow window)
-            (log/info "Exiting"))
-          (do
-            (when-not (= @current-video-mode @window-size)
-              (log/info "window change. Old size" @current-video-mode "New size" @window-size)
-              (with-gl-context gl-lock window capabilities
-                (cond
-                  ;; fullscreen mode
-                  (pos? (get @window-size :monitor 0))
-                  (let [{:keys [width height refresh-rate monitor]} @window-size]
-                    (log/info "setting window monitor fullscreen" window monitor 0 0 width height refresh-rate)
-                    (GLFW/glfwSetWindowMonitor window
-                                               monitor
-                                               0
-                                               0
-                                               width
-                                               height
-                                               refresh-rate))
-                  ;; fullscren -> windowed mode
-                  (pos? (get @current-video-mode :monitor 0))
-                  (let [{:keys [width height]} @window-size]
-                    (log/info "setting window monitor windowed from fullscreen" window 0 0 0 width height 0)
-                    (GLFW/glfwSetWindowMonitor window
-                                               (long 0)
-                                               (int 0)
-                                               (int 0)
-                                               (int width)
-                                               (int height)
-                                               (int 0)))
-                  :else
-                  (let [{:keys [width height]} @window-size]
-                    (log/info "setting window monitor windowed from windowed" window 0 0 0 width height 0)
-                    (GLFW/glfwSetWindowSize window width height)
-                    (GLFW/glfwSetWindowPos window (quot (- (.width primary-video-mode) screen-width) 2)
-                                                  (quot (- (.height primary-video-mode) screen-height) 2))
-                    (let [[framebuffer-width framebuffer-height :as fb-size] (glfw-framebuffer-size window)
-                          ^ByteBuffer bbnil nil]
-                      (reset! framebuffer-size fb-size)
-                      (log/info "Changing size of fbo" fbo-texture)
-                      (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
-                      (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB framebuffer-width framebuffer-height 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bbnil)
-                      (GL11/glBindTexture GL11/GL_TEXTURE_2D 0))))
-                (reset! current-video-mode @window-size)))
-            (GLFW/glfwWaitEvents)
-            (recur)))))))
+        ;; Release gl context before starting terminal
+        (GLFW/glfwMakeContextCurrent 0)
+        ;; Access to terminal will be multi threaded. Release context so that other threads can access it
+        (when fullscreen
+          (zat/set-window-size! terminal (first (zat/fullscreen-sizes terminal))))
+        ;; Start font file change listener thread
+        ; TODO: fix resource reloader
+        #_(cwc/start-watch [{:path "./fonts"
+                           :event-types [:modify]
+                           :bootstrap (fn [path] (println "Starting to watch " path))
+                           :callback (fn [_ filename]
+                                       (println "Reloading font" filename)
+                                       (reset! normal-font
+                                               (make-font filename Font/PLAIN font-size)))
+                           :options {:recursive true}}])
+        ;; Poll keyboard in background thread and offer input to key-chan
+        ;; If gl-lock is false ie: the window has been closed, put :exit on the term-chan
+        (reset! key-callback-atom key-callback)
+        (reset! char-callback-atom char-callback)
+        (reset! mouse-button-callback-atom mouse-button-callback)
+        (reset! cursor-pos-callback-atom cursor-pos-callback)
+        (GLFW/glfwSetKeyCallback window key-callback)
+        (GLFW/glfwSetCharCallback window char-callback)
+        (GLFW/glfwSetMouseButtonCallback window mouse-button-callback)
+        (GLFW/glfwSetCursorPosCallback window cursor-pos-callback)
+        (future
+          ;; Wait for main thread loop to start
+          (.await latch)
+          (f terminal))
+        (let [primary-video-mode (with-gl-context gl-lock window capabilities
+                                   (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor)))
+              current-video-mode (atom (with-gl-context gl-lock window capabilities
+                                         (glfw-current-monitor window)))]
+          (log/info "current-video-mode" @current-video-mode)
+          (reset! window-size @current-video-mode)
+          (loop []
+            (.countDown latch)
+            (if (with-gl-context gl-lock window capabilities
+                  (except-gl-errors "Start of loop")
+                  ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
+                  ; input on the thread that created the window
+                  (GLFW/glfwPollEvents)
+                  ;; Close the display if the close window button has been clicked
+                  ;; or the gl-lock has been released programmatically (e.g. by destroy!)
+                  (or (GLFW/glfwWindowShouldClose window) @destroyed))
+              (do
+                (log/info "Destroying display")
+                (with-gl-context gl-lock window capabilities
+                  (reset! gl-lock false)
+                  ;; TODO: Clean up textures and programs
+                  ;;(let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id vao-id fbo-id]} :buffers
+                  ;;       {:keys [font-texture glyph-texture fg-texture bg-texture fbo-texture]} :textures
+                  ;;       program-id :program-id
+                  ;;       fb-program-id :fb-program-id} gl]
+                    (doseq [id [pgm-id fb-pgm-id]]
+                      (GL20/glDeleteProgram (int id)))
+                    (doseq [id (flatten [[fbo-texture] glyph-textures fg-textures bg-textures])]
+                      (GL11/glDeleteTextures (int id))))
+                  (GLFW/glfwDestroyWindow window)
+                (log/info "Exiting"))
+              (do
+                (when-not (= @current-video-mode @window-size)
+                  (log/info "window change. Old size" @current-video-mode "New size" @window-size)
+                  (with-gl-context gl-lock window capabilities
+                    (cond
+                      ;; fullscreen mode
+                      (pos? (get @window-size :monitor 0))
+                      (let [{:keys [width height refresh-rate monitor]} @window-size]
+                        (log/info "setting window monitor fullscreen" window monitor 0 0 width height refresh-rate)
+                        (GLFW/glfwSetWindowMonitor window
+                                                   monitor
+                                                   0
+                                                   0
+                                                   width
+                                                   height
+                                                   refresh-rate))
+                      ;; fullscren -> windowed mode
+                      (pos? (get @current-video-mode :monitor 0))
+                      (let [{:keys [width height]} @window-size]
+                        (log/info "setting window monitor windowed from fullscreen" window 0 0 0 width height 0)
+                        (GLFW/glfwSetWindowMonitor window
+                                                   (long 0)
+                                                   (int 0)
+                                                   (int 0)
+                                                   (int width)
+                                                   (int height)
+                                                   (int 0)))
+                      :else
+                      (let [{:keys [width height]} @window-size]
+                        (log/info "setting window monitor windowed from windowed" window 0 0 0 width height 0)
+                        (GLFW/glfwSetWindowSize window width height)
+                        (GLFW/glfwSetWindowPos window (quot (- (.width primary-video-mode) screen-width) 2)
+                                                      (quot (- (.height primary-video-mode) screen-height) 2))
+                        (let [[framebuffer-width framebuffer-height :as fb-size] (glfw-framebuffer-size window)
+                              ^ByteBuffer bbnil nil]
+                          (reset! framebuffer-size fb-size)
+                          (log/info "Changing size of fbo" fbo-texture)
+                          (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
+                          (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB framebuffer-width framebuffer-height 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bbnil)
+                          (GL11/glBindTexture GL11/GL_TEXTURE_2D 0))))
+                    (reset! current-video-mode @window-size)))
+                (GLFW/glfwWaitEvents)
+                (recur)))))))
       
