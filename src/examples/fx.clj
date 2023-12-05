@@ -20,18 +20,21 @@
         (< h 300) [x 0 c]
         (< h 360) [c 0 x]))))
 
+(def font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2 false))
+
 (defn -main [& _]
   (zgl/create-terminal
-    [:text :rainbow]
+    {:app {
+       :layers [:text :rainbow]
+       :columns 16
+       :rows 16
+       :pos [0 0]
+       :font (constantly font)}}
     {:title "Zaffre demo"
-     :columns 80 :rows 24
+     :screen-width (* 16 16)
+     :screen-height (* 16 16)
      :default-fg-color [250 250 250]
-     :default-bg-color [5 5 8]
-     :windows-font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 false)
-     :else-font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 false)
-     :icon-paths ["images/icon-16x16.png"
-                  "images/icon-32x32.png"
-                  "images/icon-128x128.png"]}
+     :default-bg-color [5 5 8]}
      (fn [terminal]
        (let [term-pub    (zat/pub terminal)
              key-chan    (async/chan)
@@ -71,9 +74,9 @@
              \q (zat/destroy! terminal)
              nil)
            (recur)))
-       (let [_ (async/<! close-chan)]
-         (async/close! fx-chan)
-         (async/close! render-chan)
-         (System/exit 0))))))
+       (async/<! close-chan)
+       (async/close! fx-chan)
+       (async/close! render-chan)
+       (System/exit 0)))))
 
 
