@@ -55,20 +55,20 @@
         :layers [:text]
         :columns 16
         :rows 16
-        :pos [0 0]}
+        :pos [0 0]
+        :font (fn [_] font)}
       :foreground {
         :layers [:overlay]
         :columns 16
         :rows 16
-        :pos [8 8]}
+        :pos [8 8]
+        :font (fn [_] (CP437Font.  "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 true))}
      }
      {:title "Zaffre demo"
       :screen-width (* 16 16)
       :screen-height (* 16 16)
       :default-fg-color [250 250 250]
       :default-bg-color [5 5 8]
-      :windows-font font
-      :else-font font
       :icon-paths ["images/icon-16x16.png"
                    "images/icon-32x32.png"
                    "images/icon-128x128.png"]}
