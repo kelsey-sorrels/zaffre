@@ -86,7 +86,7 @@ Runs a little hello world terminal
 
 Run with
 
-`lein run examples.basic`
+`lein run -m examples.basic`
 
 or
 
