@@ -5,6 +5,7 @@
     [clj-http.client :as client]
     [clojure.java.io :as jio]
     [clojure.core.cache :as cache]
+    [clojure.core.async :refer [go-loop timeout <!]]
     [clojure.pprint :as pprint]
     [taoensso.timbre :as log]
     rockpick.core
@@ -100,18 +101,27 @@ maps))
   [props _]
   (let [[value set-value!] (g/use-state (get props :value ""))
         [focused set-focus!] (g/use-state (get props :focus false))
-         default-props {:max-length 28
-                        :style {:width 30
-                                :height 1
-                                :display :flex
-                                :flex-direction :row
-                                :cursor-char-on \u2592
-                                :cursor-char-off \space
-                                :cursor-fg (zcolor/color 255 255 255 255)
-                                :cursor-bg (zcolor/color 0 0 0 255)}}
-         props (assoc (merge default-props props)
-                 :style (merge (:style props)
-                               (:style default-props)))]
+        [show-cursor set-show-cursor!] (g/use-state false)
+        duty-on 400
+        duty-off 400
+        default-props {:max-length 28
+                       :style {:width 30
+                               :height 1
+                               :display :flex
+                               :flex-direction :row
+                               :cursor-char-on \u2592
+                               :cursor-char-off \space
+                               :cursor-fg (zcolor/color 255 255 255 255)
+                               :cursor-bg (zcolor/color 0 0 0 255)}}
+        props (assoc (merge default-props props)
+                :style (merge (:style props)
+                              (:style default-props)))]
+
+     (g/use-effect (fn []
+       (go-loop []
+         (<! (timeout 400))
+         (set-show-cursor! not)
+         (recur))) [])
 
      #_(log/info "Input value" value (type value))
      #_(log/info "props" props)
@@ -132,16 +142,12 @@ maps))
               {:keys [width
                       cursor-char-on cursor-char-off
                       cursor-fg cursor-bg]}  style
-              duty-on 400
-              duty-off 400
-              t (mod (System/currentTimeMillis) (+ duty-on duty-off))
-              show-cursor (< t duty-on)
               cursor (if (and focused show-cursor) cursor-char-on cursor-char-off)]
           #_(log/debug "Input render" show-cursor (dissoc props :children))
           #_(log/info "Input width" width (type width))
-          #_(log/info "cursor fg" cursor-fg "cursor-bg" cursor-bg "t" t "cursor" cursor)
+          #_(log/info "cursor fg" cursor-fg "cursor-bg" cursor-bg "cursor" cursor)
           [:view {:style style
-                  :class :tabbable
+                  :class :tabable
                   :on-focus on-focus
                   :on-blur on-blur
                   :on-keypress on-keypress}

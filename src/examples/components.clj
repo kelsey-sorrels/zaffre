@@ -88,8 +88,6 @@
     [:terminal {}
       [:group {:id :ui}
         [:layer {:id :main}
-          [:view {:key "fps"}
-            [:text {} [(str fps)]]
           [:view {:key "inputs"}
             [Clock {:key "clock"}]
             [FPSMeter {:key "fpsmeter"}]
@@ -103,7 +101,7 @@
             #_[zcui/Input {:key "input3"
                          :style {:cursor-fg (zcolor/color 208 65 244)}
                          :on-change text-value-on-change} []]]
-          [:view {:key "images"
+          #_[:view {:key "images"
                   :style {:border 1
                           :border-style :single
                           :text-align :right}}
@@ -118,8 +116,8 @@
               [:text {:key 4 :style {:color (zcolor/color 0 255 255)}} "or"]
               [:text {:key 5 :style {:color (zcolor/color 0 0 255)}} "ld"]
               [:text {:key 6 :style {:color (zcolor/color 0 0 0) :bg (zcolor/color 255 255 255)}} text-value]]]
-          [:view {:key "lorem" :style {:border 1 :border-style :double}}
-            [:text {:style {:text-align :right}} text]]]]
+          #_[:view {:key "lorem" :style {:border 1 :border-style :double}}
+            [:text {:style {:text-align :right}} text]]]
         #_[:layer {:id :popup}
             [zcui/Popup {} [#_[:text {} ["popup"]]
                              [:view {:style {:width 20
@@ -215,11 +213,9 @@
                                  (reset! frames 0))
                                zc/*pool*)]
         (zcr/render terminal UI
-           {:fps @fps
-             :show-popup @show-popup
-             :text-value @text-value
-             :text-value-on-change on-change-text-value}
-           frames)
+           {:show-popup @show-popup
+            :text-value @text-value
+            :text-value-on-change on-change-text-value})
 
         ;; Every 20ms, draw a full frame
         #_(zat/do-frame terminal 20
@@ -255,7 +251,7 @@
               \t (log/set-level! :trace)
               \d (log/set-level! :debug)
               \i (log/set-level! :info)
-              \s (clojure.inspector/inspect-tree @last-dom)
+              #_#_\s (clojure.inspector/inspect-tree @last-dom)
               \q (do
                    (atat/stop fps-fn)
                    (atat/stop-and-reset-pool! zc/*pool* :strategy :kill)

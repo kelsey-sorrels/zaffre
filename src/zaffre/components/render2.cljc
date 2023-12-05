@@ -655,31 +655,180 @@
   [f]
   (swap! request-animation-frame-handlers conj f))
 
+(defn leaf-elements
+  [dom]
+  (let [dom-type (get dom :type )]
+    (when (contains? #{:view :text :img} dom-type)
+        (log/info (update dom :props (fn [props] (dissoc props :children)))))
+  (when-let [children (-> dom :props :children)]
+    (doseq [child children]
+      (leaf-elements child)))))
+
+(defn in-element?
+  [col row element]
+  (log/info "in-element?" col row element)
+  (let [minx (-> element second :zaffre/layout :x)
+        miny (-> element second :zaffre/layout :y)
+        width (-> element second :zaffre/layout :width)
+        height (-> element second :zaffre/layout :height)
+        maxx (+ minx width)
+        maxy (+ miny height)]
+  (and (<= minx col (dec maxx))
+       (<= miny row (dec maxy)))))
+
+(defn handle-click [layout-elements event]
+  (let [{:keys [col row]} event
+        hits (filter (partial in-element? col row) (reverse layout-elements))]
+    #_(clojure.inspector/inspect-tree layout-elements)
+    (log/info col row)
+    (log/info "hits:" (count hits))
+    (doseq [hit hits]
+      (when-let [on-click (-> hit second :on-click)]
+        (on-click {:client-x (- col (-> hit second :zaffre/layout :x))
+                   :client-y (- row (-> hit second :zaffre/layout :y))
+                   :screen-x col
+                   :screen-y row
+                   :target hit})))))
+
+(defn handle-mouse-enter [layout-elements event]
+  (let [{:keys [col row]} event
+        hits (filter (partial in-element? col row) (reverse layout-elements))]
+    (log/trace col row)
+    (log/trace (count hits) "hits")
+    (doseq [hit hits]
+      (when-let [on-mouse-enter (-> hit second :on-mouse-enter)]
+        (on-mouse-enter {:target hit})))))
+
+
+(defn handle-mouse-leave [layout-elements event]
+  (let [{:keys [col row]} event
+        hits (filter (partial in-element? col row) (reverse layout-elements))]
+    (log/trace (count hits) "hits")
+    (log/trace col row)
+    (doseq [hit hits]
+      (when-let [on-mouse-leave (-> hit second :on-mouse-leave)]
+        (on-mouse-leave {:target hit})))))
+
+(defonce tab-index (atom -1))
+
+
+(defn tabbable-elements
+  [container]
+  (log/info "tabbable-elements")
+  (doseq [e (tree-seq vector? (fn [[_ _ children]] children) container)]
+    (log/info "tabbable element" (if (vector e) (vec (take 2 e)) e)))
+  (->> container
+    (tree-seq vector? (fn [[_ _ children]] children))
+    (filter vector?)
+    (filter (fn [e] (< 2 (count e))))
+    (filter (fn [[_ props _]]
+              #_(log/info "props" props)
+              (let [class-name (get props :class)
+                    class-name (cond
+                                 (set? class-name)
+                                   class-name
+                                 (nil? class-name)
+                                   #{}
+                                 :else
+                                   #{class-name})]
+                (log/info "class-name" class-name (contains? class-name :tabable))
+                (contains? class-name :tabable))))
+    vec))
+
+(defn advance-tab-index!
+  [container]
+  (swap! tab-index (fn [index]
+    (if (= -1 index)
+      0
+      (mod (inc index) (count (tabbable-elements container)))))))
+
+(defn decrease-tab-index!
+  [container]
+  (swap! tab-index (fn [index]
+    (mod (dec index) (count (tabbable-elements container))))))
+
+(defn active-element
+  [container]
+  (if-not (neg? @tab-index)
+    (-> container
+      tabbable-elements
+      (nth @tab-index))
+    container))
+
+(defn handle-keypress
+  [target-element k action]
+  (log/info "handle-keypress" (vec (take 2 target-element)))
+  (when-let [on-keypress (-> target-element second :on-keypress)]
+    (on-keypress {:key k :target target-element})))
+
 (defn render 
-  [terminal component props frames]
+  [terminal component props]
   ; render into an empty vector
-  (let [exec-in-context (chan (buffer 100))
-        render-chan (g/render-with-context component props exec-in-context)]
+  (let [term-pub (zt/pub terminal)
+        keypress-chan (chan (buffer 100))
+        click-chan (chan (buffer 100))
+        mouse-enter-chan (chan (buffer 100))
+        mouse-leave-chan (chan (buffer 100))
+        exec-in-context (chan (buffer 100))
+        render-chan (g/render-with-context component props exec-in-context)
+        last-render (atom nil)
+        last-layout (atom nil)]
+
+    ; Subscribe to events and send them to chans
+    (a/sub term-pub :keypress keypress-chan)
+    (a/sub term-pub :click click-chan)
+    (a/sub term-pub :mouse-enter mouse-enter-chan)
+    (a/sub term-pub :mouse-leave mouse-leave-chan)
+
     ; Listen for renders and print them out
     (go-loop []
       (let [[container port] (a/alts! [render-chan] :default nil)]
         (try
           #_(clojure.pprint/pprint (g/clj-elements dom-element))
           (when-not (= port :default)
-            (let [element (g/clj-elements container)]
+            (let [root-element (g/clj-elements container)]
+              #_(log/info "root-element" root-element)
               (doseq [animation-frame-request @request-animation-frame-handlers]
                 (try
                   (>! exec-in-context animation-frame-request)
                   (catch Throwable t
                     (log/error t))))
               (reset! request-animation-frame-handlers [])
-              (render-into-container terminal element))
-          (log/trace "After frames inc"))
+              ; Render elements to chars, update terminal layers
+              (let [dom (render-into-container terminal root-element)
+                    ; capture element layout
+                    {:keys [layout-elements]} (meta dom)]
+                #_(log/info "layout-elements" (vec layout-elements))
+                ; Store last render for event handlers
+                ; TODO: on first render set tabable index to last element claiming focus. -1 otherwise.
+                (reset! last-render root-element)
+                ; Store last layout for event handlers
+                (reset! last-layout layout-elements))))
+          ; Draw terminal frame
           (zt/refresh! terminal)
-          (swap! frames inc)
           (catch Throwable t
             (log/error t)))
-        (recur)))))
+        (recur)))
+     ;; All handlers use exec-in-context so that gossamer bindings are avalable during execution
+     (go-loop []
+       (when-let [layout @last-layout]
+         (let [[event event-chan] (a/alts! [keypress-chan click-chan mouse-enter-chan mouse-leave-chan] :default nil)]
+           (condp = event-chan
+             keypress-chan
+               (let [[k action] event]
+                 (case k
+                   :tab
+                     (advance-tab-index! @last-render)
+                   ; else, send to active element
+                   (>! exec-in-context (partial handle-keypress (active-element @last-render) k action))))
+             click-chan
+               (>! exec-in-context (partial handle-click layout event))
+             mouse-enter-chan
+               (>! exec-in-context (partial handle-mouse-enter layout (first event)))
+             mouse-leave-chan
+               (>! exec-in-context (partial handle-mouse-leave layout (first event)))
+             :default nil)))
+       (recur))))
 
 (defmacro defcomponent
   [compname args & body]
