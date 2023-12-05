@@ -18,6 +18,33 @@
   (or (string? component)
       (contains? primitive-elements (first component))))
 
+(def text-forbidden-styles
+  #{:border
+    :border-left
+    :border-right
+    :border-top
+    :border-bottom
+    :border-horizontal
+    :border-vertical
+    :padding
+    :padding-left
+    :padding-right
+    :padding-top
+    :padding-bottom
+    :padding-horizontal
+    :padding-vertical})
+
+(defn cascade-style
+  ([element] (cascade-style {} element))
+  ([parent-style [type props children]]
+    (if (= type :text)
+      [type (update-in props [:style] #(apply dissoc (merge parent-style %) text-forbidden-styles)) children]
+      (let [new-style (merge parent-style (get props :style {}))]
+        [type
+         (assoc props :style new-style)
+         (map (partial cascade-style new-style) children)]))))
+      
+
 (defn render-string-into-container [target x y fg bg s]
   {:pre [(number? x)
          (number? y)
@@ -34,19 +61,35 @@
           (recur (inc index) (rest s))))))))
 
 (defn render-text-into-container [target text-element]
+  {:pre [(= (first text-element) :text)
+         (map? (second text-element))
+         (not (empty?  (last text-element)))]}
   (log/trace "render-text-into-container" text-element)
-  (let [[type {:keys [zaffre/layout] :as props} children] text-element
+  (let [[type {:keys [style zaffre/layout] :or {style {}} :as props} children] text-element
         {:keys [x y width height]} layout
+        {:keys [text-align] :or {text-align :left}} style
         lines (ztext/word-wrap-text-tree width height text-element)]
     (log/trace "render-text-into-container lines" (vec lines))
     (doseq [[dy line] (map-indexed vector lines)]
       (when (< dy height)
         (log/trace "rendering line" (vec line))
         ;; remove inc? for spaces
-        (let [span-lengths (map (fn [[_ _ length]] length) line)
-              offsets (cons 0 (reductions + span-lengths))]
+        (let [but-last (butlast line)
+              last-span (let [[s style _] (last line)
+                              s (clojure.string/trim s)]
+                         [s style (count s)])
+              line (concat but-last (list last-span))
+              _ (log/trace "rendering line2" (vec line))
+              span-lengths (map (fn [[s _ length]] length) line)
+              line-length (reduce + 0 span-lengths)
+              align-offset (case text-align
+                             :left 0
+                             :center (/ (- width line-length) 2)
+                             :right (- width line-length))
+              offsets (map (partial + align-offset) (cons 0 (reductions + span-lengths)))]
+          (log/trace "line-length" line-length)
           (log/trace "lengths" (vec span-lengths))
-          (log/trace "offsets" offsets)
+          (log/trace "offsets" (vec offsets))
           (doseq [[dx [s {:keys [fg bg]} _]] (map vector offsets line)]
             (render-string-into-container
               target
@@ -327,8 +370,11 @@
         layer-info (layer-info group-info)
         ;; render to native elements
         root-element (render-recursively component)
-        [[type props groups] & _] (extract-native-elements root-element)]
-    (log/trace "render-into-container" root-element)
+        [type props groups :as root-dom] (-> root-element
+                                            extract-native-elements
+                                            first
+                                            cascade-style)]
+    (log/trace "render-into-container" root-dom)
     (assert (= type :terminal)
             (format "Root component not :terminal found %s instead" type))
     ;; for each group in terminal
