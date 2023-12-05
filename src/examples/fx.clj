@@ -25,12 +25,22 @@
 
 (defn -main [& _]
   (zgl/create-terminal
+    ;; base layer is text
     {:app {
-       :layers [:text :rainbow]
+       :layers [:text]
        :columns 16
        :rows 16
        :pos [0 0]
-       :font (constantly font)}}
+       :font (constantly font)}
+     ;; fx-mul layer is a multiplicative blend layer
+     :fx-mul {
+       :layers [:rainbow]
+       :columns 16
+       :rows 16
+       :pos [0 0]
+       :font (constantly font)
+       :gl-blend-equation :gl-func-add
+       :gl-blend-func [:gl-dst-color :gl-zero]}}
     {:title "Zaffre demo"
      :screen-width (* 16 16)
      :screen-height (* 16 16)
@@ -38,23 +48,24 @@
      :default-bg-color [5 5 8]}
     (fn [terminal]
       (let [last-key    (atom nil)]
-        ;; Every 10ms, set the "Rainbow" text to have a random fg color
-        (go-loop []
-          (dosync
-            (doseq [x (range (count "Rainbow"))
-                    :let [rgb (hsv->rgb (double (rand 360)) 1.0 1.0)]]
-                (zat/set-fx-fg! terminal :rainbow (inc x) 1 rgb)))
-            (zat/refresh! terminal)
-          (Thread/sleep 10)
-          (recur))
-            ;; Every 33ms, draw a full frame
+        ;; Every 33ms, draw a full frame
         (zat/do-frame terminal 33
           (let [key-in (or @last-key \?)]
+            ; text
             (zutil/put-string terminal :text 0 0 "Hello world")
+            (zutil/put-string terminal :text 1 1 "Rainbow")
             (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
               (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
             (zutil/put-string terminal :text 12 0 (str key-in))
-            (zutil/put-string terminal :rainbow 1 1 "Rainbow")))
+            ; fx (note the only characters we're drawing if full-cell boxes
+            (doseq [y (range 16)]
+              (zutil/put-string terminal :rainbow 0 y (apply str (repeat 16 " "))))
+            (doseq [x (range 16)
+                    y (range 16)]
+                (zat/set-bg! terminal :rainbow x y [255, 255, 255]))
+            (doseq [x (range (count "Rainbow"))
+                    :let [rgb (hsv->rgb (double (rand 360)) 1.0 1.0)]]
+                (zat/set-bg! terminal :rainbow (inc x) 1 rgb))))
       ;; get key presses in fg thread
       (zevents/add-event-listener terminal :keypress
         (fn [new-key]
