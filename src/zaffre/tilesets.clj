@@ -34,9 +34,11 @@
                   [:dark-water :locked-door :open-door    :masonry-parapet :window     :ladder       :stairs-up   :stairs-down]
                   [:cactus     :skull       :boulder      :crate           :barrel     :chest-closed :chest-open  :blank]])
 
-(def one-bit-tileset (zfont/tileset "http://opengameart.org/sites/default/files/tileset_1bit.png" :green 16 16 0
-                                    (map->tile->col-row one-bit-map)
-                                    (map->tile->transparent one-bit-map false)))
+(def one-bit-tileset
+  (delay (zfont/tileset "http://opengameart.org/sites/default/files/tileset_1bit.png"
+                        :green 16 16 0
+                        one-bit-map
+                        (map->tile->transparent one-bit-map false))))
 
 ;; 2-bit tileset by Muziak
 ;; http://pixeljoint.com/pixelart/71895.htm
@@ -54,9 +56,11 @@
                   [:pine-nw :pine-ne :empty :empty :empty :empty :empty :empty :empty :empty :empty :empty]
                   [:pine-sw :pine-se :empty :empty :empty :empty :empty :empty :empty :empty :empty :empty]])
 
-(def two-bit-tileset (zfont/tileset "http://pixeljoint.com/files/icons/full/tileset__r1752392111.png" :alpha 16 16 1
-                                    (map->tile->col-row two-bit-map)
-                                    (map->tile->transparent two-bit-map true)))
+(def two-bit-tileset
+  (delay (zfont/tileset "http://pixeljoint.com/files/icons/full/tileset__r1752392111.png"
+                        :alpha 16 16 0
+                        two-bit-map
+                        (map->tile->transparent two-bit-map true))))
 
 ;; Roguelike tileset by Derek
 ;; Non-commercial
@@ -78,9 +82,11 @@
    [:staff :nunchuck :three-section-staff :halberd :glave :fauchard :armor-leather :armor-pelt :armor-chain :armor-plate :silver-plate :bronze-plate :iron-plate :gold-plate :ice-wolf]
    [:wand-blue :wand-red :wand-yellow :wand-purple :wand-green :wand-brown :quiver :ice-quiver :robes :red-armor :grey-armor :grey-plate :full-armor :? :?]])
 
-(def d-roguelike (zfont/tileset "http://40.media.tumblr.com/7a9682566f3c68afb661f347116fad90/tumblr_mh2mhude3E1qcptgwo1_250.png" :alpha 16 16 0
-                                (map->tile->col-row roguelike-map)
-                                (map->tile->transparent roguelike-map true)))
+(def d-roguelike
+  (delay (zfont/tileset "http://40.media.tumblr.com/7a9682566f3c68afb661f347116fad90/tumblr_mh2mhude3E1qcptgwo1_250.png"
+                        :alpha 16 16 0
+                        roguelike-map
+                        (map->tile->transparent roguelike-map true))))
 
 ;; 16x16 Fantasy tileset by Jerom
 ;; CC-BY-SA 3.0
@@ -117,22 +123,34 @@
 
 ;(assert (every? (fn [line] (= (count line) 10)) fantasy-map))
 
-(def fantasy (zfont/tileset "http://opengameart.org/sites/default/files/16x16_Jerom_CC-BY-SA-3.0_0.png" :alpha 16 16 0
-                            (map->tile->col-row fantasy-map)
-                            (map->tile->transparent fantasy-map true)))
+(def fantasy
+  (delay (zfont/tileset "http://opengameart.org/sites/default/files/16x16_Jerom_CC-BY-SA-3.0_0.png"
+                        :alpha 16 16 0
+                        fantasy-map
+                        (map->tile->transparent fantasy-map true))))
 
 
 ;; CP437 tilesets from
 ;; http://dwarffortresswiki.org/Tileset_repository
-(def pastiche-8x8 (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 true))
-(def pastiche-16x16 (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2 true))
-(def herrbdog-7x7 (CP437Font. "http://dwarffortresswiki.org/images/9/94/Herrbdog_7x7_tileset.gif" :green 1 true))
-(def herrbdog-14x14 (CP437Font. "http://dwarffortresswiki.org/images/9/94/Herrbdog_7x7_tileset.gif" :green 2 true))
-(def talryth-15x15 (CP437Font. "http://dwarffortresswiki.org/images/6/6d/Talryth_square_15x15.png" :alpha 1 true))
+(def pastiche-8x8
+  (delay (zfont/cp-437 "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green true)))
+(def pastiche-16x16
+  (delay (zfont/scale (zfont/cp-437 "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green true) 2)))
+(def herrbdog-7x7
+  (delay (zfont/cp-437 "http://dwarffortresswiki.org/images/9/94/Herrbdog_7x7_tileset.gif" :green true)))
+(def herrbdog-14x14
+  (delay (zfont/scale (zfont/cp-437 "http://dwarffortresswiki.org/images/9/94/Herrbdog_7x7_tileset.gif" :green true) 2)))
+(def talryth-15x15
+  (delay (zfont/cp-437 "http://dwarffortresswiki.org/images/6/6d/Talryth_square_15x15.png" :alpha  true)))
 
 ;; Opaque version of CP437 fonts
-(def pastiche-8x8-op (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 false))
-(def pastiche-16x16-op (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2 false))
-(def herrbdog-7x7-op (CP437Font. "http://dwarffortresswiki.org/images/9/94/Herrbdog_7x7_tileset.gif" :green 1 false))
-(def herrbdog-14x14-op (CP437Font. "http://dwarffortresswiki.org/images/9/94/Herrbdog_7x7_tileset.gif" :green 2 false))
-(def talryth-15x15-op (CP437Font. "http://dwarffortresswiki.org/images/6/6d/Talryth_square_15x15.png" :alpha 1 false))
+(def pastiche-8x8-op
+  (delay (zfont/cp-437 "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green false)))
+(def pastiche-16x16-op
+  (delay (zfont/scale (zfont/cp-437 "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green  false) 2)))
+(def herrbdog-7x7-op
+  (delay (zfont/cp-437 "http://dwarffortresswiki.org/images/9/94/Herrbdog_7x7_tileset.gif" :green false)))
+(def herrbdog-14x14-op
+  (delay (zfont/scale (zfont/cp-437 "http://dwarffortresswiki.org/images/9/94/Herrbdog_7x7_tileset.gif" :green false) 2)))
+(def talryth-15x15-op
+  (delay (zfont/cp-437 "http://dwarffortresswiki.org/images/6/6d/Talryth_square_15x15.png" :alpha false)))

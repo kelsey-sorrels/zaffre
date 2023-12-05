@@ -3,12 +3,13 @@
             [zaffre.imageutil :as zimg]
             [zaffre.lwjglutil :as zlwjgl]
             [clojure.java.io :as jio]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [clojure-watch.core :as cwc])
   (:import (zaffre.imageutil Image)
            (java.io File IOException)
            (java.net URL MalformedURLException)
            (java.nio ByteBuffer)
-           (java.nio.file Files Path)
+           (java.nio.file Files FileSystems Path)
            (org.lwjgl BufferUtils)
            (org.lwjgl.system MemoryStack)
            (org.lwjgl.stb STBTruetype STBTTFontinfo)
@@ -29,7 +30,10 @@
 ;(add-watch calls :persist
 ;  (fn [_ _ _ calls]
 ;    (spit "calls.log" calls)))
-    
+
+(defn map->tile->transparent [tilemap v]
+  (zipmap (flatten tilemap) (repeat v)))
+
 (defn- byte-buffer->str [^ByteBuffer buffer]
   (when buffer
     (loop [s ""]
@@ -106,6 +110,7 @@
                 (catch Exception e
                   (log/error e "Error loading" path ))))))))
 
+; font name/font family -> File
 (defn system-fonts []
   @system-fonts-map)
 
@@ -297,34 +302,177 @@
     ;; convert to rgba
     (zimg/mode chr-img :rgba)))
   
-(defn glyph-graphics? [m]
-  (every?
-      #{:font-texture-width
-       :font-texture-height
-       :font-texture-image
-       :character-width
-       :character-height
-       :character->col-row
-       :character->transparent}
-      (keys m)))
+(defn map->tile->col-row [tilemap]
+  (reduce (fn [m [t col row]]
+            (assoc m t [col row]))
+          {}
+          (mapcat concat
+            (map-indexed (fn [row line]
+                           (map-indexed (fn [col t]
+                                          [t col row])
+                                        line))
+                         tilemap))))
 
-(defprotocol GlyphGraphics
+(defprotocol GlyphGraphicsP
+  (palette [this])
+  (character-layout [this])
+  (character->col-row [this] character->col-row))
+
+(defrecord GlyphGraphics [font-texture-width
+                          font-texture-height
+                          font-texture-image
+                          color-table
+                          color-table-texture-image
+                          character-width
+                          character-height
+                          character-layout
+                          character->col-row
+                          character->transparent]
+  GlyphGraphicsP
+  (palette [this] color-table)
+  (character-layout [this] character-layout)
+  (character->col-row [this] character->col-row))
+
+(defn glyph-graphics? [m]
+  (satisfies? GlyphGraphicsP m))
+
+(defprotocol GlyphGraphicsProvider
   (glyph-graphics [this]))
 
-(defrecord CP437Font [path-or-url alpha scale transparent]
-  GlyphGraphics
+(defprotocol Resource
+  (content [this]))
+
+(defprotocol Dirty
+  (dirty? [this]))
+
+(defrecord StaticResource [resource]
+  Resource
+  (content [this]
+    resource)
+  Dirty
+  (dirty? [this] false))
+
+(defn static-resource
+  [location load-fn]
+  (assert (not (satisfies? Resource location)))
+  (->StaticResource (load-fn location)))
+
+(defn static-object
+  [v]
+  (->StaticResource v))
+
+(defn static-img
+  [location]
+  (static-resource location zimg/load-image))
+
+(defn static-font
+  [location-or-name]
+  (static-resource location-or-name font-data))
+
+(defrecord DynamicResource [resource changed]
+  Resource
+  (content [this]
+    (reset! changed false)
+    @resource)
+  Dirty
+  (dirty? [this] @changed))
+
+(defn dynamic-resource
+  [location read-fn]
+  (assert (not (satisfies? Resource location)))
+  (let [resource (atom (read-fn location))
+        changed (atom false)
+        path (-> (FileSystems/getDefault)
+               (.getPath (str location) (into-array String []))
+               .getParent
+               str)]
+    (log/info "Watching" path)
+    (try
+      (cwc/start-watch [{:path path
+                         :event-types [:modify]
+                         :callback (fn [_ filename]
+                                     (log/info "Got change for" filename)
+                                     ; FIXME gedit doesn't work
+                                     ; Got change for dev-resources/.goutputstream-4M13D0
+                                     (when (or true (= filename location))
+                                       (reset! resource (read-fn location))
+                                       (reset! changed true)))}])
+      (catch Exception e
+        (println "Warning" location read-fn e)))
+    (->DynamicResource resource changed)))
+
+(defn dynamic-img
+  [location]
+  (dynamic-resource location zimg/load-image))
+
+(defn dynamic-font
+  [location-or-name]
+  (dynamic-resource location-or-name font-data))
+
+(defn dynamic-object
+  [location]
+  (dynamic-resource location (comp read-string jio/reader slurp)))
+
+(defn read-pal
+  [location]
+  (with-open [reader (jio/reader location)]
+    (let [[header version num-colors & colors] (vec (line-seq reader))]
+      (assert (= header "JASC-PAL"))
+      (assert (= version "0100"))
+      ; TODO: assert num-colors = len colors
+      [(for [color colors]
+         (conj
+           (mapv read-string (clojure.string/split color #" "))
+           255))])))
+
+(defn dynamic-pal
+  [location]
+  (dynamic-resource location read-pal))
+
+(defn dynamic-object
+  [location]
+  (letfn [(read-object [location]
+           (Thread/sleep 200)
+          (log/info "Reading" location)
+          (let [r (-> location
+                    slurp
+                    read-string)]
+            (log/info "dynamic-object" location r)
+            r))]
+  (dynamic-resource location read-object)))
+
+(defrecord Edit [child f]
+  GlyphGraphicsProvider
+  (glyph-graphics [this]
+    (-> child glyph-graphics f))
+  Dirty
+  (dirty? [this] (dirty? child)))
+
+(defn scale
+  [child factor]
+  (letfn [(f [gg]
+            (log/info "type" (type gg))
+            (-> gg
+              (update :font-texture-width (partial * factor))
+              (update :font-texture-height (partial * factor))
+              (update :font-texture-image (fn [img]
+                                            (cond-> img
+                                              (not= 1 factor)
+                                              (zimg/scale factor))))
+              (update :character-width (partial * factor))
+              (update :character-height (partial * factor))))]
+    (->Edit child f)))
+
+(defrecord CP437Font [resource alpha transparent]
+  GlyphGraphicsProvider
   (glyph-graphics [this]
     #_{:post [(glyph-graphics? %)]}
-    (let [img (-> path-or-url
-                zimg/load-image
+    (let [img (-> resource
+                content
                 (zimg/mode :rgba))]
       (log/info "img" img)
       (let [characters    (map char cp437-unicode)
-            font-image    (-> img
-                            (zimg/copy-channels alpha)
-                            (cond->
-                            (> scale 1)
-                              (zimg/scale scale)))
+            font-image    (zimg/copy-channels img alpha)
             width         (zutil/next-pow-2 (zimg/width font-image))
             height        (zutil/next-pow-2 (zimg/height font-image))
             cwidth        (/ (zimg/width font-image) 16)
@@ -339,21 +487,36 @@
 
         (log/info "Using cp437 font image")
         (log/info "texture-image" texture-image)
-        {:font-texture-width width
-         :font-texture-height height
-         :font-texture-image texture-image
-         :character-width cwidth
-         :character-height cheight
-         :character->col-row character->col-row
-         :character->transparent (zipmap characters (repeat transparent))}))))
+        (->GlyphGraphics
+          width
+          height
+          texture-image
+          nil
+          nil
+          cwidth
+          cheight
+          cp437-unicode
+          character->col-row
+          (zipmap characters (repeat transparent))))))
+  Dirty
+  (dirty? [this] (dirty? resource)))
+
+(defn cp-437
+  [string-or-resource alpha transparent]
+  (->CP437Font
+    (cond-> string-or-resource
+      (string? string-or-resource)
+      static-img)
+    alpha
+    transparent))
 
 
 ;; TODO: find a better way to keep font data around for the lifetime of STBTTFontinfo
 (def font-data-buffer(atom nil))
-(defrecord TTFFont [name-or-path size transparent]
-  GlyphGraphics
+(defrecord TTFFont [resource size transparent]
+  GlyphGraphicsProvider
   (glyph-graphics [this]
-    (reset! font-data-buffer (font-data name-or-path))
+    (reset! font-data-buffer (content resource))
     ;; Adjust canvas to fit character atlas size
     (let [ms (MemoryStack/create)
           ^STBTTFontinfo font-info   (make-font @font-data-buffer)
@@ -401,18 +564,31 @@
                              y))
               (catch Throwable t
                 (log/error t))))
-        ;; cleanup texture resource
         ;(zimg/write-png texture-image "glyph-texture.png")
-        {:font-texture-width width
-         :font-texture-height height
-         :font-texture-image texture-image
-         :character-width char-width
-         :character-height char-height
-         :character->col-row (character->col-row char-idxs)
-         :character->transparent (zipmap (map char (keys codepoint->glyph-index)) (repeat transparent))}))))
+        ;; cleanup texture resource
+        (->GlyphGraphics width
+                         height
+                         texture-image
+                         nil
+                         nil
+                         char-width
+                         char-height
+                         ;FIXME character-layout
+                         nil
+                         (character->col-row char-idxs)
+                         (zipmap (map char (keys codepoint->glyph-index)) (repeat transparent))))))
+    Dirty
+    (dirty? [this] (dirty? resource)))
+
+(defn merge-character->transparent [l r]
+  (let [l-fn (if (fn? l) l (fn [r] (merge l r)))
+        r-fn (if (fn? r) r (fn [l] (merge l r)))]
+    (fn [character]
+      (or (l-fn character)
+          (r-fn character)))))
 
 (defrecord CompositeFont [fonts]
-  GlyphGraphics
+  GlyphGraphicsProvider
   (glyph-graphics [this]
     #_{:post [(glyph-graphics? %)]}
     (let [glyphs (mapv glyph-graphics fonts)]
@@ -454,25 +630,33 @@
                              (assoc m k [col (+ row (quot y character-height))]))
                            character->col-row
                            (get glyph :character->col-row))
-                (merge character->transparent
+                (merge-character->transparent character->transparent
                        (get glyph :character->transparent))
                 (rest glyphs)))
             (do
               (zimg/write-png composite-image "composite-texture.png")
-              {:font-texture-width width
-               :font-texture-height height
-               :font-texture-image composite-image
-               :color-table-texture-image color-table-texture-image
-               :character-width character-width
-               :character-height character-height
-               :character->col-row character->col-row
-               :character->transparent character->transparent})))))))
+              (->GlyphGraphics
+                width
+                height
+                composite-image
+                (->> glyphs (map palette) first)
+                color-table-texture-image
+                character-width
+                character-height
+                (mapcat character-layout glyphs)
+                character->col-row
+                character->transparent)))))))
+    Dirty
+    (dirty? [this] (some dirty? fonts)))
 
-(defrecord TileSet [path-or-url alpha tile-width tile-height margin scale tile-id->col-row tile-id->transparent color-table]
-  GlyphGraphics
+(defrecord TileSet [resource alpha tile-width tile-height margin tile-names-resource tile-id->transparent color-table-resource]
+  GlyphGraphicsProvider
   (glyph-graphics [this]
     #_{:post [(glyph-graphics? %)]}
-    (let [font-image (-> (zimg/load-image path-or-url)
+    (log/info resource)
+    (log/info (content resource))
+    (let [font-image (-> resource
+                       content
                        (zimg/mode :rgba)
                        (compact tile-width
                                 tile-height
@@ -480,47 +664,62 @@
                        (cond->
                          (not= alpha :alpha)
                            (zimg/copy-channels alpha)
-                         (not= scale 1)
-                           (zimg/scale scale)
-                         color-table
+                         color-table-resource
                            zimg/index-colors))
           width         (zutil/next-pow-2 (zimg/width font-image))
           height        (zutil/next-pow-2 (zimg/height font-image))
           texture-image (zimg/resize font-image width height)
-          color-table-texture-image (zimg/seq->img color-table)
+          tile-names (content tile-names-resource)
+          color-table (some-> color-table-resource content)
+          color-table-texture-image (zimg/seq->img (if color-table-resource (content color-table-resource) [[[0 0 0 0]]]))
           color-table-texture-image (zimg/resize color-table-texture-image 
                                       (zutil/next-pow-2 (zimg/width color-table-texture-image))
                                       (zutil/next-pow-2 (zimg/height color-table-texture-image)))]
+      (log/info "tileset tile-name" tile-names)
       ;(zimg/write-png texture-image "tileset-texture.png")
-      {:font-texture-width width
-       :font-texture-height height
-       :font-texture-image texture-image
-       :color-table-texture-image color-table-texture-image
-       :character-width (* tile-width scale)
-       :character-height (* tile-height scale)
-       :character->col-row tile-id->col-row
-       :character->transparent tile-id->transparent})))
+      (->GlyphGraphics
+        width
+        height
+        texture-image
+        color-table
+        color-table-texture-image
+        tile-width
+        tile-height
+        tile-names
+        (map->tile->col-row tile-names)
+        tile-id->transparent)))
+  Dirty
+  (dirty? [this] (some dirty? [resource tile-names-resource color-table-resource])))
 
 (defn tileset
-  ([path-or-url alpha tile-width tile-height margin tile-id->col-row tile-id->transparent]
-    (tileset path-or-url alpha tile-width tile-height margin 1 tile-id->col-row tile-id->transparent nil))
-  ([path-or-url alpha tile-width tile-height margin scale tile-id->col-row tile-id->transparent color-table]
-    (->TileSet path-or-url alpha tile-width tile-height margin scale tile-id->col-row tile-id->transparent color-table)))
+  ([path-or-url alpha tile-width tile-height margin tile-names tile-id->transparent]
+    (tileset path-or-url alpha tile-width tile-height margin tile-names tile-id->transparent nil))
+  ([path-or-url alpha tile-width tile-height margin tile-names tile-id->transparent color-table]
+    (->TileSet
+      (cond-> path-or-url
+        string?
+        static-img)
+      alpha
+      tile-width
+      tile-height
+      margin
+      (cond-> tile-names
+        (sequential? tile-names)
+        static-object
+        (string? tile-names)
+        static-object)
+      tile-id->transparent
+      (cond
+        (sequential? color-table)
+          (static-object color-table)
+        (string? color-table)
+          (static-object color-table)
+        :else
+          color-table))))
 
-(defn construct
+#_(defn construct
   [font]
   (glyph-graphics font))
-
-(defn map->tile->col-row [tilemap]
-  (reduce (fn [m [t col row]]
-            (assoc m t [col row]))
-          {}
-          (mapcat concat
-            (map-indexed (fn [row line]
-                           (map-indexed (fn [col t]
-                                          [t col row])
-                                        line))
-                         tilemap))))
 
 (defn map->tile->transparent [tilemap v]
   (zipmap (flatten tilemap) (repeat v)))

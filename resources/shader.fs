@@ -109,11 +109,11 @@ void main(void) {
   //int numLayers = 1;
   for (uint i = 0u; i < uint(numLayers); i++) {
     ivec3 termXYZ = ivec3(termXY.x, termXY.y, (i + 0u));
-    // contains glyph_x, glyph_y, blend_mode, palette_index
+    // contains glyph_x, glyph_y, blend_mode, palette_offset
     uvec4 glyphXYMP = texelFetch(uGlyphs, termXYZ, 0);
     ivec2 fontIndex = ivec2(glyphXYMP.xy);
     uint blendMode = glyphXYMP.z;
-    uint paletteIndex = glyphXYMP.w;
+    uint paletteOffset = glyphXYMP.w;
     ivec2 fontXY = ivec2(int(fontIndex.x) * charSize.x, int(fontIndex.y) * charSize.y);
     // calc the position of the fragment relative to the terminal cell
     ivec2 charXY = ivec2(fract(vTextureCoord.x * termDimensions.x) * charSize.x,
@@ -122,9 +122,9 @@ void main(void) {
 
     vec4 fg  = texelFetch(uFg, termXYZ, 0);
     vec4 bg  = texelFetch(uBg, termXYZ, 0);
-    if (paletteIndex != 0u) {
+    if (paletteOffset != 0u) {
         uint colorIndex = uint(256u * fnt.r);
-        fg = texelFetch(uColorTable, ivec2(colorIndex, paletteIndex - 1u), 0);
+        fg = texelFetch(uColorTable, ivec2(colorIndex + paletteOffset - 2u, 0), 0);
     }
 
 

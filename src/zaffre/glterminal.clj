@@ -547,22 +547,32 @@
   (alter-group-font! [_ group-id font-fn]
     ;; TODO: alter color table?
     (let [gg (with-gl-context gl-lock window capabilities
-               (let [old-texture  (-> group->font-texture group-id deref :font-texture)
+               (let [old-font-texture  (-> group->font-texture group-id deref :font-texture)
+                     old-color-table-texture  (-> group->font-texture group-id deref :color-table-texture)
                      font         (font-fn (zlwjgl/platform))
                      gg           (if (zfont/glyph-graphics? font)
                                     font
                                     (zfont/glyph-graphics font))
                      font-texture (or (get gg :font-texture)
-                                      (texture-id-2d (get gg :font-texture-image)))]
-                 (log/info "loaded font-texture for" group-id font-texture)
+                                      (texture-id-2d (get gg :font-texture-image)))
+                     color-table-texture (texture-id-2d (get gg :color-table-texture-image
+                                                             (zimg/image 0 0)))]
+                 ;(log/info "loaded font-texture for" group-id font-texture)
+                 ;(log/info "using tile-names" (zfont/character-layout gg))
+                 ;(log/info "using character->col-row" (zfont/character->col-row gg))
                  (dosync 
-                   (ref-set (get group->font-texture group-id)
-                          (assoc gg :font-texture font-texture)))
+                   (alter (get group->font-texture group-id)
+                          assoc :font-texture font-texture
+                                :color-table-texture color-table-texture
+                                :character->col-row (zfont/character->col-row gg)))
+
                  ; Free old texture
-                 (log/info "Freeing texture" old-texture)
-                 (GL11/glDeleteTextures (long old-texture))
+                 (log/info "Freeing texture" old-font-texture old-color-table-texture)
+                 (GL11/glDeleteTextures (long old-font-texture))
+                 (GL11/glDeleteTextures (long old-color-table-texture))
+                 (log/info "after")
                  gg))]
-       (async/put! term-chan (-> (select-keys gg [:font-texture-width
+       #_(async/put! term-chan (-> (select-keys gg [:font-texture-width
                                                   :font-texture-height 
                                                   :character-width
                                                   :character-height])
@@ -589,8 +599,7 @@
           texture-rows    (int (zutil/next-pow-2 rows))
           layer-size      (* 4 texture-columns texture-rows)
           layer-index     (layer-id->index layer-id)]
-      (doseq [{:keys [c x y fg bg blend-mode palette-index] :or {blend-mode :normal
-                                                                 palette-index 0}} characters
+      (doseq [{:keys [c x y fg bg blend-mode] :or {blend-mode :normal} :as character} characters
               :when (and (< -1 x) (< x columns)
                          (< -1 y) (< y rows)
                          (not= c (char 0)))
@@ -601,7 +610,10 @@
                          (vector? fg) (zcolor/color fg))
                     bg (cond
                          (integer? bg) bg
-                         (vector? bg) (zcolor/color bg))]]
+                         (vector? bg) (zcolor/color bg))
+                    palette-offset (if-let [palette-offset (:palette-offset character)]
+                                     (inc palette-offset)
+                                     0)]]
           (when (or (nil? x) (nil? y))
             (log/error (format "X/Y nil - glyph not found for character %s %s"
                          (or (str c) "nil")
@@ -623,7 +635,7 @@
           (.put glyph-image-data (unchecked-byte x))
           (.put glyph-image-data (unchecked-byte y))
           (.put glyph-image-data (unchecked-byte (zt/blend-mode->byte blend-mode)))
-          (.put glyph-image-data (unchecked-byte palette-index))
+          (.put glyph-image-data (unchecked-byte palette-offset))
           (.putInt fg-image-data (unchecked-int fg))
           (.putInt bg-image-data (unchecked-int bg)))))
       
@@ -777,7 +789,6 @@
                   :let [group-id id
                         {:keys [character-width
                                 character-height
-                                character->col-row
                                 character->transparent
                                 font-texture-width
                                 font-texture-height
