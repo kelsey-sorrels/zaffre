@@ -137,7 +137,7 @@ All options are optional. If none are specified an empty map {} may passed to `m
   (get-size [this])
   ; Add characters to the back buffer
   ; Characters is a vector of maps each with these keys
-  ; {:c "a" ; The character as a string
+  ; {:c \a             ; The character to place
   ;  :fg [255 255 255] ; [red green blue] foreground color. (0-255)
   ;  :bg [0 0 0]       ; [red green blue] background color. (0-255)
   ;  :x  0             ; column to place the character
@@ -159,8 +159,9 @@ All options are optional. If none are specified an empty map {} may passed to `m
   (get-key-chan [this])
   ; Changes the terminal's font. Keys have the same meaning as those used in make-terminal options
   (apply-font! [this windows-font else-font size antialias])
-  ; Set the terminal's cursor to [x y]
-  (set-cursor! [this xy])
+  ; Set the terminal's cursor to x y.
+  ; The character under the cursor will have their fg and bg colors swapped.
+  (set-cursor! [this x y])
   ; Display the characters in the back buffer
   (refresh! [this])
   ; Clears the terminal's back buffer
