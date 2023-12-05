@@ -4,6 +4,8 @@
     [clj-http.client :as client]
     [clojure.java.io :as jio]
     [clojure.core.cache :as cache]
+    [clojure.core.async :refer [>! <! chan to-chan timeout merge go go-loop thread]]
+    [clojure.pprint :as pprint]
     [taoensso.timbre :as log]
     rockpick.core
     [zaffre.components :as zc]
@@ -387,44 +389,101 @@
                                 children)]
       (first updated-children)))}))
 
+(defn interpolate-to [start end]
+  (fn [steps]
+    (let [interval (- end start)
+          step (/ interval steps)]
+      (range start end step))))
 
-(def Sequence (zc/create-react-class {
-  :display-name "Sequence"
+(defn cycle [open-chan chan-fn]
+  (fn []
+    (go-loop []
+       (<! (chan-fn))
+       (when (= :open (<! open-chan))
+         (recur)))))
+
+(defn parallel [& chans]
+  (fn []
+    (go
+      (<! (merge (map (fn [c] (c)) chans))))))
+
+(defn keys-to-leaves [prefix m]
+  (mapcat (fn [[k v]]
+            (if (map? v)
+              (keys-to-leaves (conj prefix k) v)
+              [[(conj prefix k) v]]))
+          m))
+
+(defn transpose [xs]
+  (apply map list xs))
+
+(defmacro sequence [state-chan & cmds]
+  `(fn [] (go
+     ~@(map (fn [cmd next-cmd]
+              (cond
+                (number? cmd)
+                  ;; numbers are pauses
+                  `(<! (timeout ~cmd))
+                (and (map? cmd) (number? next-cmd))
+                  ;; maps are prop generators
+                  (let [generators (keys-to-leaves [] cmd)
+                        dt 33
+                        duration (if (number? next-cmd) next-cmd 1)
+                        steps (int (/ duration dt))
+                        events (transpose
+                                 (map (fn [[ks g]]
+                                        (map (fn [v] [ks v])
+                                             (if (list? g)
+                                               ((eval g) steps)
+                                               (repeat steps g))))
+                                      generators))
+                        state-changes (map (fn [event]
+                                             (reduce (fn [m [ks v]]
+                                                       `(>! ~state-chan ~(assoc-in m ks v)))
+                                                     {}
+                                                     event))
+                                             events)
+                        change-cmds `(go ~@(interpose `(<! (timeout ~dt)) state-changes))]
+                    change-cmds)
+                  :default
+                     (assert false (str "cmd must be map or number. found:" cmd " " next-cmd))))
+            cmds
+            (concat (rest cmds) [(first cmds)])))))
+  
+(def AnimateProps2 (zc/create-react-class {
+  :display-name "AnimateProps2"
   :get-initial-state (fn []
-                       {:start-time (System/currentTimeMillis)
-                        :t 0})
+                       (log/debug "AnimateProps2 get-initial-state")
+                       {:open-chan (to-chan (repeat :open))
+                        :start-time (System/currentTimeMillis)})
   :component-will-mount (fn [this]
-                          (log/debug "Sequence component-will-mount" (zc/element-id-str zc/*current-owner*))
-                          (when-not (contains? (zc/props this) :t)
-                            ;; pass current-owner binding through to the scheduled fn
-                            (let [owner zc/*current-owner*
-                                  updater zc/*updater*
-                                  tick-fn (atat/every (/ 1000 30)
-                                                        #(try
-                                                          (binding [zc/*current-owner* owner
-                                                                    zc/*updater* updater]
-                                                            (log/debug "Sequence component-will-mount tick-fn" (zc/element-id-str owner))
-                                                            (zc/set-state! this (fn [{:keys [t]}]
-                                                                                  (log/trace "Sequence component-will-mount tick set-state-fn" (zc/element-id-str owner) t)
-                                                                                  {:t (- (System/currentTimeMillis)
-                                                                                         (get (zc/state this) :start-time))})))
-                                                          (catch Exception e
-                                                            (log/error e)))
-                                                        zc/*pool*)]
-                              (zc/set-state! this {:tick-fn tick-fn}))))
-  :component-will-unmount (fn [this]
-                            (when-let [{:keys [tick-fn]} (zc/state this)]
-                              (log/info "Sequence unmounting" tick-fn)
-                              (atat/stop tick-fn)))
+    (log/info "AnimateProps2 component-will-mount" (zc/element-id-str zc/*current-owner*))
+    ;; pass current-owner binding through to the scheduled fn
+    (let [owner zc/*current-owner*
+          updater zc/*updater*
+          {:keys [gen]} (zc/props this)
+          {:keys [open-chan]} (zc/state this)
+          state-chan (chan)]
+      ;; receives state changes through state-chan
+      (go-loop []
+         (binding [zc/*current-owner* owner
+                   zc/*updater* updater]
+           (let [m (<! state-chan)]
+             (log/info "AnimateProps2 receive state " m)
+             (zc/set-state! this {:child-props m})))
+          (recur))
+      ;; puts state changes on state-chan until the open-chan closes
+      ((gen state-chan open-chan))))
   :render (fn [this]
-    (log/debug "Sequence render")
-    (let [{:keys [key-frames] :as props} (zc/props this)
-          {:keys [start-time]} (zc/state this)
-          t (- (System/currentTimeMillis) start-time)
-          start-times (cons 0 (reductions + (keys key-frames)))
-          total-time (reduce + start-times)
-          time-in-loop (mod t total-time)
-          index (count (filter (partial > t) start-times))]
-      ;; TODO pick nth child using t prop
-      (nth (vals key-frames))))}))
+    (log/debug "AnimateProps2 render")
+    (let [{:keys [children] :as props} (zc/props this)
+          {:keys [child-props
+                  state-chan
+                  open-chan]} (zc/state this)
+          updated-children (map (fn [child]
+                                  (update child :props 
+                                    (fn [prev-child-props]
+                                      (zc/deep-merge prev-child-props child-props))))
+                                children)]
+      (first updated-children)))}))
 
