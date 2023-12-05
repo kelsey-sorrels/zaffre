@@ -1,6 +1,7 @@
 (ns zaffre.text-test
   (:require
     [zaffre.text :as ztext]
+    [cashmere.core-graal :as cm]
     [taoensso.timbre :as log]
     [clojure.inspector :refer :all]
     [clojure.test :refer :all]))
@@ -15,24 +16,22 @@
 (deftest should-cascade-style
   (are [input expected] (= expected (ztext/cascade-style {} input))
     ;; pass through
-    [:text {:style {}} ["abc"]]
-    [:text {} [[:text {} "abc"]]]
+    (cm/new-text-instance {:style {}} "abc")
+    [:raw-text {} "abc"]
     ;; cascade multiple levels
-    [:text {:style {:fg :red :bg :blue}} [
-      [:text {} [
-        [:text {} ["abc"]]]]]]
+    (cm/new-instance :text {:style {:fg :red :bg :blue}} [
+      (cm/new-instance :text {:style {:fg :red :bg :blue}} [
+        (cm/new-text-instance {} "abc")])])
     [:text {:fg :red :bg :blue} [
       [:text {:fg :red :bg :blue} [
-        [:text {:fg :red :bg :blue} [
-          [:text {:fg :red :bg :blue} "abc"]]]]]]]
+        [:raw-text {:fg :red :bg :blue} "abc"]]]]]
     ;; children should override parent styles
-    [:text {:style {:fg :red :bg :blue}} [
-      [:text {} [
-        [:text {:style {:fg :green :bg :black}} ["abc"]]]]]]
+    (cm/new-instance :text {:style {:fg :red :bg :blue}} [
+      (cm/new-instance :text {} [
+        (cm/new-text-instance {:style {:fg :green :bg :black}} "abc")])])
     [:text {:fg :red :bg :blue} [
       [:text {:fg :red :bg :blue} [
-        [:text {:fg :green :bg :black} [
-          [:text {:fg :green :bg :black} "abc"]]]]]]]))
+        [:raw-text {:fg :green :bg :black} "abc"]]]]]))
 
 (deftest should-seq-through-tree
   (are [input expected] (= expected (ztext/text-tree-seq input))
@@ -80,3 +79,18 @@
      "weapon. You'll need to "
      "start with an item."]
 ))
+
+(deftest should-word-wrap-text-tree
+  (are [input expected] (= expected (ztext/word-wrap-text-tree 26 1 input))
+    (cm/new-instance :text {:style {:fg :red :bg :blue}} [
+      (cm/new-instance :text {} [
+        (cm/new-text-instance {:style {:fg :green :bg :black}} "_______")])])
+    [[["_______" {:fg :green, :bg :black} 7]]]))
+    
+
+(deftest should-get-text
+  (are [input expected] (= expected (ztext/text input))
+    (cm/new-instance :text {:style {:fg :red :bg :blue}} [
+      (cm/new-instance :text {} [
+        (cm/new-text-instance {:style {:fg :green :bg :black}} "_______")])])
+    "_______"))

@@ -42,6 +42,7 @@
   (get-fg [this col row])
   (get-bg [this col row])
   (set! [this c blend-mode palette-offset fg bg col row])
+  (set-span! [this cs blend-modes palette-offsets fgs bgs start-col start-row])
   (copy-fg [this offset-col offset-row length dest])
   (copy-bg [this offset-col offset-row length dest])
   (zero! [this]))
@@ -105,6 +106,28 @@
           (aset palette-offset-buffer index (unchecked-int palette-offset))
           (aset fg-buffer index (unchecked-int fg-rgba))
           (aset bg-buffer index (unchecked-int bg-rgba))))))
+  (set-span! [this cs blend-modes palette-offsets fgs bgs start-col start-row]
+    "Like set! but takes arrays of inputs"
+    (let [^"[C" cs cs
+          col (int start-col)
+          row (int start-row)
+          index (int (+ (* row (long num-cols)) col))
+          length (alength cs)]
+      (System/arraycopy
+         ; src
+         cs
+         ; srcPos
+         0
+         ; dest
+         character-buffer
+         ; destPos
+         index
+         ; length
+         length)
+      (System/arraycopy blend-modes 0 blend-mode-buffer index length)
+      (System/arraycopy palette-offsets 0 palette-offset-buffer index length)
+      (System/arraycopy fgs 0 fg-buffer index length)
+      (System/arraycopy bgs 0 bg-buffer index length)))
   (copy-fg [this offset-col offset-row length dest]
     (let [^ByteBuffer dest dest
           offset (+ (* offset-row num-cols) offset-col)]

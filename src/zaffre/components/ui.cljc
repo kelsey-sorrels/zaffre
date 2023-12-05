@@ -51,9 +51,9 @@ maps))
         on-focus (fn [_] (set-focus! true))
         on-blur (fn [_] (set-focus! false))
         on-keypress (fn [e]
-          (log/info "Input on-keypress" e)
+          #_(log/info "Input on-keypress" e)
           (let [k (get e :key)]
-            (log/info "value" value "max-length" max-length "k" k)
+            #_(log/info "value" value "max-length" max-length "k" k)
             (cond
               (= k :backspace)
                 (set-value! (subs value 0 (dec (count value))))
@@ -91,13 +91,14 @@ maps))
          (set-show-cursor! not)
          (recur))) [])
 
-     #_(log/info "Input value" value (type value))
+     #_(log/info "Input value" value (type value) (count value))
      #_(log/info "props" props)
      #_(log/debug "Input render" show-cursor (dissoc props :children))
      #_(log/info "Input width" width (type width))
+     #_(log/info "Input rest" (apply str (repeat (- width (count value)) "_")))
      #_(log/info "cursor fg" cursor-fg "cursor-bg" cursor-bg "cursor" cursor)
      [:view props
-       [:text {:key "text"} value]
+       [:text {:key "value"} (str value)]
        [:text {:key "cursor" :style {:color cursor-fg :background-color cursor-bg}} (str cursor)]
        [:text {:key "rest"} (apply str (repeat (- width (count value)) "_"))]]))
 
@@ -142,7 +143,7 @@ maps))
         on-focus (fn [_] (set-focus! true))
         on-blur (fn [_] (set-focus! false))
         on-keypress (fn [e]
-          (log/info "Checkbox on-keypress" e)
+          #_(log/info "Checkbox on-keypress" e)
           (set-selected! not))
         {:keys [name value children]} props
         default-props {:on-focus on-focus
@@ -173,14 +174,16 @@ maps))
          (recur))) [])
 
     [:view props
-      (concat
-        [[:text {:key "checkbox-left" :style {:content :ref/checkbox-left
-                                              :color :ref/on-surface}} ""]
-         [:text {:key "checkbox-check" :style {:content cursor
-                                               :color color}} ""]
-         [:text {:key "checkbox-right" :style {:content :ref/checkbox-right
-                                           :color :ref/on-surface}} ""]]
-        children)]))
+      [:text {:key "checkbox-left"
+              :style {:content :ref/checkbox-left
+                      :color :ref/on-surface}} ""]
+      [:text {:key "checkbox-check"
+              :style {:content cursor
+                      :color color}} ""]
+      [:text {:key "checkbox-right"
+              :style {:content :ref/checkbox-right
+                      :color :ref/on-surface}} ""]
+      children]))
 
 (cm/defcomponent LoadingSpinner
   [props _]
@@ -192,7 +195,8 @@ maps))
         (set-index! (fn [index] 
           (mod (inc index) (count characters))))
         (recur))) [])
-    [:text {:style {:color :ref/on-surface}} (nth characters index)]))
+    [:text {:key (get props :key)
+            :style {:color :ref/on-surface}} (nth characters index)]))
 
 (cm/defcomponent Radio
   [props _]
@@ -550,52 +554,107 @@ maps))
 
 ; Dummy component for Tree
 (cm/defcomponent TreeItem
+  [_ _])
+;; Primary for implementation
+(cm/defcomponent TreeItemImpl
   [props _]
-  (let [{:keys [children]} props]
-    (log/info "TreeItem props" (dissoc props :children))
-    (log/info "TreeItem children" (vec children))
-    [:view (-> props
-             (dissoc :children)
-             (assoc :gossamer.components/type :tree-item))
-      children]))
+  (let [{:keys [key edges label has-children show-cursor]} props
+        [focused set-focus!] (cm/use-state false)
+        on-focus (fn [_] (set-focus! true))
+        on-blur (fn [_] (set-focus! false))
+        [display set-display!] (cm/use-state true)
+        toggle-tree-item (if has-children
+                             (fn [e] 
+                               (set-display! not))
+                           identity)
+        content (if has-children
+                  (if (and focused show-cursor)
+                      :ref/cursor
+                    (if display
+                      :ref/tree-item-expanded
+                      :ref/tree-item-collapsed))
+                  nil)]
+     (when has-children
+       (log/info "focused" focused "show-cursor" show-cursor "content" content))
+     ; return a view
+     [:view {:key key
+             :style {:display :flex
+                     :flex-direction :row}}
+       ; proceeded by tree edges
+       ; omit first edge
+       [:text {:key "edges"} (subs edges 1)]
+       ; follow by + or - button
+       [:text {:key "button"
+               :on-click toggle-tree-item
+               :on-focus on-focus
+               :on-blur on-blur
+               ;:on-keypress on-keypress
+               :gossamer.components/focusable has-children
+               :style {:color :ref/on-secondary
+                       :background-color :ref/secondary
+                       :content content}} ""]
+       ; followed by item label
+       [:text {:key "label"} label]]))
 
 (defn tree-loc
   [root-component]
   (zip/zipper
     (fn [component]
-      (log/info "Tree has-children?" component)
       (and (vector? component)
-           (= :tree-item (get-in component [2 :gossamer.components/type]))))
+           (< 2 (count component))
+           (= TreeItem (first component))))
     (fn [component]
-      (get-in component [1 :children]))
+      (drop 2 component))
     (fn [component children]
-      (assoc-in component [1 :children]))
+      (vec (concat (take 2 component) children)))
     root-component))
 
 (cm/defcomponent Tree
   [props _]
   (let [{:keys [children]} props
+        ;[focused set-focus!] (cm/use-state (get props :focus false))
+        [show-cursor set-show-cursor!] (cm/use-state false)
         root-loc (tree-loc (first children))
-        items (->> root-loc zc/zipper-descendants (map zip/node))
-        tree-edges (zc/tree-edges root-loc)]
-      (log/info "tree-root" (first children))
-      (log/info "tree items" (count items) (vec items))
-      [:view (merge (select-keys props [:key])
-                    {:style {:display :flex
-                             :flex-direction :column}})]
-        ; for each item
-        (map (fn [edges item]
-               (log/info "tree-item" edges item)
-               ; return a view
-               [:view {:key item
-                       :style {:display :flex
-                               :flex-direction :row}}
-                 ; proceeded by tree edges
-                 [:text {:key "edges"} (str edges)]
-                 ; followed by item
-                 (assoc item 2 [])])
-             tree-edges
-             items)))
+        descendant-zippers (zc/zipper-descendants root-loc)
+        tree-edges (map (comp clojure.string/join zc/tree-edges) descendant-zippers)]
+    #_(log/info "tree-root" (first children))
+    #_(log/info "tree items" (count items) (vec items))
+    #_(log/info "tree edges" (count tree-edges) (vec tree-edges))
+    (cm/use-effect (fn []
+      (go-loop []
+        (<! (timeout 400))
+        (set-show-cursor! not)
+        (recur))) [])
+    (let [[elements skip] (reduce
+                            (fn [[elements skip] [edges item-loc]]
+                                 #_(log/info "tree-item" edges item)
+                              (if (zero? skip)
+                                [(cons
+                                   (let [item (zip/node item-loc)
+                                         has-children (< 2 (count item))]
+                                   
+                                     [TreeItemImpl {:key (get-in item [1 :key])
+                                                    :show-cursor show-cursor
+                                                    :edges edges
+                                                    :label (get-in item [1 :label] "")
+                                                    :has-children has-children}])
+                                   elements)
+                                 0]
+                                [elements (dec skip)]))
+                            ; [elements skip]
+                            [(list) 0]
+                            (map vector
+                              tree-edges
+                              descendant-zippers))]
+      (log/info "Rendering Tree")
+      (log/info "tree elements" elements)
+
+      [:view {:key (get props :key)
+              :style {:display :flex
+                      :flex-direction :column}}
+        ; reverse since list cons-es head first
+        ; and a vector will not be expanded by hiccup
+        (reverse elements)])))
 
 #_(cm/defcomponent VScrollBar
   [props _]
@@ -806,7 +865,8 @@ maps))
   (let [{:keys [title border children]} props]
     #_(log/info "Panel props" props)
     #_(log/info "Panel children" children)
-    [:view {:style {:border (or border 1)
+    [:view {:key (get props :key)
+            :style {:border (or border 1)
                     :background-color :ref/surface}}
       (cons [:text {:key "panel-title"
                     :style {:position :absolute
@@ -828,7 +888,8 @@ maps))
                     :border-color-bottom :ref/surface-overlay-4
                     :border-color-right :ref/surface-overlay-4
                     :background-color :ref/surface}}
-      (cons [:view {:key "panel-title"
+      children
+      #_(cons [:view {:key "panel-title"
                     :style {:position :absolute
                             :height 1 :width (+ 2 (count title))
                             :top -1 :left 1
@@ -852,7 +913,8 @@ maps))
                     :border-color-bottom :ref/background-overlay-4
                     :border-color-right :ref/background-overlay-4
                     :background-color :ref/surface}}
-      (cons [:view {:key "panel-title"
+      children
+      #_(cons [:view {:key "panel-title"
                     :style {:position :absolute
                             :height 1 :width (+ 2 (count title))
                             :top -1 :left 1

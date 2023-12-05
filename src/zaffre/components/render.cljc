@@ -48,6 +48,7 @@
    :on-surface (zcolor/color 255 255 255)
    :on-error (zcolor/color 0 0 0)
    ; characters
+   :cursor \u2592
    :button-left \<
    :button-right \>
    :radio-checked \*
@@ -63,6 +64,8 @@
    :slider-filled \u2500
    :slider-empty \u2500
    :slider-control \u258C
+   :tree-item-expanded \-
+   :tree-item-collapsed \+
 })
 
 ;; Primitive elements
@@ -171,6 +174,8 @@
   :slider-filled
   :slider-empty
   :slider-control
+  :tree-item-expanded
+  :tree-item-collapsed
   ;; Non-standard properties
   :overlay-percent
 })
@@ -245,18 +250,6 @@
     (get style (resolve-value style (keyword (name v))))
     v))
 
-(defn replace-content
-  [[type props children host-dom requires-layout :as element] style-map]
-  #_(log/info "replacing content for" type (get-in props [:content :style]) props )
-  (if-let [content (compute-style style-map :content)]
-       #_(log/info "resolved-content" content)
-     [type props [content] host-dom requires-layout]
-     [type
-      props
-      (map replace-content children)
-      host-dom
-      requires-layout]))
-
 ; bounds are [x1 y1 x2 y2]
 (defn layout->bounds [{:keys [x y width height]}]
   [x y (+ x width) (+ y height)])
@@ -271,8 +264,32 @@
          (or (integer? background-color) (vector? background-color))
          (or (coll? s)
              (string? s))]}
-  ;(log/info "render-string-into-container" x y color background-color s)
-  (when (between -1 y (zt/num-rows target))
+  #_(log/info "render-string-into-container" x y color background-color s)
+  (let [fg-rgba (cond
+                     (integer? color) color
+                     (vector? color) (zcolor/color color))
+        bg-rgba (cond
+                     (integer? background-color) background-color
+                     (vector? background-color) (zcolor/color background-color))
+        blend-mode (if (keyword? blend-mode)
+                     (blend-mode zt/blend-mode->byte)
+                     blend-mode)
+        s (if (coll? s) (vec s) s)
+        length (count s)
+        max-x (int (zt/num-cols target))
+        [s length] (if (< max-x (+ x length))
+                     [(take (- max-x x) s) (- max-x x)]
+                     [s length])]
+    #_(log/info "render-string-into-container " length s)
+    (zt/set-span!
+      target
+      (char-array length s)
+      (int-array length blend-mode)
+      (int-array length 0)
+      (int-array length fg-rgba)
+      (int-array length bg-rgba)
+      (int x) (int y)))
+  #_(when (between -1 y (zt/num-rows target))
     (let [max-x (int (zt/num-cols target))
           row (int y)]
       (loop [index 0 s s]
@@ -284,51 +301,83 @@
             (zt/set! target c blend-mode (int 0) color background-color col row)
             (recur (inc index) (rest s))))))))
 
+(defn text=
+  [instance1 instance2]
+  (let [type1 (:element-type instance1)
+        type2 (:element-type instance2)
+        children1 (some-> instance1 :children deref)
+        children2 (some-> instance2 :children deref)]
+    #_(log/info "text=" type1 type2)
+    (cond
+      ; both raw-text, string equality
+      (= type1 type2 :raw-text)
+        (= children1 children2)
+      ; both text, children equality
+      (= type1 type2 :text)
+        (every? (fn [[i1 i2]] (text= i1 i2))
+          (map vector children1 children2))
+      ; else, not equal
+      :else
+        false)))
+
 (defn word-wrap-or-last-word-wrap
   [width height text-element]
-  (let [[_ props children host-dom requires-layout style-map] text-element
-        [last-element last-lines] (some-> host-dom deref meta (get :lines) first)]
-    (if (= last-element [props children])
-      last-lines
+  (let [{:keys [props children host-dom layout-required style-map]} text-element
+        [[last-props last-children] last-lines] (some-> host-dom deref meta (get :lines) first)
+        children-seq (some-> children deref)
+        last-children-seq (some-> last-children deref)]
+    #_(log/info "world-wrap-or-last-word-wrap last" last-props last-children-seq)
+    #_(log/info "world-wrap-or-last-word-wrap next" props children-seq)
+    #_(log/info "word-wrap-text-tree" width height text-element)
+    #_(log/info "word-wrap-text-tree layout-required" layout-required) 
+    (if (every? (partial = :text-same)
+                (map :layout-required children-seq))
+      (do
+      #_(log/info "using last wrap" (get-in text-element [:props :key])
+                                  (mapv :layout-required children-seq) (vec last-lines))
+      last-lines)
       (let [lines (ztext/word-wrap-text-tree width height text-element)]
-        (swap! host-dom vary-meta assoc :lines {[props children] lines})
+        #_(log/info "calculating new word wrap")
+        #_(log/info "layout-required" (mapv :layout-required children-seq))
+        #_(log/info "lines" (vec lines))
+        #_(log/info "adding meta to" host-dom)
+        (swap! host-dom vary-meta
+         (fn [m]
+           #_(log/info "adding meta to m" m)
+           ; assoc :lines to host-dom meta using empty map as default meta if no meta exists
+           (assoc (or m {}) :lines {[props children] lines})))
         lines))))
 
 (defn render-text-into-container [target text-element]
-  {:pre [(= (first text-element) :text)
-         (map? (second text-element))
-         (not (empty? (last text-element)))]}
+  {:pre [(= (:element-type text-element) :text)
+         (map? (:props text-element))
+         (not (empty? (-> text-element :children deref)))]}
   #_(log/info "render-text-into-container" text-element)
-  (let [[type {:keys [zaffre/layout] :as props} children host-config requires-layout style] text-element
+  (let [{:keys [element-type props children host-dom layout-required style-map]} text-element
+        children @children
+        {:keys [zaffre/layout]} props
         {:keys [x y width height]} layout
-        text-align (or (compute-style style :text-align) :left)
-        mix-blend-mode (or (compute-style style :mix-blend-mode) (zt/blend-mode->byte :normal))
-        overlay-percent (or (compute-style style :overlay-percent) 0)
-        text-element (if (every? string? children)
-                       [:text
-                        props
-                        (map (fn [child] [:text {} [child]]) children)
-                        host-config
-                        requires-layout]
-                       text-element)
+        text-align (or (compute-style style-map :text-align) :left)
+        mix-blend-mode (or (compute-style style-map :mix-blend-mode) (zt/blend-mode->byte :normal))
+        overlay-percent (or (compute-style style-map :overlay-percent) 0)
         #_ (log/info "text-element" text-element)
         lines (word-wrap-or-last-word-wrap width height text-element)]
-    #_(log/trace "render-text-into-container lines" (vec lines))
+    #_(log/info "render-text-into-container lines" (vec lines))
     (zu/loop-with-index dy [line lines]
       (let [default-color (get default-style :color)
             default-background-color (get default-style :background-color)]
         (when (and (< dy height) (not (empty? line)))
-          (log/trace "rendering line" (vec line))
+          #_(log/trace "rendering line" (vec line))
           ;; remove inc? for spaces
           (let [but-last (butlast line)
                 last-span (let [[s _ _] (last line)
-                                s (clojure.string/trim s)]
+                                #_#_s (clojure.string/trim s)]
                            [s
-                            {:color (compute-style style :color)
-                             :background-color (compute-style style :background-color)}
+                            {:color (compute-style style-map :color)
+                             :background-color (compute-style style-map :background-color)}
                             (count s)])
                 line (concat but-last (list last-span))
-                _ (log/trace "rendering line2" (vec line))
+                #_ (log/trace "rendering line2" (vec line))
                 span-lengths (map (fn [[s _ length]] length) line)
                 line-length (reduce + 0 span-lengths)
                 align-offset (case text-align
@@ -345,7 +394,8 @@
                 (+ x dx) (+ y dy)
                 (or color default-color)
                 (zcolor/overlay-percent (or background-color default-background-color) overlay-percent)
-                (clojure.string/trim s)
+                ; TODO: need trim?
+                s #_(clojure.string/trim s)
                 mix-blend-mode))))))))
 
 (defn render-img-into-container [target img-element]
@@ -396,34 +446,47 @@
                   col row)))))))))
 
 (defn style-map-elements-add-content
-  [parent-style [type props children _ _ :as element]]
-  {:post [(= 6 (count %))]}
-  (let [element-style (merge-styles parent-style (get props :style {}))
-        content (compute-style element-style :content)]
-    (conj
-      (cond-> element
-        content
-          (assoc 2 [(str content)])
-        (not (contains? #{:text :img} type))
-          (assoc 2 
-            (map (partial style-map-elements-add-content element-style)
-                  children)))
-      element-style)))
-  
+  [parent-style root-element]
+  {:pre [root-element]
+   :post [(if (record? %) (:style-map %) true)]}
+  (cm/pre-walk-instances
+    (fn [element]
+      (let [element-style (merge-styles parent-style (get-in element [:props :style] {}))
+            element (assoc-in element [:props :children] [])
+            content (compute-style element-style :content)
+            element (if content
+                      (do
+                      #_(log/info "replacing element content with" content)
+                      #_(log/info "element" element)
+                      #_(log/info "last-children" (some-> element :last-children deref))
+                      ; FIXME find a way to set last-children of slider :text so that this new-instance
+                      ; doesn't trigger reflow every draw. Basically if the content hasn't changed then
+                      ; requires-layout should be :text-updated or something
+                      (assoc element :children (atom [(cm/new-text-instance {}
+                                                        ; text
+                                                        (str content)
+                                                        ; old-text
+                                                        "")])))
+                      element)]
+        #_(log/info "style-map-elements-add-content" (get :element-type element) (get-in element [:props :key]) content)
+       (assoc element :style-map element-style)))
+    root-element))
   
 (defn element-seq
-  [[type _ children _ _ _  :as element]]
-  "Cascades style-maps to children. Linearizes elements."
-  (assert (= (count element) 6) (str (count element) element))
+  [{:keys [element-type children] :as element}]
+  "Linearizes elements."
+  (assert (record? element))
   (lazy-seq
     (cons
       element
-      ; include children if not :text or :img element
-      (when-not (contains? #{:text :img} type)
+      ; Don't recurse past :text and :img elements.
+      ; We want to render these in whole
+      ; Include children if not :text or :img element
+      (when-not (contains? #{:text :img} element-type)
         (mapcat element-seq
-                children)))))
+                @children)))))
 
-(defmulti render-component-into-container (fn [_ element] (first element)))
+(defmulti render-component-into-container (fn [_ {:keys [element-type]}] element-type))
 
 ;; render text
 (defmethod render-component-into-container :text
@@ -455,16 +518,17 @@
 
 ;; render views
 (defmethod render-component-into-container :view
-  [target [type {:keys [zaffre/layout] :as props} _ _ _ style]]
+  [target {:keys [element-type props style-map]}]
   #_(log/info "rendering view")
-  (let [{:keys [x y width height]} layout
-        color (compute-style style :color)
-        background-color (compute-style style :background-color)
-        background-char (or (compute-style style :background-char) \space)
-        border (compute-style style :border)
-        border-style (compute-style style :border-style)
-        mix-blend-mode (or (compute-style style :mix-blend-mode) (zt/blend-mode->byte :normal))]
-    (assert width)
+  (let [{:keys [zaffre/layout]} props
+        {:keys [x y width height]} layout
+        color (compute-style style-map :color)
+        background-color (compute-style style-map :background-color)
+        background-char (or (compute-style style-map :background-char) \space)
+        border (compute-style style-map :border)
+        border-style (compute-style style-map :border-style)
+        mix-blend-mode (or (compute-style style-map :mix-blend-mode) (zt/blend-mode->byte :normal))]
+    (assert width (str element-type props))
     (assert height)
     (assert x)
     (assert y)
@@ -480,14 +544,14 @@
           (render-string-into-container target x (+ y dy) color background-color line mix-blend-mode))))
     ; render border when set
     (when border-style
-      (let [border-top (or (compute-style style :border-top) border)
-            border-bottom (or (compute-style style :border-bottom) border)
-            border-left (or (compute-style style :border-left) border)
-            border-right (or (compute-style style :border-right) border)
-            border-color-top (compute-style style :border-color-top)
-            border-color-bottom (compute-style style :border-color-bottom)
-            border-color-left (compute-style style :border-color-left)
-            border-color-right (compute-style style :border-color-right)
+      (let [border-top (or (compute-style style-map :border-top) border)
+            border-bottom (or (compute-style style-map :border-bottom) border)
+            border-left (or (compute-style style-map :border-left) border)
+            border-right (or (compute-style style-map :border-right) border)
+            border-color-top (compute-style style-map :border-color-top)
+            border-color-bottom (compute-style style-map :border-color-bottom)
+            border-color-left (compute-style style-map :border-color-left)
+            border-color-right (compute-style style-map :border-color-right)
             border-map (case border-style
                              :single single-border
                              :double double-border)]
@@ -543,39 +607,42 @@
 (defn inherit-overflow-bounds
   ([element]
     (inherit-overflow-bounds nil element))
-  ([parent-bounds element]
-    (let [[type props children host-dom requires-layout style-map] element]
-      (cond
-        (or (= type :text) (= type :img))
-          [type
-           (if parent-bounds
-             (assoc-in props [:zaffre/layout :overflow-bounds] parent-bounds)
-             props)
-           children
-           host-dom
-           requires-layout
-           style-map]
-        (= (get-in props [:style :overflow]) :hidden)
-          [type
-           props
-           (map (partial inherit-overflow-bounds (layout->bounds (get props :zaffre/layout))) children)
-           host-dom
-           requires-layout
-           style-map]
-        :else
-          [type
-           props
-           (map (partial inherit-overflow-bounds parent-bounds) children)
-           host-dom
-           requires-layout
-           style-map]))))
+  ([parent-bounds {:keys [element-type props] :as element}]
+    {:pre [(is (record? element))
+           (->> element :children (instance? clojure.lang.Atom))]
+     :post [(record? %)
+            (->> % :children (instance? clojure.lang.Atom))]}
+    #_(log/info "inherit-overflow-bounds" (:element-type element) (get-in element [:props :key]))
+    (cond
+      ; leaves get parent bounds
+      (or (= element-type :text) (= element-type :img))
+        (if parent-bounds
+          (assoc-in props [:zaffre/layout :overflow-bounds] parent-bounds)
+          element)
+      ; overflow hidden elements propagate their bounds to descendants
+      (= (get-in props [:style :overflow]) :hidden)
+        (update
+           element
+           :children
+           (fn [children-atom]
+             (atom
+               (map (partial inherit-overflow-bounds (layout->bounds (get props :zaffre/layout))) @children-atom))))
+      ; otherwise propagate parent bounds downwards
+      :else
+        (update
+          element
+          :children
+          (fn [children-atom]
+            (atom
+              (map (partial inherit-overflow-bounds parent-bounds) @children-atom)))))))
 
 (defn zipper-elements
   [root-element]
   (zip/zipper
-    vector?
-    (fn [[_ _ children _]] children)
-    (fn [[tag props _ host-dom requires-layout] children] [tag props children host-dom requires-layout])
+    (fn [e] (and (record? e)
+                 (-> e :children deref not-empty)))
+    (fn [e] (-> e :children deref))
+    (fn [e children] (assoc e :children (atom children)))
     root-element))
   
 (defn zipper-descendants
@@ -584,35 +651,53 @@
     (lazy-seq
       (cons z (zipper-descendants (zip/next z))))))
 
-(defn requires-layout?
-  [element]
+(defn layout-required?
+  [root-element]
   ; Any descendant requires layout?
-  (some
-    (fn [element-loc]
-      (let [requires-layout (nth element 4)]
-        #_(when requires-layout
-          (log/info "Changed element requires layout" element))
-        requires-layout))
-    (->> element zipper-elements zipper-descendants (map zip/node))))
+  (->> root-element 
+    zipper-elements
+    zipper-descendants
+    (some
+      (fn [element-loc]
+        (let [element (zip/node element-loc)
+              layout-required (#{:new-instance :style-changed :new-text-instance :text-changed}
+                               (:layout-required element))
+              host-dom (:host-dom element)]
+          (if (and layout-required
+                   ; only check layout for these elements
+                   ; if raw-text is checked then it messes up :content replacement because the content is
+                   ; always :new-text-instance, so don't check :raw-text
+                   (#{:terminal :group :layer :view :text :img} (:element-type element)))
+            (log/info "Changed element requires layout"
+              layout-required
+              (:element-type element)
+              (get-in element [:props :key])
+              (:layout-required element)
+              (string? element)
+              (vector? element)
+              (when (= (:element-type element) :raw-text)
+                (-> element :children deref first))
+              "host-dom:"
+              @host-dom)
+            #_(log/info "No layout required" (:element-type element) (get-in element [:props :key]) (:layout-required element)))
+          layout-required)))))
 
 (defn copy-layout
   [element]
-  #_(log/info "copy layout" element)
-  (if (vector? element)
-    (-> element
-      (assoc-in [1 :zaffre/layout] (-> element (nth 3) deref))
-      (update 2 (partial map copy-layout)))
+  "Copy layout from host-dom to :props :zaffre/layout"
+  (cm/pre-walk-instances
+    (fn [e]
+      #_(log/info "copy layout" (:element-type e) (get-in e [:props :key]))
+      (if-let [layout (-> e :host-dom deref)]
+        (assoc-in e [:props :zaffre/layout] layout)
+        e))
     element))
 
 (defn layout-or-last-layout
   [element]
-  (if (requires-layout? element)
-    (do
-      (log/info "calculating layout")
-      (zl/layout-element element))
-    (do
-      #_(log/info "reusing layout")
-      (copy-layout element))))
+  (if (layout-required? element)
+    (zl/layout-element element)
+    (copy-layout element)))
 
 (defn render-layer-into-container
   [target layer style-map]
@@ -620,13 +705,21 @@
   #_(log/info "Render layer into container")
   #_(log/trace "render-layer-into-container" layer)
   ; replace :content with style-values
+  #_(doseq [e (element-seq layer)]
+    (log/info "layer element-seq element" (:element-type e) (get-in e [:props :key]) (:layout-required e)))
   (let [style-map-elements (style-map-elements-add-content style-map layer)
+        _ (assert style-map-elements)
+        #_ (doseq [e (->> style-map-elements element-seq)]
+            (log/info "style-map-element" (:element-type e) (get-in e [:props :key])))
         layer-en-place (layout-or-last-layout style-map-elements)
+        #_ (log/info "got layout")
+        _ (assert layer-en-place)
         ; linearize and add style-maps
         elements (->> layer-en-place
                    inherit-overflow-bounds
                    element-seq
                    vec)]
+    #_(log/info "got elements")
     #_(log/info "render-layer-into-container layer" (zc/tree->str layer))
     #_(log/info "render-layer-into-container layer-en-place" layer-en-place)
     #_(log/info "render-layer-into-container elements" elements)
@@ -636,6 +729,7 @@
       (if (first element)
         (render-component-into-container target element)
         (log/error "error rendering" element)))
+    #_(log/info "done rendering layer into container")
     elements))
 
 (defn log-layer [layer-id layer-container]
@@ -674,29 +768,33 @@
     #_(log/info "render-into-container root-element" root-element)
     (let [group-info (zt/groups target)
           layer-info (layer-info group-info)
-          [type props groups :as root-dom] root-element
+          {:keys [element-type props children]} root-element
+          groups @children
           elements (atom (list))]
       #_(log/info "render-into-container existing" (zc/tree->str existing))
       #_(log/info "render-into-container rendered-element" (zc/tree->str root-element))
       #_(log/info "render-into-container root-dom" (zc/tree->str root-dom))
       #_(System/exit 1)
       #_(log/info "type" type)
-      (assert (= type :terminal)
-              (format "Root component not :terminal found %s instead" type))
+      (assert (= element-type :terminal)
+              (format "Root component not :terminal found %s instead" element-type))
       ;; for each group in terminal
-      (doseq [[type {:keys [id pos] :as group-props} layers] groups
-              :let [{:keys [columns rows]} (get group-info id)]]
-        (assert (= type :group)
-                (format "Expected :group found %s instead" type))
+      (doseq [{:keys [element-type props children]} groups
+              :let [layers @children
+                    {:keys [id pos]} props
+                    {:keys [columns rows]} (get group-info id)]]
+        (assert (= element-type :group)
+                (format "Expected :group found %s instead" element-type))
         ;(assert id (str "No id found for group" group-props))
         #_(log/info "rendering group" id)
         ;; update group pos
         (when pos
           (zt/alter-group-pos! target id pos))
         ;; for each layer in group
-        (doseq [[type {:keys [id style]} :as layer] layers]
-          (assert (= type :layer)
-                  (format "Expected :layer found %s instead. %s" type (str layer)))
+        (doseq [{:keys [element-type props] :as layer} layers
+                :let [{:keys [id style]} props]]
+          (assert (= element-type :layer)
+                  (format "Expected :layer found %s instead. %s" element-type (str layer)))
           ;; create a container to hold cells
           ;; TODO reuse buffers
           (let [layer-container (zt/array-buffers columns rows)
@@ -709,8 +807,8 @@
                  layer-container
                  (-> layer
                    ;; assign width and height to layer style
-                   (assoc-in [1 :style :width] columns)
-                   (assoc-in [1 :style :height] rows))
+                   (assoc-in [:props :style :width] columns)
+                   (assoc-in [:props :style :height] rows))
                  root-style-map))
             #_(log-layer id layer-container)
             ;; send layer changes to terminal
@@ -722,15 +820,6 @@
 (defn request-animation-frame
   [f]
   (swap! request-animation-frame-handlers conj f))
-
-(defn leaf-elements
-  [dom]
-  (let [dom-type (get dom :type )]
-    (when (contains? #{:view :text :img} dom-type)
-        (log/info (update dom :props (fn [props] (dissoc props :children)))))
-  (when-let [children (-> dom :props :children)]
-    (doseq [child children]
-      (leaf-elements child)))))
 
 (defn in-element?
   [col row element]
@@ -789,11 +878,7 @@
     zipper-descendants
     (filter (fn [z]
       (let [element (zip/node z)]
-        (and (vector? element)
-             (< 2 (count element))
-             (let [[_ props _] element
-                   focusable (get props :gossamer.components/focusable)]
-                focusable)))))))
+        (some-> element :props :gossamer.components/focusable))))))
 
 (defn radio-group
   [radio]
@@ -844,21 +929,21 @@
 
 (defn handle-keypress
   [target-element root-element k action]
-  (log/info "handle-keypress" (vec (take 2 target-element)))
-  (when-let [on-keypress (-> target-element second :on-keypress)]
+  #_(log/info "handle-keypress" (vec (take 2 target-element)))
+  (when-let [on-keypress (some-> target-element :props :on-keypress)]
     (on-keypress {:key k :target target-element}))
-  (when (= (-> target-element second :gossamer.components/type) :radio)
+  (when (= (some-> target-element :props :gossamer.components/type) :radio)
     (broadcast-radio-checked target-element root-element)))
 
 (defn handle-focus
   [target-element]
-  (log/info "setting focus on" target-element)
-  (when-let [on-focus (-> target-element second :on-focus)]
+  #_(log/info "setting focus on" target-element)
+  (when-let [on-focus (some-> target-element :props :on-focus)]
     (on-focus {:target target-element})))
 
 (defn handle-blur
   [target-element]
-  (when-let [on-blur (-> target-element second :on-blur)]
+  (when-let [on-blur (some-> target-element :props :on-blur)]
     (on-blur {:target target-element})))
 
 (defn initial-focus-index-loc
@@ -886,15 +971,15 @@
           last-render (atom nil)
           last-layout (atom nil)
           input-values (atom {})
-          apply-in-context (atom nil)]
+          apply-in-context (atom nil)
+          root-style-map (merge-styles (style-map default-style) style)]
       (letfn [(on-render [container]
         (try
           (let [root-element (cm/clj-elements container)]
             #_(log/info "root-element" root-element)
             ; Render elements to chars, update terminal layers
             ; Root style map lifted here to encourage caching
-            (let [root-style-map (merge-styles (style-map default-style) style)
-                  dom (render-into-container terminal root-element root-style-map)
+            (let [dom (render-into-container terminal root-element root-style-map)
                   ; capture element layout
                   {:keys [layout-elements]} (meta dom)]
               ; uncomment to only draw one frame
@@ -919,15 +1004,17 @@
               (reset! last-layout layout-elements)))
           (zt/refresh! terminal)
         (catch Throwable t
-          (log/error t))))]
+          (log/error t)
+          ; TODO: remove
+          (System/exit 1))))]
         (reset! apply-in-context
           (cm/render-with-context
             component
             props
-            on-render))
+            on-render)))
 
       ; Subscribe to events and send them to chans
-      (a/sub term-pub :keypress keypress-chan))
+      (a/sub term-pub :keypress keypress-chan)
       (a/sub term-pub :click click-chan)
       (a/sub term-pub :mouse-enter mouse-enter-chan)
       (a/sub term-pub :mouse-leave mouse-leave-chan)

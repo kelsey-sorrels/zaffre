@@ -48,7 +48,7 @@
           (let [next-t (.format (now) formatter)]
             (set-t! next-t))
           (recur)))) [])
-    [:text {} t]))
+    [:text {:key (get props :key)} t]))
 
 
 (zcr/defcomponent FPSMeter
@@ -136,15 +136,15 @@
         [:layer {:id :main}
           [:view {:key "inputs"}
             [Clock {:key "clock"}]
-            [zcui/LoadingSpinner {:speed 100}]
+            [zcui/LoadingSpinner {:key "spinner" :speed 100}]
             #_[FPSMeter {:key "fpsmeter"}]
-            [zcui/OutsetPanel {:key "input-panel" :title "Inputs"
+            [zcui/OutsetPanel {:key "input-outset-panel" :title "Inputs"
                          :style {:display :flex :flex-direction :row}}
               [zcui/InsetPanel {:key "slider-panel" :title "Sliders" :style {:width 20}}
                 [zcui/Slider {:key "slider1" :initial-value 25}]
-                [zcui/Slider {:key "slider2" :initial-value 50}]
-                [zcui/Slider {:key "slider3" :initial-value 75}]]
-              [zcui/InsetPanel {:key "input-panel" :title "Text" :style {:width 20}}
+                #_[zcui/Slider {:key "slider2" :initial-value 50}]
+                #_[zcui/Slider {:key "slider3" :initial-value 75}]]
+              #_[zcui/InsetPanel {:key "input-panel" :title "Text" :style {:width 20}}
                 [zcui/Input {:key "input1"
                              :autofocus true
                              :style {:cursor-fg (zcolor/color 244 208 65 255)}
@@ -155,15 +155,15 @@
                 [zcui/Input {:key "input3"
                              :style {:cursor-fg (zcolor/color 208 65 244)}
                              :on-change text-value-on-change} []]]
-              [zcui/InsetPanel {:key "radio-panel" :title "Radio Group" :style {:width 20}}
+              #_[zcui/InsetPanel {:key "radio-panel" :title "Radio Group" :style {:width 20}}
                 [zcui/Radio {:key "option1" :name "group1" :value "option1"} [:text {} "Option 1"]]
                 [zcui/Radio {:key "option2" :name "group1" :value "option2"} [:text {} "Option 2"]]
                 [zcui/Radio {:key "option3" :name "group1" :value "option3"} [:text {} "Option 3"]]]
-              [zcui/InsetPanel {:key "checkbox-panel" :title "Checkboxes" :style {:width 20}}
+              #_[zcui/InsetPanel {:key "checkbox-panel" :title "Checkboxes" :style {:width 20}}
                 [zcui/Checkbox {:key "option1" :value "option1"} [:text {} "Option 1"]]
                 [zcui/Checkbox {:key "option2" :value "option2"} [:text {} "Option 2"]]
                 [zcui/Checkbox {:key "option3" :value "option3"} [:text {} "Option 3"]]]
-              [zcui/InsetPanel {:key "dropdown-panel" :title "Dropdowns" :style {:width 20}}
+              #_[zcui/InsetPanel {:key "dropdown-panel" :title "Dropdowns" :style {:width 20}}
                 [zcui/Dropdown {:key "dropdown1"}
                   [:view {:key "option1"} [:text {:key "option1"} "Option 1"]]
                   [:view {:key "option2"} [:text {:key "option1"} "Option 2"]]
@@ -171,15 +171,12 @@
                   [:view {:key "option4"} [:text {:key "option1"} "Option 4"]]]]
               #_[zcui/InsetPanel {:key "tree-panel" :title "Tree" :style {:width 20}}
                 [zcui/Tree {:key "tree"}
-                  [zcui/TreeItem {:key "a"}
-                    [:text {} "1"]
-                    [zcui/TreeItem {:key "b"}
-                      [:text {} "2"]
-                      [zcui/TreeItem {:key "c"}
-                        [:text {} "3"]]]
-                    [zcui/TreeItem {:key "z"}
-                      [:text {} "y"]]]]]
-              [zcui/InsetPanel {:key "button-panel" :title "Buttons"
+                  [zcui/TreeItem {:key "a" :label "encyclopedia"}
+                    [zcui/TreeItem {:key "b" :label "culture"}
+                      [zcui/TreeItem {:key "c" :label "art"}]
+                      [zcui/TreeItem {:key "d" :label "craft"}]]
+                    [zcui/TreeItem {:key "e" :label "science"}]]]]
+              #_[zcui/InsetPanel {:key "button-panel" :title "Buttons"
                            :style {
                              :width 20
                              :display :flex

@@ -1,6 +1,7 @@
 (ns zaffre.components.layout
   (:require [clojure.test :refer [is]]
             [taoensso.timbre :as log]
+            [cashmere.core-graal :as cm]
             [zaffre.components :as zc]
             [zaffre.text :as ztext])
   (:import (org.lwjgl.system MemoryStack)
@@ -291,20 +292,20 @@
     #(Yoga/YGNodeStyleSetJustifyContent node %)))
 
 (defn build-yoga-tree [max-width max-height parent index element]
-  "Takes [type props] elements and annotates them with yoga nodes like
-   [type props node]. Does this recursively to the element's children"
+  "Takes Instance elements and annotates them with yoga nodes like
+   using metadata. Yoga nodes are stored in metadata with the key :node.
+   Does this recursively to the element's children"
   #_(log/info "build-yoga-tree" index element)
-  (let [[type
-         {:keys [style] :as props}
-         children
-         host-dom
-         requires-layout
-         style-map
-         :as styled-element] (if (nil? parent)
-                                        (-> element
-                                          (assoc-in [1 :style :width] max-width)
-                                          (assoc-in [1 :style :height] max-height))
-                                        element)
+  (let [{:keys [element-type
+                props
+                children]
+          :as styled-element} (if (nil? parent)
+                                (-> element
+                                  (assoc-in [:props :style :width] max-width)
+                                  (assoc-in [:props :style :height] max-height))
+                                element)
+        {:keys [style]} props
+        children @children
         node (Yoga/YGNodeNew)]
     (Yoga/YGNodeStyleSetFlexDirection node Yoga/YGFlexDirectionColumn)
     
@@ -316,12 +317,11 @@
     (when parent
       (Yoga/YGNodeInsertChild parent node index))
  
-    (when (= type :text)
-      (if (every? string? children)
-        (Yoga/YGNodeSetMeasureFunc node (text-measure-func-memo (first children)))
-        (Yoga/YGNodeSetMeasureFunc node (text-measure-func-memo (ztext/text element)))))
+    (when (= element-type :text)
+      (Yoga/YGNodeSetMeasureFunc node (text-measure-func-memo
+                                        (ztext/text element))))
 
-    (when (= type :img)
+    (when (= element-type :img)
       (let [{:keys [width height]} props]
         #_(log/info "img style width x height: " width "x" height)
         (Yoga/YGNodeStyleSetWidth node width)
@@ -331,25 +331,21 @@
     ;; don't recurse into :text and :img
     (let [result
       (with-meta
-        (if (or (= type :text) (= type :img))
+        (if (or (= element-type :text) (= element-type :img))
           styled-element
-          [type
-           props
-           (if children
-               ;; force eager evaluation so that entire tree is created
-               (vec (map-indexed (fn [index child]
-                 (if (sequential? child)
-                   (let [child-props (second child)]
-                     ;; When position == fixed, detatch child and position separately
-                     (if (= (get-in child-props [:style :position]) :fixed)
-                       (build-yoga-tree max-width max-height nil index (assoc-in child [1 :style :position] :absolute))
-                       (build-yoga-tree max-width max-height node index child)))
-                   child))
-                 children))
-             [])
-             host-dom
-             requires-layout
-             style-map]) {:node node})]
+          (cm/reset-children! styled-element
+            (if children
+              ;; force eager evaluation so that entire tree is created
+              (vec (map-indexed (fn [index child]
+                (if (record? child)
+                  (let [child-props (:props child)]
+                    ;; When position == fixed, detatch child and position separately
+                    (if (= (get-in child-props [:style :position]) :fixed)
+                      (build-yoga-tree max-width max-height nil index (assoc-in child [:props :style :position] :absolute))
+                      (build-yoga-tree max-width max-height node index child)))
+                  child))
+                children))
+              []))) {:node node})]
       ;; if no parent, then calculate layout before returning
       (when (nil? parent)
         #_(log/info "build-yoga-tree YGNodeCalculateLayout" result)
@@ -363,9 +359,10 @@
   ([yoga-tree]
     (transfer-layout 0 0 yoga-tree))
   ([parent-layout-x parent-layout-y yoga-tree]
+    {:post [(some? %)]}
     #_(log/info "transfer-layout" yoga-tree)
     (if-let [node (-> yoga-tree meta :node)]
-      (let [[type props children host-dom requires-layout style-map] yoga-tree
+      (let [{:keys [element-type props host-dom]} yoga-tree
             style (get props :style)
             layout (get style :layout-type :static)
             left (Yoga/YGNodeLayoutGetLeft node)
@@ -389,23 +386,25 @@
                     :height layout-height}
             props-with-layout (assoc props
                                 :zaffre/layout layout)]
+        (assert layout (str element-type props))
+        #_(log/info "copying" element-type (get props :key))
         #_(log/info "layout params" {:left left :top top
                                    :layout-x layout-x :layout-y layout-y
                                    :layout-width layout-width :layout-height layout-height})
+        #_(log/info "freeing" node)
         (Yoga/YGNodeFree node)
         ; set host-dom so that refs have access to layouts
         #_(log/info "setting host-dom" host-dom layout)
         (reset! host-dom layout)
-        [type
+        (-> yoga-tree
           ; copy layout into props so that render code has access to immutable version of layout
-         props-with-layout
-         (if children
-           (mapv (partial transfer-layout layout-x layout-y)
-                 children)
-           [])
-         host-dom
-         requires-layout
-         style-map])
+          (assoc :props props-with-layout)
+          (cm/swap-children! 
+           (fn [children]
+             (if children
+               (mapv (partial transfer-layout layout-x layout-y)
+                     children)
+               [])))))
       yoga-tree)))
 
 (def yoga-logger
@@ -422,8 +421,10 @@
                 YGMeasureFunc/toLong))))))
 
 (defn layout-element [element]
-  (let [width (get-in element [1 :style :width])
-        height (get-in element [1 :style :height])
+  {:pre [(some? element)]
+   :post [(some? %)]}
+  (let [width (get-in element [:props :style :width])
+        height (get-in element [:props :style :height])
         yoga-config (Yoga/YGConfigNew)]
     (try
       (Yoga/YGConfigSetLogger yoga-config yoga-logger)
@@ -431,5 +432,6 @@
         #_(log/info "yoga-tree" yoga-tree)
         (transfer-layout yoga-tree))
       (catch Throwable t
+        (log/error t)
         (Yoga/YGConfigFree yoga-config)))))
 
