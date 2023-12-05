@@ -49,8 +49,10 @@
                              (dosync
 							   (do-frame-clear terminal#)
 							   ~@body
-							   (refresh! terminal#))))]
-               (Thread/sleep (max 0 (- sleep-time# dt#)))
+							   (refresh! terminal#))))
+                     pause# (max 0 (- sleep-time# dt#))]
+               (when (< 0 pause#)
+                 (Thread/sleep pause#))
                (recur))))
            (log/info "finished do-frame loop")
            (catch Throwable th#

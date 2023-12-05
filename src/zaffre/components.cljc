@@ -8,6 +8,7 @@
 (declare ^:dynamic *current-owner*)
 
 (declare element?)
+(declare element-id-str)
 
 ;; State
 (defprotocol IUpdater
@@ -46,7 +47,7 @@
                           :post [(some? %)
                                  (map? %)]}
                          (try
-                           (log/trace "partial-state-callback" s k partial-state)
+                           (log/trace "partial-state-callback" (format "%x" k) partial-state)
                            (update s k #(merge % partial-state))
                            (catch Exception e
                              (log/error "Exception applying callback" e)
@@ -64,6 +65,7 @@
                              s)))
                      :else
                        (assert false (str "Got neither partial-state nor callback" partial-state callback)))]
+      (log/trace (format "enqueue-set-state! enqueued update for element %x" k))
       (swap! a (fn [{:keys [q] :as updater}]
                  (assoc updater :q (conj q callback)))))
       this)
@@ -79,7 +81,7 @@
                (assert q (str "q cannot be nil" q s))
                (assert (some? s) (str "s cannot be nil" q s))
                ;(when-not (zero? (count q))
-                 (log/info "update-state!" (count q) "queued updates")
+                 (log/trace "update-state!" (count q) "queued updates")
                ;; apply queued changes to old state to make new state
                (let [new-s (reduce (fn [s f]
                                      {:pre [(some? s) (some? f)]
@@ -289,6 +291,7 @@
     (if (or (map? update) (fn? update))
       (let [partial-state (when (map? update) update)
             callback (when (fn? update) update)]
+        (log/trace "set-state! " (element-id-str *current-owner*))
         (enqueue-set-state! *updater* *current-owner* partial-state callback))
       (throw "setState(...): takes an object of state variables to update or a
              function which returns an object of state variables.")))
@@ -353,16 +356,7 @@
   :render (fn [this] nil)
   :component-did-mount (fn [this] nil)
   :component-will-receive-props (fn [this next-props] nil)
-  :should-component-update? (fn [this next-props next-state]
-                              (let [current-props (props this)
-                                    current-state (state this)]
-                                (log/trace "should-component-update? fn\n"
-                                           (dissoc current-props :children)"\n"
-                                           (dissoc next-props :children) "\n"
-                                           current-state "\n"
-                                           next-state)
-                                (or (not= current-props next-props)
-                                    (not= current-state next-state))))
+  :should-component-update? (fn [this next-props next-state] true)
   :component-will-update (fn [this next-props next-state] nil)
   :get-snapshot-before-update (fn [this] nil)
   :component-did-update (fn [this prev-props prev-state] nil)
@@ -431,12 +425,15 @@
 (defrecord ReactElement [id type key ref self source owner props]
   Object
   (toString [this]
-    (format "Element.toString %s :props %s :state %s"
+    (format "ReactElement: %s :props %s :state %s"
       (if (keyword? (get this :type))
         (name (get this :type))
         (display-name (get this :type)))
       props
       (get-state *updater* this))))
+
+(defn element-id-str [element]
+  (format "%x" (get element :id)))
 
 (defn element-children [element]
   (get-in element [:props :children]))
@@ -469,7 +466,11 @@
   (instance? Component v))
 
 (defn element? [v]
-  (instance? ReactElement v))
+  (and (instance? ReactElement v)
+       ; keyword-typed elements don't have instances and therefore don't have ids
+       ; but every other type must have an instance and therefore an id
+       (or (keyword? (get v :type))
+           (not (nil? (get v :id))))))
 
 (defn- valid-children? [type children]
   (assert (sequential? children) (format "%s not sequential" children))
@@ -499,6 +500,7 @@
 
 ;; React.createElement(Hello, {toWhat: 'World'}, null)
 (defn create-element [type config children & more]
+  {:post [(element? %)]}
   (assert (every? is-valid-event-handler-key?
                   (filter (fn [k] (clojure.string/starts-with? (name k) "on-"))
                           (keys config)))
@@ -596,7 +598,7 @@
                       (log/trace "construct-instance state" s)
                         (enqueue-set-state! *updater* element s nil)
                         s)))
-        _ (log/trace "construct-component element type" (str type))
+        _ (log/trace "construct-component element type" (component-display-name type) state)
         instance (if (fn? type)
                    (create-instance (assoc (fn->component type) :props props))
                    (create-instance (assoc type :props props) state))]
@@ -680,9 +682,14 @@
          "\u2514 " ; └
          "\u251c "))) ;├
 
-(defmulti tree-level->str (fn [v _] (if (vector? v)
-                                          :vector
-                                          (type v))))
+(defmulti tree-level->str (fn [v _] (cond (vector? v)
+                                            :vector
+                                          (element? v)
+                                            :element
+                                          (map? v)
+                                            :map
+                                          :else
+                                            (type v))))
 (defmethod tree-level->str nil [s level]
   (let [indent (tree-indent level)]
     (format "%s%s (Nil @%s)\n" indent s (System/identityHashCode s))))
@@ -691,7 +698,18 @@
     (format "%s %s (String @%s)\n" indent s (System/identityHashCode s))))
 (defmethod tree-level->str :vector [[k v] level]
   (let [indent (tree-indent level)]
-    (format "%s%s:%s\n" indent k v)))
+    (if (map? v)
+      (apply str
+        [(format "%s%s\n" indent k)
+         (tree-level->str v level)])
+      (format "%s%s: %s\n" indent k (if (fn? v) "fn" v)))))
+(defmethod tree-level->str :map [m level]
+  (let [indent (tree-indent level)]
+    (apply str
+      (map (fn [kv child-is-last] (tree-level->str kv (conj level child-is-last)))
+           m
+           (concat (repeat (dec (count m)) false)
+                   (repeat true))))))
 (defmethod tree-level->str Component [component level is-last]
   (let [indent (apply str (repeat (* 2 level) " "))]
     (apply str
@@ -704,16 +722,17 @@
       [(format "%s%s (ComponentInstance @%x)\n" indent (component-display-name instance) (System/identityHashCode instance))
        (format "%s  :props %s\n" indent (dissoc (props instance) :children))
        (format "%s  :state %s\n" indent (when-let [s (state instance)] @s))])))
-(defmethod tree-level->str ReactElement [element level]
+(defmethod tree-level->str :element [element level]
   (let [elem-indent (tree-indent level)
         indent (tree-indent (conj level false))
         last-indent (tree-indent (conj level true))
         children (element-children element)]
     (apply str
       (concat
-        [(format "%s%c[32m%s%c[39m(Element(id=%x)@%x)\n" elem-indent (char 27) (element-display-name element) (char 27) (get element :id) (System/identityHashCode element))
-         (format "%s:props\n" indent)]
-         (let [props (dissoc (get element :props) :children)]
+        [(format "%s%c[32m%s%c[39m(Element(id=%s)@%x)\n" elem-indent (char 27) (element-display-name element) (char 27) (element-id-str element) (System/identityHashCode element))
+         (format "%s:props\n" indent)
+         (tree-level->str (dissoc (get element :props) :children) (conj level false))]
+         #_(let [props (dissoc (get element :props) :children)]
            (map (fn [kv child-is-last] (tree-level->str kv (-> level (conj false) (conj child-is-last))))
                 props
                 (concat (repeat (dec (count props)) false)

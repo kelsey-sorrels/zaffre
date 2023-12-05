@@ -244,7 +244,7 @@
              y       (/ (- (.height vidmode) screen-height) 2)]
          (GLFW/glfwSetWindowPos window x y)
          (GLFW/glfwMakeContextCurrent window)
-         (GLFW/glfwSwapInterval 1)
+         (GLFW/glfwSwapInterval 0)
          (GLFW/glfwShowWindow window)
          (let [capabilities (GL/createCapabilities)
                width-buffer (BufferUtils/createIntBuffer 1)
@@ -455,6 +455,26 @@
      :texture-coords-count texture-coords-count
      :vao-id vao-id}))
 
+(defprotocol IGLCharacter
+  (character [this])
+  (fg-color [this])
+  (bg-color [this])
+  (style [this]))
+
+(defrecord GLCharacter [character fg-color bg-color style]
+  Object
+  (toString [this]
+    (pr-str this))
+  IGLCharacter
+  (character [this] character)
+  (fg-color [this] fg-color)
+  (bg-color [this] bg-color)
+  (style [this] style))
+
+(defn make-terminal-character
+  ([character fg-color bg-color style]
+   (GLCharacter. character fg-color bg-color style)))
+
 (defn- fill-glyph-fg-bg-buffers [layer-id->character-map character->col-row character->transparent texture-columns texture-rows rows layer-size cursor-xy glyph-image-data fg-image-data bg-image-data]
   (let [^long texture-columns texture-columns
         ^long texture-rows texture-rows
@@ -475,16 +495,16 @@
       ;; Set buffer positions to beginning
       (loop-with-index row [line (reverse @character-map)]
         (loop-with-index col [c line]
-          (let [chr        (or (get c :fx-character) (get c :character))
-                style      (get c :style)
+          (let [chr        (or (get c :fx-character) (character c))
+                style      (style c)
                 highlight  (or (= @cursor-xy [col (- rows row 1)]) (contains? style :fg-bg))
                 ;highlight  (= @cursor-xy [col (- rows row 1)])
                 [fg-r fg-g fg-b fg-a] (if highlight
-                                        (get c :bg-color)
-                                        (get c :fg-color))
+                                        (bg-color c)
+                                        (fg-color c))
                 [bg-r bg-g bg-b bg-a] (if highlight
-                                        (get c :fg-color)
-                                        (get c :bg-color))
+                                        (fg-color c)
+                                        (bg-color c))
                 fg-a (or fg-a 255)
                 bg-a (or bg-a 255)
                 ;s         (str (get c :character))
@@ -546,15 +566,6 @@
 ;; Normally this would be a record, but until http://dev.clojure.org/jira/browse/CLJ-1224 is fixed
 ;; it is not performant to memoize records because hashCode values are not cached and are recalculated
 ;; each time.
-
-(defrecord GLCharacter [character fg-color bg-color style]
-  Object
-  (toString [this]
-    (pr-str this)))
-
-(defn make-terminal-character
-  ([character fg-color bg-color style]
-   (GLCharacter. character fg-color bg-color style)))
 
 (defrecord OpenGlTerminal [term-args
                            window-size
