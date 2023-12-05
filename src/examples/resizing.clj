@@ -37,7 +37,7 @@
      :screen-height (* 16 16)
      :default-fg-color [250 250 250]
      :default-bg-color [5 5 8]
-     #_#_:icon-paths ["images/icon-16x16.png"
+     :icon-paths ["images/icon-16x16.png"
                   "images/icon-32x32.png"
                   #_"images/icon-128x128.png"]}
     (fn [terminal]
