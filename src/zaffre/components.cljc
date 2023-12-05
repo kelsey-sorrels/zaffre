@@ -1,6 +1,7 @@
 (ns zaffre.components
   (:require clojure.data
             clojure.string
+            [cashmere.core-graal :as cm]
             [clojure.zip :as zip]
             [overtone.at-at :as atat]
             [taoensso.timbre :as log]))
@@ -8,7 +9,6 @@
 (def ^:dynamic *pool* (atat/mk-pool))
 (declare ^:dynamic *current-owner*)
 
-(declare element?)
 (declare element-id-str)
 
 (defn deep-merge [v & vs]
@@ -97,11 +97,11 @@
   [root-element]
   (zip/zipper
     ; can have children
-    (fn [v] (or (element? v) (map? v) (map-entry? v)))
+    (fn [v] (or (cm/cashmere-instance? v) (map? v) (map-entry? v)))
     ; children
     (fn [v]
       (cond
-        (element? v)
+        (cm/cashmere-instance? v)
           (vec (array-map
             :props (nth v 1)
             :host-dom @(nth v 3)
@@ -115,7 +115,7 @@
     ; with children
     (fn [v children]
       (cond
-        (element? v)
+        (cm/cashmere-instance? v)
           (let [[tag props _ host-dom] v]
             [tag props children host-dom])
         (map? v)
@@ -140,7 +140,7 @@
             :let [node (zip/node z)]]
         (str (clojure.string/join (tree-edges z))
              (cond
-               (element? node)
+               (cm/cashmere-instance? node)
                  (str (first node) (nth node 3) (nth node 4))
                (map-entry? node)
                  (first node)
@@ -159,7 +159,7 @@
               :let [node (zip/node z)]]
           (str (clojure.string/join (tree-edges z))
                (cond
-                 (element? node)
+                 (cm/cashmere-instance? node)
                    (first node)
                  (map-entry? node)
                    (first node)

@@ -142,9 +142,9 @@
                          :style {:display :flex :flex-direction :row}}
               [zcui/InsetPanel {:key "slider-panel" :title "Sliders" :style {:width 20}}
                 [zcui/Slider {:key "slider1" :initial-value 25}]
-                #_[zcui/Slider {:key "slider2" :initial-value 50}]
-                #_[zcui/Slider {:key "slider3" :initial-value 75}]]
-              #_[zcui/InsetPanel {:key "input-panel" :title "Text" :style {:width 20}}
+                [zcui/Slider {:key "slider2" :initial-value 50}]
+                [zcui/Slider {:key "slider3" :initial-value 75}]]
+              [zcui/InsetPanel {:key "input-panel" :title "Text" :style {:width 20}}
                 [zcui/Input {:key "input1"
                              :autofocus true
                              :style {:cursor-fg (zcolor/color 244 208 65 255)}

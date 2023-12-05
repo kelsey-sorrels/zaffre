@@ -250,6 +250,13 @@
     (get style (resolve-value style (keyword (name v))))
     v))
 
+(defn element-without-style-map
+  [element]
+  (cm/pre-walk-instances
+    (fn [element]
+      (assoc element :style-map :hidden))
+    element))
+
 ; bounds are [x1 y1 x2 y2]
 (defn layout->bounds [{:keys [x y width height]}]
   [x y (+ x width) (+ y height)])
@@ -323,18 +330,22 @@
 (defn word-wrap-or-last-word-wrap
   [width height text-element]
   (let [{:keys [props children host-dom layout-required style-map]} text-element
+        ; TODO: use (get [props @children) rather than first?
         [[last-props last-children] last-lines] (some-> host-dom deref meta (get :lines) first)
         children-seq (some-> children deref)
         last-children-seq (some-> last-children deref)]
-    #_(log/info "world-wrap-or-last-word-wrap last" last-props last-children-seq)
-    #_(log/info "world-wrap-or-last-word-wrap next" props children-seq)
-    #_(log/info "word-wrap-text-tree" width height text-element)
+    #_(log/info "world-wrap-or-last-word-wrap last" last-props (mapv element-without-style-map last-children-seq))
+    #_(log/info "world-wrap-or-last-word-wrap next" props (mapv element-without-style-map children-seq))
+    #_(log/info "word-wrap-text-tree" width height (element-without-style-map text-element))
     #_(log/info "word-wrap-text-tree layout-required" layout-required) 
-    (if (every? (partial = :text-same)
-                (map :layout-required children-seq))
+    (if (and (every? (partial = :text-same)
+                     (map :layout-required children-seq))
+             last-lines)
       (do
       #_(log/info "using last wrap" (get-in text-element [:props :key])
-                                  (mapv :layout-required children-seq) (vec last-lines))
+                                  (mapv :layout-required children-seq) (vec last-lines)
+                                  (vec last-lines))
+      (assert last-lines "no last-wrap found, but :text-same for all :layout-required")
       last-lines)
       (let [lines (ztext/word-wrap-text-tree width height text-element)]
         #_(log/info "calculating new word wrap")
@@ -344,6 +355,7 @@
         (swap! host-dom vary-meta
          (fn [m]
            #_(log/info "adding meta to m" m)
+           #_(log/info "using [props children]" [props children])
            ; assoc :lines to host-dom meta using empty map as default meta if no meta exists
            (assoc (or m {}) :lines {[props children] lines})))
         lines))))
@@ -352,7 +364,7 @@
   {:pre [(= (:element-type text-element) :text)
          (map? (:props text-element))
          (not (empty? (-> text-element :children deref)))]}
-  #_(log/info "render-text-into-container" text-element)
+  #_(log/info "render-text-into-container" (element-without-style-map text-element))
   (let [{:keys [element-type props children host-dom layout-required style-map]} text-element
         children @children
         {:keys [zaffre/layout]} props
@@ -454,21 +466,37 @@
       (let [element-style (merge-styles parent-style (get-in element [:props :style] {}))
             element (assoc-in element [:props :children] [])
             content (compute-style element-style :content)
+            previously-rendered (some-> element :host-dom deref)
+            previous-meta (some-> element :children meta)
             element (if content
-                      (do
-                      #_(log/info "replacing element content with" content)
-                      #_(log/info "element" element)
-                      #_(log/info "last-children" (some-> element :last-children deref))
-                      ; FIXME find a way to set last-children of slider :text so that this new-instance
-                      ; doesn't trigger reflow every draw. Basically if the content hasn't changed then
-                      ; requires-layout should be :text-updated or something
-                      (assoc element :children (atom [(cm/new-text-instance {}
-                                                        ; text
-                                                        (str content)
-                                                        ; old-text
-                                                        "")])))
+                      (let [raw-text-children-atom (-> element :children deref first :children)
+                            previous-content (some-> element :host-dom deref :last-content)
+                            same-content (and previously-rendered
+                                              (= previous-content content))]
+                        #_(log/info "replacing element content with" content)
+                        #_(log/info "element" element)
+                        #_(log/info "last-children" (some-> element :last-children deref))
+                        #_(log/info "setting content of" raw-text-children-atom)
+                        ; replace content in the child :raw-text instance
+                        (reset! raw-text-children-atom [(str content)])
+                        (swap! (:host-dom element) assoc :last-content content)
+                        ; Check this content against :last-content in host-dom
+                        ; if not diff then use previously rendered
+                        ; record last-content in :host-dom
+                        ; if previously rendered using the same content set all children to :text-same
+                        (when same-content
+                          (cm/swap-children! element (fn [children]
+                            (mapv (fn [child]
+                                    (assoc child :layout-required :text-same))
+                                  children))))
+                        ; if previously rendered set element's layout to :text-same
+                        (cond-> element
+                          same-content
+                          (assoc :layout-required :text-same)))
                       element)]
-        #_(log/info "style-map-elements-add-content" (get :element-type element) (get-in element [:props :key]) content)
+       #_(when content
+         (log/info "style-map-elements-add-content"
+           (element-without-style-map element)))
        (assoc element :style-map element-style)))
     root-element))
   
@@ -603,7 +631,7 @@
     (> ay1 by2)
     (< ay2 by1)))
 
-; TODO: Could this be fixed merged into element-seq?
+; TODO: Could this be fixed/merged into element-seq?
 (defn inherit-overflow-bounds
   ([element]
     (inherit-overflow-bounds nil element))
@@ -651,7 +679,7 @@
     (lazy-seq
       (cons z (zipper-descendants (zip/next z))))))
 
-(defn layout-required?
+(defn should-reflow?
   [root-element]
   ; Any descendant requires layout?
   (->> root-element 
@@ -663,22 +691,9 @@
               layout-required (#{:new-instance :style-changed :new-text-instance :text-changed}
                                (:layout-required element))
               host-dom (:host-dom element)]
-          (if (and layout-required
-                   ; only check layout for these elements
-                   ; if raw-text is checked then it messes up :content replacement because the content is
-                   ; always :new-text-instance, so don't check :raw-text
-                   (#{:terminal :group :layer :view :text :img} (:element-type element)))
+          (if layout-required
             (log/info "Changed element requires layout"
-              layout-required
-              (:element-type element)
-              (get-in element [:props :key])
-              (:layout-required element)
-              (string? element)
-              (vector? element)
-              (when (= (:element-type element) :raw-text)
-                (-> element :children deref first))
-              "host-dom:"
-              @host-dom)
+              (element-without-style-map element))
             #_(log/info "No layout required" (:element-type element) (get-in element [:props :key]) (:layout-required element)))
           layout-required)))))
 
@@ -695,7 +710,7 @@
 
 (defn layout-or-last-layout
   [element]
-  (if (layout-required? element)
+  (if (should-reflow? element)
     (zl/layout-element element)
     (copy-layout element)))
 
@@ -725,7 +740,7 @@
     #_(log/info "render-layer-into-container elements" elements)
     #_(log/info "render-layer-into-container layer-en-place" (zc/tree->str layer-en-place))
     (doseq [element elements]
-      #_(log/info "render-layer-into-container element" element)
+      #_(log/info "render-layer-into-container element" (element-without-style-map element))
       (if (first element)
         (render-component-into-container target element)
         (log/error "error rendering" element)))
@@ -824,10 +839,10 @@
 (defn in-element?
   [col row element]
   #_(log/info "in-element?" col row element)
-  (let [minx (-> element second :zaffre/layout :x)
-        miny (-> element second :zaffre/layout :y)
-        width (-> element second :zaffre/layout :width)
-        height (-> element second :zaffre/layout :height)
+  (let [minx (-> element :host-dom deref :x)
+        miny (-> element :host-dom deref :y)
+        width (-> element :host-dom deref :width)
+        height (-> element :host-dom deref :height)
         maxx (+ minx width)
         maxy (+ miny height)]
   (and (<= minx col (dec maxx))
@@ -842,8 +857,8 @@
         (log/info "hits:" (count hits))
         (doseq [hit hits]
           (when-let [on-click (-> hit second :on-click)]
-            (on-click {:client-x (- col (-> hit second :zaffre/layout :x))
-                       :client-y (- row (-> hit second :zaffre/layout :y))
+            (on-click {:client-x (- col (-> hit :host-dom deref :x))
+                       :client-y (- row (-> hit :host-dom deref :y))
                        :screen-x col
                        :screen-y row
                        :target hit})))))))
@@ -854,7 +869,7 @@
     (log/trace col row)
     (log/trace (count hits) "hits")
     (doseq [hit hits]
-      (when-let [on-mouse-enter (-> hit second :on-mouse-enter)]
+      (when-let [on-mouse-enter (-> hit :props :on-mouse-enter)]
         (on-mouse-enter {:target hit})))))
 
 
@@ -878,11 +893,11 @@
     zipper-descendants
     (filter (fn [z]
       (let [element (zip/node z)]
-        (some-> element :props :gossamer.components/focusable))))))
+        (some-> element :props :cashmere.components/focusable))))))
 
 (defn radio-group
   [radio]
-  (-> radio second (get :name)))
+  (-> radio :props (get :name)))
 
 (defn same-group?
   [radio1 radio2]
@@ -897,7 +912,7 @@
                       (map zip/node)
                       (filter (partial same-group? broadcaster))
                       (filter (partial not= broadcaster)))
-          :let [set-value (-> groupmate second :gossamer.components/set-value)]
+          :let [set-value (-> groupmate :props :cashmere.components/set-value)]
           :when set-value]
     (log/info "setting value for" groupmate)
     (set-value false)))
@@ -905,13 +920,14 @@
 (defn advance-focus-index!
   [container]
   (swap! focus-index (fn [index]
-    (let [num-focusable-elements (count (focusable-element-locs container))]
-      (log/info "advance-focus-index!" index num-focusable-elements)
-      (if (pos? num-focusable-elements)
-        (if (= -1 index)
-          0
-          (mod (inc index) (count (focusable-element-locs container))))
-        index)))))
+    (let [num-focusable-elements (count (focusable-element-locs container))
+          next-index (if (pos? num-focusable-elements)
+                       (if (= -1 index)
+                         0
+                         (mod (inc index) (count (focusable-element-locs container))))
+                       index)]
+      (log/info "advance-focus-index!" index "next-index" next-index "num-focusable-elems" num-focusable-elements)
+      next-index))))
 
 (defn decrease-focus-index!
   [container]
@@ -932,12 +948,12 @@
   #_(log/info "handle-keypress" (vec (take 2 target-element)))
   (when-let [on-keypress (some-> target-element :props :on-keypress)]
     (on-keypress {:key k :target target-element}))
-  (when (= (some-> target-element :props :gossamer.components/type) :radio)
+  (when (= (some-> target-element :props :cashmere.components/type) :radio)
     (broadcast-radio-checked target-element root-element)))
 
 (defn handle-focus
   [target-element]
-  #_(log/info "setting focus on" target-element)
+  (log/info "setting focus on" (get-in target-element [:props :key]))
   (when-let [on-focus (some-> target-element :props :on-focus)]
     (on-focus {:target target-element})))
 
@@ -1033,7 +1049,7 @@
                 (log/error t)))))
         (recur))
 
-       ;; All handlers use exec-in-context so that gossamer bindings are avalable during execution
+       ;; All handlers use exec-in-context so that cashmere bindings are avalable during execution
        (go-loop []
          (when-let [layout @last-layout]
            (let [[event event-chan] (a/alts! [keypress-chan click-chan mouse-leave-chan mouse-leave-chan] :default nil)]

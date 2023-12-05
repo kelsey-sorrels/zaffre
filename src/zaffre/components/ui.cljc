@@ -40,23 +40,40 @@ maps))
     \
     event))
 
+(defn use-toggle-value
+  ([duty]
+    (use-toggle-value duty false))
+  ([duty v]
+    (let [[value set-value!] (cm/use-state v)]
+      (cm/use-effect (fn []
+        (go-loop []
+          (log/info "use-toggle-value")
+          (<! (timeout duty))
+          (set-value! not)
+          (recur))) [])
+      value)))
+
+(defn use-focus
+  [props]
+  (let [[focused set-focus!] (cm/use-state (get props :focus false))
+        on-focus (fn [_] (set-focus! true))
+        on-blur (fn [_] (set-focus! false))]
+    [focused on-focus on-blur]))
+
 (cm/defcomponent Input
   [props _]
   (let [[value set-value!] (cm/use-state (get props :value ""))
-        [focused set-focus!] (cm/use-state (get props :focus false))
-        [show-cursor set-show-cursor!] (cm/use-state false)
+        [focused on-focus on-blur] (use-focus props)
+        show-cursor (use-toggle-value 400)
         max-length (or (get props :max-length) 28)
-        duty-on 400
-        duty-off 400
-        on-focus (fn [_] (set-focus! true))
-        on-blur (fn [_] (set-focus! false))
         on-keypress (fn [e]
           #_(log/info "Input on-keypress" e)
           (let [k (get e :key)]
             #_(log/info "value" value "max-length" max-length "k" k)
             (cond
               (= k :backspace)
-                (set-value! (subs value 0 (dec (count value))))
+                (when (pos? (count value))
+                  (set-value! (subs value 0 (dec (count value)))))
               (and (or (char? k) (= k :space)) (not= k \newline))
                 (set-value! (if (< (count value) max-length)
                               (str value (to-input-char k))
@@ -65,7 +82,7 @@ maps))
                        :on-focus on-focus
                        :on-blur on-blur
                        :on-keypress on-keypress
-                       :gossamer.components/focusable true
+                       :cashmere.components/focusable true
                        :style {:width 30
                                :height 1
                                :display :flex
@@ -85,12 +102,6 @@ maps))
         cursor-fg (if (and focused show-cursor) cursor-fg :ref/on-surface)
         cursor (if (and focused show-cursor) cursor-char-on cursor-char-off)]
 
-     (cm/use-effect (fn []
-       (go-loop []
-         (<! (timeout 400))
-         (set-show-cursor! not)
-         (recur))) [])
-
      #_(log/info "Input value" value (type value) (count value))
      #_(log/info "props" props)
      #_(log/debug "Input render" show-cursor (dissoc props :children))
@@ -104,11 +115,7 @@ maps))
 
 (cm/defcomponent Button
   [props _]
-  (let [[focused set-focus!] (cm/use-state (get props :focus false))
-        duty-on 400
-        duty-off 400
-        on-focus (fn [_] (set-focus! true))
-        on-blur (fn [_] (set-focus! false))
+  (let [[focused on-focus on-blur] (use-focus props)
         on-keypress (fn [_] nil)
         {:keys [name children]} props
         color (if focused :ref/on-secondary :ref/on-surface)
@@ -120,8 +127,8 @@ maps))
         default-props {:on-focus on-focus
                        :on-blur on-blur
                        :on-keypress on-keypress
-                       :gossamer.components/type :button
-                       :gossamer.components/focusable true
+                       :cashmere.components/type :button
+                       :cashmere.components/focusable true
                        :style {:display :flex
                                :flex-direction :row}}
         props (assoc (merge default-props props)
@@ -136,12 +143,8 @@ maps))
 (cm/defcomponent Checkbox
   [props _]
   (let [[selected set-selected!] (cm/use-state (get props :checked false))
-        [focused set-focus!] (cm/use-state (get props :focus false))
+        [focused on-focus on-blur] (use-focus props)
         [show-cursor set-show-cursor!] (cm/use-state false)
-        duty-on 400
-        duty-off 400
-        on-focus (fn [_] (set-focus! true))
-        on-blur (fn [_] (set-focus! false))
         on-keypress (fn [e]
           #_(log/info "Checkbox on-keypress" e)
           (set-selected! not))
@@ -149,9 +152,9 @@ maps))
         default-props {:on-focus on-focus
                        :on-blur on-blur
                        :on-keypress on-keypress
-                       :gossamer.components/type :checkbox
-                       :gossamer.components/focusable true
-                       :gossamer.components/set-value set-selected!
+                       :cashmere.components/type :checkbox
+                       :cashmere.components/focusable true
+                       :cashmere.components/set-value set-selected!
                        :style {:display :flex
                                :flex-direction :row
                                :cursor-char-on \u2592
@@ -201,12 +204,8 @@ maps))
 (cm/defcomponent Radio
   [props _]
   (let [[selected set-selected!] (cm/use-state (get props :checked false))
-        [focused set-focus!] (cm/use-state (get props :focus false))
+        [focused on-focus on-blur] (use-focus props)
         [show-cursor set-show-cursor!] (cm/use-state false)
-        duty-on 400
-        duty-off 400
-        on-focus (fn [_] (set-focus! true))
-        on-blur (fn [_] (set-focus! false))
         on-keypress (fn [e]
           (log/info "Radio on-keypress" e)
           (set-selected! true))
@@ -214,9 +213,9 @@ maps))
         default-props {:on-focus on-focus
                        :on-blur on-blur
                        :on-keypress on-keypress
-                       :gossamer.components/type :radio
-                       :gossamer.components/focusable true
-                       :gossamer.components/set-value set-selected!
+                       :cashmere.components/type :radio
+                       :cashmere.components/focusable true
+                       :cashmere.components/set-value set-selected!
                        :style {:display :flex
                                :flex-direction :row
                                :cursor-char-on \u2592
@@ -271,14 +270,10 @@ maps))
   [props _]
   (let [initial-value (int (get props :initial-value 0))
         [value set-value!] (cm/use-state initial-value)
-        [focused set-focus!] (cm/use-state (get props :focus false))
-       [show-cursor set-show-cursor!] (cm/use-state false)
+        [focused on-focus on-blur] (use-focus props)
+        show-cursor (use-toggle-value 400)
         {:keys [name style]} props
         {:keys [width] :or {width 40}} style
-        duty-on 400
-        duty-off 400
-        on-focus (fn [_] (set-focus! true))
-        on-blur (fn [_] (set-focus! false))
         on-keypress (fn [e]
           #_(log/info "Slider on-keypress" (keys e))
           (let [increment (int (/ 100 width))]
@@ -290,9 +285,9 @@ maps))
         default-props {:on-focus on-focus
                        :on-blur on-blur
                        :on-keypress on-keypress
-                       :gossamer.components/type :slider
-                       :gossamer.components/focusable true
-                       :gossamer.components/set-value set-value!
+                       :cashmere.components/type :slider
+                       :cashmere.components/focusable true
+                       :cashmere.components/set-value set-value!
                        :style {:display :flex
                                :flex-direction :row
                                :height 1
@@ -310,11 +305,6 @@ maps))
                 cursor-bg]} (get props :style)
         cursor (if (and focused show-cursor) (str cursor-char-on) :ref/slider-control)
         color :ref/secondary]
-     (cm/use-effect (fn []
-       (go-loop []
-         (<! (timeout 400))
-         (set-show-cursor! not)
-         (recur))) [])
 
     ; FIXME copy key (props?) into view
     [:view props
@@ -506,8 +496,8 @@ maps))
                        :on-blur on-blur
                        ; TODO Implement arrow up/down
                        :on-keypress on-keypress
-                       :gossamer.components/type :dropdown
-                       :gossamer.components/focusable true
+                       :cashmere.components/type :dropdown
+                       :cashmere.components/focusable true
                        :style {:width 30
                                :height 1
                                :display :flex
@@ -559,9 +549,7 @@ maps))
 (cm/defcomponent TreeItemImpl
   [props _]
   (let [{:keys [key edges label has-children show-cursor]} props
-        [focused set-focus!] (cm/use-state false)
-        on-focus (fn [_] (set-focus! true))
-        on-blur (fn [_] (set-focus! false))
+        [focused set-focus!] (cm/use-state (get props :focus false))
         [display set-display!] (cm/use-state true)
         toggle-tree-item (if has-children
                              (fn [e] 
@@ -589,7 +577,7 @@ maps))
                :on-focus on-focus
                :on-blur on-blur
                ;:on-keypress on-keypress
-               :gossamer.components/focusable has-children
+               :cashmere.components/focusable has-children
                :style {:color :ref/on-secondary
                        :background-color :ref/secondary
                        :content content}} ""]
