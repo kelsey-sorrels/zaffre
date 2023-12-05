@@ -600,6 +600,10 @@
     Dirty
     (dirty? [this] (dirty? resource)))
 
+(defn ttf-font
+  [resource size transparent]
+  (->TTFFont resource size transparent))
+
 (defn merge-character->transparent [l r]
   (let [l-fn (if (fn? l) l (fn [r] (merge l r)))
         r-fn (if (fn? r) r (fn [l] (merge l r)))]

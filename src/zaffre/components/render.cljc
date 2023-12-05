@@ -122,7 +122,7 @@
               c   (first s)]
           (when (and c 
                      (between -1 col max-x))
-            (zt/set! target c blend-mode color background-color col row)
+            (zt/set! target c blend-mode (int 0) color background-color col row)
             (recur (inc index) (rest s))))))))
 
 (defn render-text-into-container [target text-element]
@@ -204,7 +204,7 @@
                   col (int (+ x dx))]
               (when (< min-x col max-x)
                 #_(log/trace "rendering pixel x:" col " y:" row " " pixel " max-x:" max-x " max-y:" (zt/num-rows target))
-                (zt/set! target (get pixel :c) mix-blend-mode (get pixel :fg) (get pixel :bg) col row)))))))))
+                (zt/set! target (get pixel :c) mix-blend-mode (get pixel :palette-offset 0) (get pixel :fg) (get pixel :bg) col row)))))))))
 
 (defn element-seq [element]
   "Returns :view and top-level :text elements."

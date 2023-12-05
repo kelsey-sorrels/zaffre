@@ -34,15 +34,15 @@
   (num-rows [this])
   (character-buffer [this])
   (blend-mode-buffer [this])
-  (palette-index-buffer [this])
+  (palette-offset-buffer [this])
   (fg-buffer [this])
   (bg-buffer [this])
   (get-char [this col row])
   (get-blend-mode [this col row])
-  (get-palette-index [this col row])
+  (get-palette-offset [this col row])
   (get-fg [this col row])
   (get-bg [this col row])
-  (set! [this c blend-mode palette-index fg bg col row])
+  (set! [this c blend-mode palette-offset fg bg col row])
   (copy-fg [this offset-col offset-row length dest])
   (copy-bg [this offset-col offset-row length dest])
   (zero! [this]))
@@ -50,7 +50,7 @@
 (defrecord Buffers [^int num-cols ^int num-rows
                     ^"[C" character-buffer
                     ^"[I" blend-mode-buffer
-                    ^"[I" palette-index-buffer
+                    ^"[I" palette-offset-buffer
                     ^"[I" fg-buffer
                     ^"[I" bg-buffer]
   IBuffer
@@ -58,7 +58,7 @@
   (num-rows [this] num-rows)
   (character-buffer [this] character-buffer)
   (blend-mode-buffer [this] blend-mode-buffer)
-  (palette-index-buffer [this] palette-index-buffer)
+  (palette-offset-buffer [this] palette-offset-buffer)
   (fg-buffer [this] fg-buffer)
   (bg-buffer [this] bg-buffer)
   (get-char [this col row]
@@ -71,11 +71,11 @@
           row (int row)
           index (+ (* row num-cols) col)]
       (aget blend-mode-buffer index)))
-  (get-palette-index [this col row]
+  (get-palette-offset [this col row]
     (let [col (int col)
           row (int row)
           index (+ (* row num-cols) col)]
-      (aget palette-index-buffer index)))
+      (aget palette-offset-buffer index)))
   (get-fg [this col row]
     (let [col (int col)
           row (int row)
@@ -86,7 +86,7 @@
           row (int row)
           index (+ (* row num-cols) col)]
       (aget bg-buffer index)))
-  (set! [this c blend-mode palette-index fg bg col row]
+  (set! [this c blend-mode palette-offset fg bg col row]
     (let [col (int col)
           row (int row)]
       (when (and (< -1 col) (< col num-cols)
@@ -100,7 +100,7 @@
                            (vector? bg) (zcolor/color bg))]
           (aset character-buffer index (unchecked-char c))
           (aset blend-mode-buffer index (unchecked-int (blend-mode->byte blend-mode)))
-          (aset palette-index-buffer index (unchecked-int palette-index))
+          (aset palette-offset-buffer index (unchecked-int palette-offset))
           (aset fg-buffer index (unchecked-int fg-rgba))
           (aset bg-buffer index (unchecked-int bg-rgba))))))
   (copy-fg [this offset-col offset-row length dest]
@@ -114,7 +114,7 @@
   (zero! [this]
     (Arrays/fill character-buffer (char 0))
     (Arrays/fill blend-mode-buffer (int 0))
-    (Arrays/fill palette-index-buffer (int 0))
+    (Arrays/fill palette-offset-buffer (int 0))
     (Arrays/fill fg-buffer (int 0))
     (Arrays/fill bg-buffer (int 0))))
       

@@ -10,7 +10,7 @@
            (zaffre.font CP437Font)))
 
 
-(def font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2 true))
+(def font (zfont/scale (zfont/cp-437 "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green true) 2))
                                      
 (defn -main [& _]
   ;; render in background thread

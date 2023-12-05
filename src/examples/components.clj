@@ -16,7 +16,7 @@
   (:import (zaffre.font CompositeFont)))
 
 
-(def font ztiles/pastiche-16x16) 
+(def font @ztiles/pastiche-16x16) 
 
 (def width 55)
 (def height 40)

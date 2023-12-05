@@ -1067,152 +1067,154 @@
                               (mapv (fn [[k v]]
                                       [k (ref (let [font ((get @v :font) (zlwjgl/platform))
                                                     _    (log/info "Creating glyph-graphics for" font (zlwjgl/platform))
+                                                    empty-color-table-texture-image  (zimg/image 0 0)
                                                     gg   (if (zfont/glyph-graphics? font)
-                                                             font
-                                                             (zfont/glyph-graphics font))
+                                                           font
+                                                           (zfont/glyph-graphics font))
                                                     font-texture (texture-id-2d (get gg :font-texture-image))
-                                                    color-table-texture (texture-id-2d (get gg :color-table-texture-image
-                                                                                         (zimg/image 0 0)))]
-                                                (log/info "loaded font-texture for" k font-texture (select-keys gg [:font-texture-width :font-texture-height :character-width :character-height]))
-                                                (log/info "loaded color-table-texture for" k color-table-texture)
-                                             (-> gg
-                                               (assoc :font-texture font-texture)
-                                               (assoc :color-table-texture color-table-texture))))])
-                                 group-map))
-        ;; create empty character maps
-        cursor-xy           (atom nil)
+                                                    ; 'or' is used here because gg can have the key :color-table-texture-image set to nil
+                                                    color-table-texture (texture-id-2d (or (get gg :color-table-texture-image)
+                                                                                           empty-color-table-texture-image))]
+                                                  (log/info "loaded font-texture for" k font-texture (select-keys gg [:font-texture-width :font-texture-height :character-width :character-height]))
+                                                  (log/info "loaded color-table-texture for" k color-table-texture)
+                                               (-> gg
+                                                 (assoc :font-texture font-texture)
+                                                 (assoc :color-table-texture color-table-texture))))])
+                                   group-map))
+          ;; create empty character maps
+          cursor-xy           (atom nil)
 
-        term-chan           (async/chan (async/buffer 100))
-        ;; Turn term-chan into a pub(lishable) channel
-        term-pub            (async/pub term-chan (fn [v]
-                                          (cond
-                                            (zkeyboard/is-keypress? v) :keypress
-                                            (keyword? v)               v
-                                            :else                      (get v :type))))
-                                          
-        on-key-fn           (or on-key-fn
-                                (fn alt-on-key-fn [k]
-                                  (async/put! term-chan k)))
+          term-chan           (async/chan (async/buffer 100))
+          ;; Turn term-chan into a pub(lishable) channel
+          term-pub            (async/pub term-chan (fn [v]
+                                            (cond
+                                              (zkeyboard/is-keypress? v) :keypress
+                                              (keyword? v)               v
+                                              :else                      (get v :type))))
+                                            
+          on-key-fn           (or on-key-fn
+                                  (fn alt-on-key-fn [k]
+                                    (async/put! term-chan k)))
 
-        ;; create width*height texture that gets updated each frame that determines which character to draw in each cell
-        _ (log/info "Creating glyph array")
-        
-        glyph-image-data    (vec
-                              (for [[_ layer-group] group-map
-                                    :let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                          np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
-                                          np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))
-                                          buffer (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 np2-layers))]]
-                                (do
-                                  (log/info "creating buffer for glyph textures" np2-columns "x" np2-rows "x" np2-layers "x 4" buffer)
-                                  buffer)))
-        fg-image-data       (vec
-                              (for [[_ layer-group] group-map
-                                    :let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                          np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
-                                          np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))
-                                          buffer (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 np2-layers))]]
-                                (do
-                                  (log/info "creating buffer for fg textures" np2-columns "x" np2-rows "x" np2-layers "x 4" buffer)
-                                  buffer)))
-        bg-image-data       (vec
-                              (for [[_ layer-group] group-map
-                                    :let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                          np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
-                                          np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))
-                                          buffer (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 np2-layers))]]
-                                (do
-                                  (log/info "creating buffer for bg textures" np2-columns "x" np2-rows "x" np2-layers "x 4" buffer)
-                                  buffer)))
-        glyph-textures      (mapv (fn [layer-group glyph-image-data]
-                                    (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                          np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
-                                          np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
-                                      #_(log/info "creating glyph texture" np2-columns "x" np2-rows "x" np2-layers)
-                                      (xy-texture-id np2-columns np2-rows np2-layers glyph-image-data)))
-                                  (vals group-map)
-                                  glyph-image-data)
-        fg-textures        (mapv (fn [layer-group fg-image-data]
-                                   (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                         np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
-                                         np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
-                                     #_(log/info "creating fg texture" np2-columns "x" np2-rows "x" np2-layers)
-                                     (texture-id np2-columns np2-rows np2-layers fg-image-data)))
-                                 (vals group-map)
-                                 fg-image-data)
-        bg-textures         (mapv (fn [layer-group bg-image-data]
-                                    (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                          np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
-                                          np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
-                                      #_(log/info "creating bg texture" np2-columns "x" np2-rows "x" np2-layers)
-                                      (texture-id np2-columns np2-rows np2-layers bg-image-data)))
-                                  (vals group-map)
-                                  bg-image-data)
-        [fbo-id fbo-texture] (fbo-texture framebuffer-width framebuffer-height)
-        _ (except-gl-errors "Texture init")
-        ; init shaders
-        [^int pgm-id
-         ^int fb-pgm-id]      (init-shaders (get fx-shader :name))
-        _ (except-gl-errors "Shader init")
-        pos-vertex-attribute  (GL20/glGetAttribLocation pgm-id "aVertexPosition")
-        texture-coords-vertex-attribute    (GL20/glGetAttribLocation pgm-id "aTextureCoord")
-        fb-pos-vertex-attribute            (GL20/glGetAttribLocation fb-pgm-id "aVertexPosition")
-        fb-texture-coords-vertex-attribute (GL20/glGetAttribLocation fb-pgm-id "aTextureCoord")
-        _ (except-gl-errors "Framebuffer init")
+          ;; create width*height texture that gets updated each frame that determines which character to draw in each cell
+          _ (log/info "Creating glyph array")
+          
+          glyph-image-data    (vec
+                                (for [[_ layer-group] group-map
+                                      :let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                            np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                            np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))
+                                            buffer (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 np2-layers))]]
+                                  (do
+                                    (log/info "creating buffer for glyph textures" np2-columns "x" np2-rows "x" np2-layers "x 4" buffer)
+                                    buffer)))
+          fg-image-data       (vec
+                                (for [[_ layer-group] group-map
+                                      :let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                            np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                            np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))
+                                            buffer (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 np2-layers))]]
+                                  (do
+                                    (log/info "creating buffer for fg textures" np2-columns "x" np2-rows "x" np2-layers "x 4" buffer)
+                                    buffer)))
+          bg-image-data       (vec
+                                (for [[_ layer-group] group-map
+                                      :let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                            np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                            np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))
+                                            buffer (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 np2-layers))]]
+                                  (do
+                                    (log/info "creating buffer for bg textures" np2-columns "x" np2-rows "x" np2-layers "x 4" buffer)
+                                    buffer)))
+          glyph-textures      (mapv (fn [layer-group glyph-image-data]
+                                      (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                            np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                            np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
+                                        #_(log/info "creating glyph texture" np2-columns "x" np2-rows "x" np2-layers)
+                                        (xy-texture-id np2-columns np2-rows np2-layers glyph-image-data)))
+                                    (vals group-map)
+                                    glyph-image-data)
+          fg-textures        (mapv (fn [layer-group fg-image-data]
+                                     (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                           np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                           np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
+                                       #_(log/info "creating fg texture" np2-columns "x" np2-rows "x" np2-layers)
+                                       (texture-id np2-columns np2-rows np2-layers fg-image-data)))
+                                   (vals group-map)
+                                   fg-image-data)
+          bg-textures         (mapv (fn [layer-group bg-image-data]
+                                      (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                            np2-rows    (zutil/next-pow-2 (get @layer-group :rows))
+                                            np2-layers  (zutil/next-pow-2 (count (get @layer-group :layers)))]
+                                        #_(log/info "creating bg texture" np2-columns "x" np2-rows "x" np2-layers)
+                                        (texture-id np2-columns np2-rows np2-layers bg-image-data)))
+                                    (vals group-map)
+                                    bg-image-data)
+          [fbo-id fbo-texture] (fbo-texture framebuffer-width framebuffer-height)
+          _ (except-gl-errors "Texture init")
+          ; init shaders
+          [^int pgm-id
+           ^int fb-pgm-id]      (init-shaders (get fx-shader :name))
+          _ (except-gl-errors "Shader init")
+          pos-vertex-attribute  (GL20/glGetAttribLocation pgm-id "aVertexPosition")
+          texture-coords-vertex-attribute    (GL20/glGetAttribLocation pgm-id "aTextureCoord")
+          fb-pos-vertex-attribute            (GL20/glGetAttribLocation fb-pgm-id "aVertexPosition")
+          fb-texture-coords-vertex-attribute (GL20/glGetAttribLocation fb-pgm-id "aTextureCoord")
+          _ (except-gl-errors "Framebuffer init")
 
-        ;; We just need one vertex buffer, a texture-mapped quad will suffice for drawing the terminal.
-        {:keys [vertices-vbo-id
-                vertices-count
-                texture-coords-vbo-id
-                vao-id]}   (init-buffers)
-        [glyph-tex-dim
-         u-MVMatrix
-         u-PMatrix
-         u-font
-         u-color-table
-         u-glyphs
-         u-fg
-         u-bg
-         u-num-layers
-         font-size
-         term-dim
-         font-tex-dim]     (mapv #(GL20/glGetUniformLocation pgm-id (str %))
-                                 ["glyphTextureDimensions"
-                                  "uMVMatrix"
-                                  "uPMatrix"
-                                  "uFont"
-                                  "uColorTable"
-                                  "uGlyphs"
-                                  "uFg"
-                                  "uBg"
-                                  "numLayers"
-                                  "fontSize"
-                                  "termDimensions"
-                                  "fontTextureDimensions"])
-        [u-fb
-         u-fb-MVMatrix
-         u-fb-PMatrix]     (mapv #(GL20/glGetUniformLocation fb-pgm-id (str %))
-                                 ["uFb"
-                                  "uMVMatrix"
-                                  "uPMatrix"])
-        _ (except-gl-errors "Shader uniforms init")
-        ;; map from uniform name (string) to [value atom, uniform location]
-        fx-uniforms        (reduce (fn [uniforms [uniform-name value]]
-                                     (log/info "getting location of uniform" uniform-name)
-                                     (assoc uniforms
-                                            uniform-name
-                                            [(atom value)
-                                             (let [location (GL20/glGetUniformLocation fb-pgm-id (str uniform-name))]
-                                               (assert (not (neg? location)) (str "Could not find location for uniform " uniform-name location))
-                                               (log/info "got location of uniform" uniform-name location)
-                                               location)]))
-                                   {}
-                                   (get fx-shader :uniforms))
-        _                  (doseq [idx (range (GL20/glGetProgrami fb-pgm-id GL20/GL_ACTIVE_UNIFORMS))]
-                             (let [length-buffer (BufferUtils/createIntBuffer 1)
-                                   size-buffer (BufferUtils/createIntBuffer 1)
-                                   type-buffer (BufferUtils/createIntBuffer 1)
-                                   name-buffer (BufferUtils/createByteBuffer 100)
+          ;; We just need one vertex buffer, a texture-mapped quad will suffice for drawing the terminal.
+          {:keys [vertices-vbo-id
+                  vertices-count
+                  texture-coords-vbo-id
+                  vao-id]}   (init-buffers)
+          [glyph-tex-dim
+           u-MVMatrix
+           u-PMatrix
+           u-font
+           u-color-table
+           u-glyphs
+           u-fg
+           u-bg
+           u-num-layers
+           font-size
+           term-dim
+           font-tex-dim]     (mapv #(GL20/glGetUniformLocation pgm-id (str %))
+                                   ["glyphTextureDimensions"
+                                    "uMVMatrix"
+                                    "uPMatrix"
+                                    "uFont"
+                                    "uColorTable"
+                                    "uGlyphs"
+                                    "uFg"
+                                    "uBg"
+                                    "numLayers"
+                                    "fontSize"
+                                    "termDimensions"
+                                    "fontTextureDimensions"])
+          [u-fb
+           u-fb-MVMatrix
+           u-fb-PMatrix]     (mapv #(GL20/glGetUniformLocation fb-pgm-id (str %))
+                                   ["uFb"
+                                    "uMVMatrix"
+                                    "uPMatrix"])
+          _ (except-gl-errors "Shader uniforms init")
+          ;; map from uniform name (string) to [value atom, uniform location]
+          fx-uniforms        (reduce (fn [uniforms [uniform-name value]]
+                                       (log/info "getting location of uniform" uniform-name)
+                                       (assoc uniforms
+                                              uniform-name
+                                              [(atom value)
+                                               (let [location (GL20/glGetUniformLocation fb-pgm-id (str uniform-name))]
+                                                 (assert (not (neg? location)) (str "Could not find location for uniform " uniform-name location))
+                                                 (log/info "got location of uniform" uniform-name location)
+                                                 location)]))
+                                     {}
+                                     (get fx-shader :uniforms))
+          _                  (doseq [idx (range (GL20/glGetProgrami fb-pgm-id GL20/GL_ACTIVE_UNIFORMS))]
+                               (let [length-buffer (BufferUtils/createIntBuffer 1)
+                                     size-buffer (BufferUtils/createIntBuffer 1)
+                                     type-buffer (BufferUtils/createIntBuffer 1)
+                                     name-buffer (BufferUtils/createByteBuffer 100)
                                    uniform-name (GL20/glGetActiveUniform fb-pgm-id idx 256 size-buffer type-buffer)]
                                (log/info "Found uniform" uniform-name)))
         _ (except-gl-errors "Shader fx uniforms init")
