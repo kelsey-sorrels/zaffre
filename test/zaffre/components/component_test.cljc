@@ -70,7 +70,7 @@
           rendered-elem (zcr/render-recursively nil nil elem)]
       (log/debug (zc/tree->str rendered-elem))
       (log/debug "state" (str zc/*updater*))
-      (is (= "hello world" (get-in rendered-elem [:props :children 0 :props :children 0]))))))
+      (is (= "hello world" (-> rendered-elem :props :children (nth 0) :props :children (nth 0)))))))
 
 (deftest should-properly-re-render-on-state-change
   (binding [zc/*updater* (zc/empty-state)]
@@ -86,7 +86,7 @@
       (zc/enqueue-set-state! zc/*updater* elem {:value "hola mundo"} nil)
       (zc/update-state! zc/*updater*)
       (let [re-rendered-elem (zcr/render-recursively rendered-elem nil elem)]
-        (is (= "hola mundo" (get-in re-rendered-elem [:props :children 0 :props :children 0])))))))
+        (is (= "hola mundo" (-> re-rendered-elem :props :children (nth 0) :props :children (nth 0))))))))
 
 (deftest should-properly-re-render-on-state-change-via-callback
   (binding [zc/*updater* (zc/empty-state)]
@@ -102,7 +102,7 @@
       (zc/enqueue-set-state! zc/*updater* elem nil (fn [state] (merge state {:value "hola mundo"})))
       (zc/update-state! zc/*updater*)
       (let [re-rendered-elem (zcr/render-recursively rendered-elem nil elem)]
-        (is (= "hola mundo" (get-in re-rendered-elem [:props :children 0 :props :children 0])))))))
+        (is (= "hola mundo" (-> re-rendered-elem :props :children (nth 0) :props :children (nth 0))))))))
 
 (deftest should-batch-state-changes
   (binding [zc/*updater* (zc/empty-state)]
@@ -119,7 +119,7 @@
       (zc/enqueue-set-state! zc/*updater* elem {:value "ciao mondo"} nil)
       (zc/update-state! zc/*updater*)
       (let [re-rendered-elem (zcr/render-recursively rendered-elem nil elem)]
-        (is (= "ciao mondo" (get-in re-rendered-elem [:props :children 0 :props :children 0])))))))
+        (is (= "ciao mondo" (-> re-rendered-elem :props :children (nth 0) :props :children (nth 0))))))))
 
 
 (deftest should-properly-re-render-child-on-state-change
@@ -137,5 +137,7 @@
       (zc/enqueue-set-state! zc/*updater* child-elem {:value "hola mundo"} nil)
       (zc/update-state! zc/*updater*)
       (let [re-rendered-elem (zcr/render-recursively rendered-elem nil parent-elem)]
-        (is (= "hola mundo" (get-in re-rendered-elem (mapcat identity (repeat 3 [:props :children 0])))))))))
+        (is (= "hola mundo" (-> re-rendered-elem :props :children (nth 0)
+                                                 :props :children (nth 0)
+                                                 :props :children (nth 0))))))))
 
