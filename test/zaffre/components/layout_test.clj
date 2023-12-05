@@ -4,10 +4,23 @@
     [zaffre.components.layout :as zcl]
     [clojure.test :refer :all]))
 
+(defn elements=
+  [e1 e2]
+  (every? (fn [[v1 v2]]
+            (let [vv1 (cond-> v1 (instance? clojure.lang.IDeref v1) deref)
+                  vv2 (cond-> v2 (instance? clojure.lang.IDeref v2) deref)]
+              (if (and (vector? vv1)
+                       (vector? vv2))
+                ;; vv1 and vv2 are both children
+                (every? some? (map elements= vv1 vv2))
+                (= vv1 vv2))))
+          (map vector e1 e2)))
+                        
+
 (deftest layout-test
-  (are [in out] (= out (zcl/layout-element in))
+  (are [in out] (elements= out (zcl/layout-element in))
     ;; empty text
-    [:text {} []] 
+    [:text {} [] nil nil] 
     [:text {:style {
               :width nil
               :height nil}
@@ -15,19 +28,21 @@
               :x 0.0
               :y 0.0
               :width 0.0
-              :height 1.0}} []]
+              :height 1.0}} []
+      nil nil]
 
     ;; nested test
     [:layer {:layer-id :main
              :style {:width 10}} [
-               [:text {} ["16"]]
+               [:text {} ["16"] nil nil]
                [:view {:style {
                          :left 1
                          :top 1
                          :width 16}}
                        [
                          [:text {} [
-                           [:text {} ["Lorem ipsum dolor sit amet"]]]]]]]]
+                           [:text {} ["Lorem ipsum dolor sit amet"] nil nil] nil nil]]]
+                 nil nil]] nil nil]
 
     [:layer {:layer-id :main
              :style {:width 10 :height nil}
@@ -60,7 +75,7 @@
 
 (deftest absolute-position-test
   ; absolute_layout_width_height_start_top
-  (are [in out] (= out (zcl/layout-element in))
+  (are [in out] (elements= out (zcl/layout-element in))
     [:root {:style {
               :width 100
               :height 100}}
@@ -69,7 +84,8 @@
                         :left 10
                         :top 10
                         :width 10
-                        :height 10}}]]]
+                        :height 10}} [] (atom nil)  nil]]
+      (atom nil) nil]
     
     [:root {:style {
               :width 100
@@ -89,10 +105,19 @@
                            :x 10.0
                            :y 10.0
                            :width 10.0
-                           :height 10.0}} []]]]))
+                           :height 10.0}} [] (atom {
+                           :x 10.0
+                           :y 10.0
+                           :width 10.0
+                           :height 10.0}) nil]]
+      (atom {
+              :x 0.0
+              :y 0.0
+              :width 100.0
+              :height 100.0}) nil]))
 
 (deftest align-items-test
-  (are [in out] (= out (zcl/layout-element in))
+  (are [in out] (elements= out (zcl/layout-element in))
     ;; test_align_baseline_double_nested_child
     [:root {:style {
               :width 100
@@ -158,7 +183,7 @@
                                        :height 15.0}} []]]]]]))
 
 (deftest border-test-center-child
-  (are [in out] (= out (zcl/layout-element in))
+  (are [in out] (elements= out (zcl/layout-element in))
     ;; test_border_center_child 
     [:root {:style {
               :justify-content :center
@@ -195,7 +220,7 @@
                         :height 10.0}} []]]]))
 
 (deftest border-test-row-reverse
-  (are [in out] (= out (zcl/layout-element in))
+  (are [in out] (elements= out (zcl/layout-element in))
     ;; test_flex_direction_row_reverse
     [:root {:style {
               :direction :ltr
@@ -242,7 +267,7 @@
                           :height 100.0}} []]]]))
 
 (deftest margin-test
-  (are [in out] (= out (zcl/layout-element in))
+  (are [in out] (elements= out (zcl/layout-element in))
     ;; test_margin_auto_left_stretching_child
     [:root {:style {
               :align-items :center

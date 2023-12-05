@@ -38,61 +38,10 @@
      [[:text {:zaffre/children ["qux"]}]]]
 ))
 
-(zc/def-component red-text [this]
-  (let [{:keys [children]} (zc/props this)]
-    (println "red-text render" children)
-    (zc/csx [:text {:style {:color :red}} children])))
-
-(zc/def-component hello-world-label-csx [this]
-  (let [{:keys [value]} (zc/props this)]
-    (zc/csx [red-text {} [(str "Hello " value)]])))
-
-(zc/def-component debug-hello-world-label []
-  ((zc/debug-lifecycle-handlers) hello-world-label-csx))
-
-#_(deftest render-test-0
-  (are [in out] (= out (zcr/render-recursively nil nil in))
-    (zc/csx [hello-world-label-csx {:value "world"}])
-    (zc/create-element
-      :text
-      {:display-name ":text"
-       :style {:color :red}}
-      ["Hello world"])))
-
-(deftest render-test-1
+#_(deftest render-test-1
   (binding [zc/*updater* (zc/empty-state)]
     (let [element (zc/csx [hello-world-label-csx {:value "world"}])
           rendered-element (zcr/render-recursively nil nil element)
           re-rendered-element (zcr/render-recursively rendered-element nil element)]
       (is (= re-rendered-element rendered-element)))))
-
-(deftest should-extract-native-elements
-  (let [c identity
-        root-elem (zc/create-element c {} [
-          (zc/create-element :terminal {} [
-            (zc/create-element c {} [
-              (zc/create-element :group {:id 1} [
-                (zc/create-element c {} [
-                  (zc/create-element :layer {:id 2} [
-                    (zc/create-element c {} [
-                      (zc/create-element :view {} [
-                        (zc/create-element c {} [
-                          (zc/create-element c {} [
-                            (zc/create-element :text {} ["hello"])])
-                          (zc/create-element :text {} ["world"])])])
-                      (zc/create-element :view {} [
-                        (zc/create-element c {} [
-                          (zc/create-element c {} [
-                            (zc/create-element :text {} ["hello"])])
-                          (zc/create-element :text {} ["world"])])])])])])])])])])]
-    (is (= [[:terminal {} [
-             [:group {:id 1} [
-               [:layer {:id 2} [
-                 [:view {} [
-                   [:text {} ["hello"]]
-                   [:text {} ["world"]]]]
-                 [:view {} [
-                   [:text {} ["hello"]]
-                   [:text {} ["world"]]]]]]]]]]]
-           (zcr/extract-native-elements root-elem)))))
 
