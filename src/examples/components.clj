@@ -20,7 +20,10 @@
 (def font ztiles/pastiche-16x16)
 
 (def width 20)
-(def height 2)
+(def height 20)
+
+(def text "Lorem ipsum dolor sit amet, ");consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."); Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.")
+
 (defn -main [& _]
   (zgl/create-terminal
     [{:id :ui
@@ -45,7 +48,7 @@
               [:ui {}
                 [:view {:left 5 :top 1}
                   [:text {}
-                    [:text {} "he"]
+                    [:text {} text]
                     #_[:text {:fg [255 0 0 255]} "llo"]
                     #_[:text {:fg [255 128 0 255]} "wor"]
                     #_[:text {:fg [255 255 0 255]} "ld"]]]])))
