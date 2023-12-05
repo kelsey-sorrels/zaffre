@@ -48,34 +48,6 @@
     (.flip buffer)
     float-buffer))
 
-(def last-context-thread-id (atom nil))
-(defmacro with-gl-context
-  "Executes exprs in an implicit do, while holding the monitor of x and aquiring/releasing the OpenGL context.
-  Will release the monitor of x in all circumstances."
-  [x w c & body]
-  `(let [lockee# ~x
-         window# ~w
-         capabilities# ~c]
-     (try
-       (monitor-enter lockee#)
-       (when @lockee#
-         (let [thread-id# (.getId (Thread/currentThread))]
-           (when-not (= thread-id# @last-context-thread-id)
-             (GLFW/glfwMakeContextCurrent window#)
-             (GL/setCapabilities capabilities#)
-             (reset! last-context-thread-id thread-id#)))
-         ~@body)
-       (finally
-         (when @lockee#
-           (GLFW/glfwMakeContextCurrent 0))
-         (monitor-exit lockee#)))))
-
-(defmacro defn-memoized [fn-name & body]
-  "Def's a memoized fn. Same semantics as defn."
-  `(def ~fn-name (memoize (fn ~@body))))
-
-(defn font-key [font] font)
-
 (defn- get-fields [#^Class static-class]
   (.getFields static-class))
 
@@ -90,15 +62,57 @@
                        #(when (= enum-value (.get #^Field % nil)) %)
                        (mapcat get-fields gl-classes)))))
 
+(defn- gl-errors
+  [msg]
+  (loop [errors [] error (GL11/glGetError) max-errors 10]
+    (if (or (zero? error) (neg? max-errors))
+      (not-empty errors)
+      (recur (conj errors (str "OpenGL Error(" error "):"
+                            (gl-enum-name error) ": " msg " - "
+                            (zlwjgl/gl-error-string error)))
+             (GL11/glGetError)
+             (dec max-errors)))))
+
+(defn- log-gl-errors
+  [msg]
+  (doseq [e (gl-errors msg)]
+    (log/error e)))
+ 
 (defn- except-gl-errors
   [msg]
   (when *assert*
-    (let [error (GL11/glGetError)
-          error-string (str "OpenGL Error(" error "):"
-                            (gl-enum-name error) ": " msg " - "
-                            (zlwjgl/gl-error-string error))]
-      (if (not (zero? error))
-        (throw (Exception. error-string))))))
+    (when-let [errors (gl-errors msg)]
+      (throw (Exception. (str (apply str errors)))))))
+
+(def last-context-thread-id (atom nil))
+(def platform (zlwjgl/platform))
+(defmacro with-gl-context
+  "Executes exprs in an implicit do, while holding the monitor of x and aquiring/releasing the OpenGL context.
+  Will release the monitor of x in all circumstances."
+  [x w c & body]
+  `(let [lockee# ~x
+         window# ~w
+         capabilities# ~c]
+     (locking lockee#
+     (try
+       (when @lockee#
+         (let [thread-id# (.getId (Thread/currentThread))]
+           (when (or (not= thread-id# @last-context-thread-id)
+                     (= platform :windows))
+             (GLFW/glfwMakeContextCurrent window#)
+             (GL/setCapabilities capabilities#)
+             (reset! last-context-thread-id thread-id#)))
+         ~@body)
+       (finally
+         (log-gl-errors "Errors in context")
+         (when @lockee#
+           (GLFW/glfwMakeContextCurrent 0)))))))
+
+(defmacro defn-memoized [fn-name & body]
+  "Def's a memoized fn. Same semantics as defn."
+  `(def ~fn-name (memoize (fn ~@body))))
+
+(defn font-key [font] font)
 
 (defn-memoized gl-enum-value
   ;;"Takes a gl enum value as a keyword and returns the value, eg: :gl-one -> GL11/GL_ONE."
@@ -213,14 +227,13 @@
     [:windows true]
       (System/setProperty "org.lwjgl.librarypath", (.getAbsolutePath (File. "natives/windows/x86_64"))))))
 
-(defn- init-display [title screen-width screen-height icon-paths gl-lock destroyed]
+(defn- init-display [title screen-width screen-height icon-paths destroyed]
    ;; init-natives must be called before the Display is created
    (init-natives)
    ;;(GLFW/glfwSetErrorCallback (GLFWErrorCallback/createPrint System/out))
    (GLFW/glfwSetErrorCallback (proxy [GLFWErrorCallback] []
                                 (invoke [error description]
                                   (log/error "GLFW error:" error (GLFWErrorCallback/getDescription description)))))
-   ;(GLUtil/setupDebugMessageCallback System/out)
    (when-not (GLFW/glfwInit)
      (assert "Unable to initialize GLFW"))
    (GLFW/glfwDefaultWindowHints)
@@ -231,29 +244,36 @@
    (GLFW/glfwWindowHint GLFW/GLFW_CONTEXT_VERSION_MINOR 2)
    (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_PROFILE GLFW/GLFW_OPENGL_CORE_PROFILE)
    (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_FORWARD_COMPAT GLFW/GLFW_TRUE)
-   ;(GLFW/glfwWindowHint GLFW/GLFW_OPENGL_DEBUG_CONTEXT GLFW/GLFW_TRUE)
    (if-let [window (GLFW/glfwCreateWindow (int screen-width) (int screen-height) (str title) 0 0)]
      (do
        (let [vidmode (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor))
              x       (/ (- (.width vidmode) screen-width) 2)
              y       (/ (- (.height vidmode) screen-height) 2)]
          (GLFW/glfwSetWindowPos window x y)
-         (GLFW/glfwMakeContextCurrent window)
-         (GLFW/glfwSwapInterval 0)
-         (GLFW/glfwShowWindow window)
-         (let [capabilities (GL/createCapabilities)
-               width-buffer (BufferUtils/createIntBuffer 1)
-               height-buffer (BufferUtils/createIntBuffer 1)]
-           (GLFW/glfwGetFramebufferSize window width-buffer height-buffer)
-           (let [framebuffer-width (.get width-buffer)
-                 framebuffer-height (.get height-buffer)]
-             (GL11/glViewport 0 0 framebuffer-width framebuffer-height)
-             ;; Signal to parent that display has been created
-             [window
-              capabilities
-              framebuffer-width
-              framebuffer-height]))))
+         window))
    (throw (RuntimeException. "Failed to create the GLFW window"))))
+
+(defn- init-fb
+  "Makes context current and creates capabilities."
+  [window]
+  (GLFW/glfwMakeContextCurrent window)
+  (GLFW/glfwSwapInterval 0)
+  (GLFW/glfwShowWindow window)
+  (let [capabilities (GL/createCapabilities)
+        width-buffer (BufferUtils/createIntBuffer 1)
+        height-buffer (BufferUtils/createIntBuffer 1)]
+    (GLFW/glfwGetFramebufferSize window width-buffer height-buffer)
+    (let [framebuffer-width (.get width-buffer)
+          framebuffer-height (.get height-buffer)]
+      (GL11/glViewport 0 0 framebuffer-width framebuffer-height)
+      ; XXX: Opengl debug
+      (GLUtil/setupDebugMessageCallback System/out)
+      ; XXX: Opengl debug
+      (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_DEBUG_CONTEXT GLFW/GLFW_TRUE)
+      ;; Signal to parent that display has been created
+      [capabilities
+       framebuffer-width
+       framebuffer-height])))
 
 
 (defn- video-modes [^GLFWVidMode$Buffer video-modes-buffer]
@@ -1004,11 +1024,11 @@
         destroyed           (atom false)
         gl-lock             (atom true)
         latch               (java.util.concurrent.CountDownLatch. 1)
-        [window
-         capabilities
+        window              (init-display title screen-width screen-height icon-paths destroyed)
+        [capabilities
          framebuffer-width
          framebuffer-height ]
-                            (init-display title screen-width screen-height icon-paths gl-lock destroyed)
+                            (init-fb window)
         _                   (log/info "window" window "capabilities" capabilities)
         _                   (log/info "screen size" screen-width "x" screen-height)
         _                   (log/info "framebuffer size" framebuffer-width "x" framebuffer-height)
@@ -1016,6 +1036,8 @@
         monitor-fullscreen-sizes (glfw-fullscreen-sizes)
         _                   (log/info "monitor-fullscreen-sizes" monitor-fullscreen-sizes)
 
+
+        _ (except-gl-errors "GLFW init")
         group->font-texture (into {}
                               (mapv (fn [[k v]]
                                       [k (ref (let [font ((get @v :font) (zlwjgl/platform))
@@ -1097,13 +1119,16 @@
                                   (vals group-map)
                                   bg-image-data)
         [fbo-id fbo-texture] (fbo-texture framebuffer-width framebuffer-height)
+        _ (except-gl-errors "Texture init")
         ; init shaders
         [^int pgm-id
          ^int fb-pgm-id]      (init-shaders (get fx-shader :name))
+        _ (except-gl-errors "Shader init")
         pos-vertex-attribute  (GL20/glGetAttribLocation pgm-id "aVertexPosition")
         texture-coords-vertex-attribute    (GL20/glGetAttribLocation pgm-id "aTextureCoord")
         fb-pos-vertex-attribute            (GL20/glGetAttribLocation fb-pgm-id "aVertexPosition")
         fb-texture-coords-vertex-attribute (GL20/glGetAttribLocation fb-pgm-id "aTextureCoord")
+        _ (except-gl-errors "Framebuffer init")
 
         ;; We just need one vertex buffer, a texture-mapped quad will suffice for drawing the terminal.
         {:keys [vertices-vbo-id
@@ -1138,6 +1163,7 @@
                                  ["uFb"
                                   "uMVMatrix"
                                   "uPMatrix"])
+        _ (except-gl-errors "Shader uniforms init")
         ;; map from uniform name (string) to [value atom, uniform location]
         fx-uniforms        (reduce (fn [uniforms [uniform-name value]]
                                      (log/info "getting location of uniform" uniform-name)
@@ -1157,6 +1183,7 @@
                                    name-buffer (BufferUtils/createByteBuffer 100)
                                    uniform-name (GL20/glGetActiveUniform fb-pgm-id idx 256 size-buffer type-buffer)]
                                (log/info "Found uniform" uniform-name)))
+        _ (except-gl-errors "Shader fx uniforms init")
         key-callback          (proxy [GLFWKeyCallback] []
                                 (invoke [window key scancode action mods]
                                   (when-let [key (zkeyboard/convert-key-code key scancode action mods)]
@@ -1298,6 +1325,8 @@
                                             destroyed
                                             window
                                             capabilities)]
+
+        (except-gl-errors "Terminal init (end)")
         ;; Release gl context before starting terminal
         (GLFW/glfwMakeContextCurrent 0)
         ;; Access to terminal will be multi threaded. Release context so that other threads can access it
@@ -1338,7 +1367,7 @@
                monitor-height] (with-gl-context gl-lock window capabilities
                                 (glfw-monitor-size))
               last-video-mode (atom (with-gl-context gl-lock window capabilities
-                                         (glfw-window-video-mode window)))]
+                                       (glfw-window-video-mode window)))]
           (log/info "current-video-mode" @last-video-mode)
           (reset! window-size @last-video-mode)
           (loop []

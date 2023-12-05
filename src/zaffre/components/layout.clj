@@ -282,7 +282,7 @@
   (copy-property style :display yoga-display
     #(Yoga/YGNodeStyleSetDisplay node %))
 
-  (copy-property style :justify yoga-justify
+  (copy-property style :justify-content yoga-justify
     #(Yoga/YGNodeStyleSetJustifyContent node %)))
 
 (defn build-yoga-tree [max-width max-height parent index element]
