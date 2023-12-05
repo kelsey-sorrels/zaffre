@@ -163,7 +163,7 @@
   ACmdStream
   (stream [this]
     (go-loop [x (first s) xs (next s)]
-      (doseq [[_ {:keys [layer-id]}] x]
+      (let [[_ {:keys [layer-id]}] x]
         (zat/clear! terminal layer-id))
       (let [[dt {:keys [layer-id characters]}] x]
         (zat/put-chars! terminal layer-id characters)
@@ -239,8 +239,15 @@
 (defn make-rain-effect
   [layer-id vw vh]
   (let [rain-state (repeat vh (vec (repeat vw nil)))]
-    (fn [terminal]
-      (RainEffect. terminal layer-id rain-state))))
+    (map (fn [rain-state]
+           [33 {:layer-id layer-id
+                :characters (for [[y line] (map-indexed vector rain-state)
+                                  [x cell] (map-indexed vector line)
+                                  :when cell]
+                              (rain-cell-char x y cell))}])
+         (iterate #(step-rain % vw vh) rain-state))))
+    #_(fn [terminal]
+      (RainEffect. terminal layer-id rain-state))
 
 (defrecord TransformEffect
   [terminal layer-id ch from to duration]
@@ -278,10 +285,11 @@
   ([layer-id characters]
     (make-blink-effect layer-id characters true))
   ([layer-id characters initial]
-    (make-blink-effect layer-id characters initial (constantly 1000)))
+    (make-blink-effect layer-id characters initial (repeat 1000)))
   ([layer-id characters initial intervals]
-    (fn [terminal]
-      (BlinkEffect. terminal layer-id characters initial intervals))))
+    (map vector intervals (interleave (repeat {:layer-id layer-id :characters []})
+                                      (repeat {:layer-id layer-id :characters characters})))))
+    ;(BlinkEffect. terminal layer-id characters initial intervals))))
 
 (defn make-blip-effect
   [layer-id characters duration]
@@ -326,7 +334,9 @@
             wrapped-term    (WrappedAnimatedTerminal. terminal (atom []) cmd-chan)
             effects-term    (WrappedAnimatedTerminal. terminal (atom []) cmd-chan)
             ;effects         (atom [((make-rain-effect :fx 16 16) effects-term)])]
-            effects         (atom [((make-blink-effect :fx [{:x 8 :y 8 :c \* :fg [128 128 0] :bg [0 0 0]}] true) effects-term)])]
+            effects         (atom [(->SeqEffect effects-term
+                                                (make-rain-effect :fx 16 16)
+                                                #_(make-blink-effect :fx [{:x 8 :y 8 :c \* :fg [128 128 0] :bg [0 0 0]}] true))])]
         #_(log/info "overriding terminal")
         #_(log/info "effects" @effects "filters" @filters)
         ;; start effects
