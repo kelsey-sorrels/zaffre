@@ -6,6 +6,7 @@
   (put-chars! [this layer-id characters])
   (set-fg! [this layer-id x y fg])
   (set-bg! [this layer-id x y bg])
+  (assoc-fx-uniform! [this k v])
   (get-key-chan [this])
   (apply-font! [this windows-font else-font size antialias])
   (set-cursor! [this x y])
