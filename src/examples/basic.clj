@@ -1,51 +1,3 @@
-# Zaffre
-
-## A fast Clojure library for emulating a terminal
-
-Zaffre is fast console library for drawing characters to a screen.
-
-## Features
-  * It's fast. Zaffre uses LWJGL and OpenGL to render characters as fast as possible.
-  * Unicode support (minus CJK code points)
-  * CP437 tileset support (eg: loading [Dwarf Fortress Wiki: Tileset repository](http://dwarffortresswiki.org/index.php/Tileset_repository))
-  * Cross-platform codebase
-  * Thread safe
-  * Multiple fonts
-  * Glyph stacking
-  * Non-character tiles ie: sprites
-  * Mix different font sizes
-
-## Not Features
-  * Effects
-  * Animation
-  * GUI control emulation
-
-## Usage
-
-Add the dependency to your project:
-
-```clojure
-[zaffre "0.4.0"]
-```
-
-## Examples
-
-Run with
-
-`lein run examples.handleinputinmain`
-
-or
-
-`lein run -m examples.drawinmain`
-
-etc.
-
-
-## Quickstart
-
-Setup your namespace imports:
-
-```clojure
 (ns examples.basic
   (:require [zaffre.terminal :as zat]
             [zaffre.glterminal :as zgl]
@@ -85,7 +37,7 @@ Setup your namespace imports:
                                ;; 33ms = ~30fps
                              (Thread/sleep 33)
                              (recur))
-             ;; Receive key presses
+             ;; Receive key presses 
              input-chan (go-loop []
                           (let [new-key (<! key-chan)]
                             ;; Save last key
@@ -100,9 +52,5 @@ Setup your namespace imports:
         (async/sub term-pub :close close-chan)
         ;; Block until a message is received on the close channel
         (<!! close-chan)))))
-```
-## License
 
-Copyright © 2016 Kelsey Sorrels
 
-Distributed under the MIT license.
