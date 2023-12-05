@@ -50,7 +50,7 @@
                                      (map->tile->transparent one-bit-map))]))
 
 ;; Use zfont/construct to download and build the font now
-;; If zfont/construct was ommitted, each apply-font! call would result in an HTTP GET of the font image
+;; If zfont/construct was ommitted, each alter-group-font! call would result in an HTTP GET of the font image
 (def fg-font-a (zfont/construct (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 true)))
 (def fg-font-b (zfont/construct (CP437Font. "http://dwarffortresswiki.org/images/f/ff/CGA8x8thin.png" :green 1 true)))
                                      
@@ -122,14 +122,14 @@
                                  (try
                                    (do
                                      (reset! fg-font :fg-font-b)
-                                     (zat/apply-font! terminal :foreground (constantly fg-font-b)))
+                                     (zat/alter-group-font! terminal :foreground (constantly fg-font-b)))
                                    (catch Exception e
                                      (log/error e)))
                                  (log/info "Done altering font"))
                     :fg-font-b (do
                                  (do
                                    (reset! fg-font :fg-font-a)
-                                   (zat/apply-font! terminal :foreground (constantly fg-font-a)))
+                                   (zat/alter-group-font! terminal :foreground (constantly fg-font-a)))
                                  (log/info "Done altering font"))
                     nil)
                \q (zat/destroy! terminal)
