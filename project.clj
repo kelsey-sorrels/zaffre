@@ -107,7 +107,6 @@
                #_"-XX:-OmitStackTraceInFastThrow"
                #_"-Djava.library.path=native/"]
               [#_"-Dclojure.debug=true"
-               "-agentpath:/home/santos/Downloads/YourKit-JavaProfiler-2020.7/bin/linux-x86-64/libyjpagent.so=disableall"
                "-XX:+UnlockExperimentalVMOptions"
                "-XX:+EnableJVMCI"
                "-XX:+EagerJVMCI"
