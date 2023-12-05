@@ -61,7 +61,7 @@ Runs a little hello world terminal
      (fn [terminal]     ;; Receive the terminal in a callback
        (let [last-key (atom nil)]   ;; Save the last key press in an atom
              ;; Every 33ms, draw a full frame
-         (zat/do-frame 33
+         (zat/do-frame terminal 33
            (let [key-in (or @last-key \?)]
              ;; For each frame
              (zat/clear! terminal) ;; Clear the terminal
