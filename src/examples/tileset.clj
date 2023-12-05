@@ -44,7 +44,7 @@
     (fn [terminal]
       (let [term-pub      (zat/pub terminal)
             ;key-chan      (async/chan)
-            mouse-chan    (async/chan 100)
+            ;mouse-chan    (async/chan 100)
             layers        {:0 (atom {})
                            :1 (atom {})
                            :2 (atom {})
