@@ -11,8 +11,8 @@ out vec4 outcolor;
 
 void main(void) {
   // width and height of the screen in pixels
-  float screenWidth = fontSize.x * termDimensions.x;
-  float screenHeight = fontSize.y * termDimensions.y;
+  float screenWidth = fontSize.x * termDimensions.x * 2.0;
+  float screenHeight = fontSize.y * termDimensions.y * 2.0;
   ivec2 termXY = ivec2(floor(vTextureCoord.x * termDimensions.x),
                        floor(vTextureCoord.y * termDimensions.y));
   ivec2 charSize = ivec2(fontSize.x, fontSize.y);

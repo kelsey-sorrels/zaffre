@@ -13,4 +13,5 @@
                  [clojure-watch "0.1.11"]]
   :lein-release {:deploy-via :lein-deploy
                  :scm :git
-                 :build-uberjar true})
+                 :build-uberjar true}
+  :jvm-opts ["-XstartOnFirstThread" "-Dorg.lwjgl.opengl.Display.enableHighDPI=true"])
