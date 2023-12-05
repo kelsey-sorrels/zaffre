@@ -37,12 +37,13 @@
      (try
        (monitor-enter lockee#)
        (when @lockee#
+         (log/info "Aquired gl-lock")
          (GLFW/glfwMakeContextCurrent window#)
          (GL/setCapabilities capabilities#)
          ~@body)
        (finally
-         #_(when @lockee#
-           (Display/releaseContext))
+         (when @lockee#
+           (GLFW/glfwMakeContextCurrent 0))
          (monitor-exit lockee#)))))
 
 (defmacro defn-memoized [fn-name & body]
@@ -147,7 +148,8 @@
     (except-gl-errors "end of xy-texture-id")
     texture-id))
 
-(defn- except-framebuffer-status []
+(defn- except-framebuffer-status [fbo-id]
+  (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER fbo-id)
   (let [fb-status (GL30/glCheckFramebufferStatus GL30/GL_FRAMEBUFFER)]
     (log/info fb-status)
     (except-gl-errors "Framebuffer not complete")
@@ -165,8 +167,6 @@
 (defn- fbo-texture [^long width ^long height]
   (let [fbo-id     (GL30/glGenFramebuffers)
         texture-id (GL11/glGenTextures)
-        width 32
-        height 32
         ;; type nil as ByteBuffer to avoid reflection on glTexImage2D
         ^ByteBuffer bbnil nil]
     (log/info "Creating framebuffer" width "x" height)
@@ -175,15 +175,15 @@
     (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MAG_FILTER GL11/GL_LINEAR)
     (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_WRAP_S GL12/GL_CLAMP_TO_EDGE)
     (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_WRAP_T GL12/GL_CLAMP_TO_EDGE)
-    (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGBA8 width height 0 GL11/GL_RGBA GL11/GL_INT bbnil)
+    (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGBA8 width height 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bbnil)
     (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
     (except-gl-errors "end of fbo-texture")
 
     (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER fbo-id)
     (GL32/glFramebufferTexture GL30/GL_FRAMEBUFFER GL30/GL_COLOR_ATTACHMENT0 1 #_texture-id 0)
-    ;(GL11/glDrawBuffer GL30/GL_COLOR_ATTACHMENT0)
+    (GL11/glDrawBuffer GL30/GL_COLOR_ATTACHMENT0)
+    (except-framebuffer-status fbo-id)
     (except-gl-errors "end of fbo")
-    (except-framebuffer-status)
     (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
     (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
     [fbo-id texture-id]))
@@ -213,16 +213,16 @@
                                Platform/LINUX   (into-array ByteBuffer [(zimgutil/png-bytes (get icon-paths 1))])
                                Platform/MACOSX  (into-array ByteBuffer [(zimgutil/png-bytes (get icon-paths 2))])
                                Platform/WINDOWS (into-array ByteBuffer [(zimgutil/png-bytes (get icon-paths 0))
-                                                                                  (zimgutil/png-bytes (get icon-paths 1))])))
-        latch              (java.util.concurrent.CountDownLatch. 1)
-        window-atom        (atom nil)
-        capabilities-atom  (atom nil)]
+                                                                                  (zimgutil/png-bytes (get icon-paths 1))])))]
      ;; init-natives must be called before the Display is created
      (init-natives)
-     (future
-       (GLFW/glfwSetErrorCallback (GLFWErrorCallback/createPrint System/out))
+     ;;(GLFW/glfwSetErrorCallback (GLFWErrorCallback/createPrint System/out))
+     (GLFW/glfwSetErrorCallback (proxy [GLFWErrorCallback] []
+                                           (invoke [error description] (log/error "GLFW error:" error description))))
+     ;(future
        ;(GLUtil/setupDebugMessageCallback System/out)
-       (GLFW/glfwInit)
+       (when-not (= (GLFW/glfwInit) GLFW/GLFW_TRUE)
+         (assert "Unable to initialize GLFW"))
        (GLFW/glfwDefaultWindowHints)
        (GLFW/glfwWindowHint GLFW/GLFW_VISIBLE GLFW/GLFW_FALSE)
        (GLFW/glfwWindowHint GLFW/GLFW_RESIZABLE GLFW/GLFW_FALSE)
@@ -230,66 +230,38 @@
        (GLFW/glfwWindowHint GLFW/GLFW_CONTEXT_VERSION_MAJOR 3)
        (GLFW/glfwWindowHint GLFW/GLFW_CONTEXT_VERSION_MINOR 2)
        (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_PROFILE GLFW/GLFW_OPENGL_CORE_PROFILE)
-       (let [window (GLFW/glfwCreateWindow screen-width screen-height title 0 0)]
-         (reset! window-atom window)
-         (GLFW/glfwSetKeyCallback window (proxy [GLFWKeyCallback] []
-                                           (invoke [window key scancode action mods] nil)))
-         ;(Display/setDisplayMode (DisplayMode. screen-width screen-height))
-         ;(Display/setTitle title)
-         (when icon-array
-           (log/info "Setting icons")
-           ;(Display/setIcon icon-array)
-           (Thread/sleep 100))
-         ;(Display/create pixel-format context-attributes)
-         ;(Keyboard/create)
-         ;(Mouse/create)
-         (log/info "byte-buffer" icon-array)
-         (let [vidmode (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor))]
-           (GLFW/glfwSetWindowPos
-             window
-             (/ (- (.width vidmode) screen-width) 2)
-             (/ (- (.height vidmode) screen-height) 2))
-           (GLFW/glfwMakeContextCurrent window)
-           (GLFW/glfwSwapInterval 1)
-           (GLFW/glfwShowWindow window))
-         (reset! capabilities-atom (GL/createCapabilities))
-         (GL11/glViewport 0 0 screen-width screen-height)
-         ;; Release the Display so that any thread can aquire it including this thread - the thread that
-         ;; created it.
-         ;(Display/releaseContext)
-         ;; Signal to parent that display has been created
-         (.countDown latch)
-         (loop []
-           (if (with-gl-context gl-lock window @capabilities-atom
-                 ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
-                 ; input on the thread that created the window
-                 ;(Display/processMessages)
-                 (GLFW/glfwPollEvents)
-                 ;; Close the display if the close window button has been clicked
-                 ;; or the gl-lock has been released programmatically (e.g. by destroy!)
-                 (or (= (GLFW/glfwWindowShouldClose window) GLFW/GLFW_TRUE) @destroyed))
-             (do
-               (log/info "Destroying display")
-               (with-gl-context gl-lock window @capabilities-atom
-                 (reset! gl-lock false)
-                 ;; TODO: Clean up textures and programs
-                 #_(let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id vao-id fbo-id]} :buffers
-                        {:keys [font-texture glyph-texture fg-texture bg-texture fbo-texture]} :textures
-                        program-id :program-id
-                        fb-program-id :fb-program-id} gl]
-                   (doseq [id [program-id fb-program-id]]
-                     (GL20/glDeleteProgram id))
-                   (doseq [id [font-texture glyph-texture fg-texture bg-texture fbo-texture]]
-                     (GL11/glDeleteTexture id)))
-                 (GLFW/glfwDestroyWindow window))
-               (log/info "Exiting"))
-             (do
-               (Thread/sleep 5)
-               (recur))))))
-     ;; Wait for Display to be created
-     (.await latch)
-     (GLFW/glfwMakeContextCurrent @window-atom)
-     [@window-atom @capabilities-atom]))
+       (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_FORWARD_COMPAT GLFW/GLFW_TRUE)
+       (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_DEBUG_CONTEXT GLFW/GLFW_TRUE)
+       (if-let [window (GLFW/glfwCreateWindow screen-width screen-height title 0 0)]
+         (do
+           ;(Display/setDisplayMode (DisplayMode. screen-width screen-height))
+           ;(Display/setTitle title)
+           #_(when icon-array
+             (log/info "Setting icons")
+             ;(Display/setIcon icon-array)
+             (Thread/sleep 100))
+           (log/info "byte-buffer" icon-array)
+           (let [vidmode      (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor))]
+             (GLFW/glfwSetWindowPos
+               window
+               (/ (- (.width vidmode) screen-width) 2)
+               (/ (- (.height vidmode) screen-height) 2))
+             (GLFW/glfwMakeContextCurrent window)
+             (GLFW/glfwSwapInterval 1)
+             (GLFW/glfwShowWindow window)
+             (let [capabilities (GL/createCapabilities)]
+               (GL11/glViewport 0 0 screen-width screen-height)
+               ;(GL11/glClearColor 0.0 0.0 1.0 1.0)
+               ;(except-gl-errors (str "glClearColor  " 0.0 0.0 1.0 1.0))
+               ;(GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
+               ;(GLFW/glfwSwapBuffers window)
+               ;; Release the Display so that any thread can aquire it including this thread - the thread that
+               ;; created it.
+               ;(Display/releaseContext)
+               (GLFW/glfwMakeContextCurrent 0)
+               ;; Signal to parent that display has been created
+               [window capabilities])))
+       (throw (RuntimeException. "Failed to create the GLFW window")))))
 
 (defn- load-shader
   [^String shader-str ^Integer shader-type]
@@ -351,6 +323,12 @@
   ([viewport-width viewport-height]
     (ortho-matrix-buffer viewport-width viewport-height (BufferUtils/createFloatBuffer 16)))
   ([viewport-width viewport-height ^FloatBuffer matrix-buffer]
+    #_(let [ortho-matrix (doto (Matrix4f.)
+                             (.ortho2D 0 viewport-width 0 viewport-height))
+          matrix-buffer matrix-buffer]
+          (.clear matrix-buffer)
+          (.get ortho-matrix matrix-buffer)
+          (.flip matrix-buffer))
     (let [ortho-matrix (doto (Matrix4f.) (.identity))
           matrix-buffer matrix-buffer
           zNear   10
@@ -365,6 +343,7 @@
       (set! (.m22 ortho-matrix) m22)
       (set! (.m23 ortho-matrix) m23)
       (set! (.m33 ortho-matrix) m33)
+      (.clear matrix-buffer)
       (.get ortho-matrix matrix-buffer)
       (.flip matrix-buffer)
       matrix-buffer)))
@@ -377,6 +356,7 @@
                        (.identity))]
       (.translate matrix (Vector3f. (get v 0) (get v 1) (get v 2)))
       (.scale matrix (Vector3f. (get s 0) (get s 1) (get s 2)))
+      (.clear matrix-buffer)
       (.get matrix matrix-buffer)
       (.flip matrix-buffer)
       matrix-buffer)))
@@ -536,6 +516,7 @@
   (set-cursor! [_ x y]
     (reset! cursor-xy [x y]))
   (refresh! [_]
+    (log/info "refresh!" gl-lock window capabilities)
     (with-gl-context gl-lock window capabilities
       (let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id vao-id fbo-id]} :buffers
              {:keys [font-texture glyph-texture fg-texture bg-texture fbo-texture]} :textures
@@ -729,7 +710,7 @@
           (GL11/glViewport (- (/ display-width 2) (/ screen-width 2))
                            (- (/ display-height 2) (/ screen-height 2))
                            screen-width screen-height)
-          (GL11/glClearColor 0.0 0.0 0.0 1.0)
+          (GL11/glClearColor 0.0 1.0 0.0 1.0)
           (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
           (GL20/glUseProgram fb-program-id)
           (GL20/glUniformMatrix4fv u-fb-PMatrix false (ortho-matrix-buffer screen-width screen-height p-matrix-buffer))
@@ -760,8 +741,8 @@
           (GL20/glUseProgram 0)
           (GL30/glBindVertexArray 0)
           (except-gl-errors "end of refresh")
-          ;(Display/sync 60)
-          ;(Display/update false)
+          (log/info "glfwSwapBuffers" window)
+          (GLFW/glfwSwapBuffers window)
           (except-gl-errors "end of update")
           (catch Error e
             (log/error "OpenGL error:" e))))))
@@ -848,7 +829,8 @@
          fullscreen       false
          antialias        true
          icon-paths       nil
-         fx-shader        {:name "passthrough.fs"}}}]
+         fx-shader        {:name "passthrough.fs"}}}
+   f]
     (let [is-windows       (>= (.. System (getProperty "os.name" "") (toLowerCase) (indexOf "win")) 0)
           normal-font      (atom nil)
           font-textures    (atom {})
@@ -892,6 +874,7 @@
           ;; false if Display is destoyed
           destroyed          (atom false)
           gl-lock            (atom true)
+          latch              (java.util.concurrent.CountDownLatch. 1)
           {:keys [screen-width
                   screen-height
                   character-width
@@ -901,6 +884,7 @@
                   font-texture-image]} (get @font-textures (font-key @normal-font))
           _                  (log/info "screen size" screen-width "x" screen-height)
           [window capabilities] (init-display title screen-width screen-height icon-paths gl-lock destroyed)
+          _                  (log/info "window" window "capabilities" capabilities)
 
           font-texture       (with-gl-context gl-lock window capabilities (texture-id-2d font-texture-image))
           _                  (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture font-texture)))
@@ -929,6 +913,7 @@
           bg-image-data    (BufferUtils/createByteBuffer (* next-pow-2-columns next-pow-2-rows 4 (count layer-order)))
           glyph-texture    (with-gl-context gl-lock window capabilities (xy-texture-id next-pow-2-columns next-pow-2-rows (count layer-order) glyph-image-data))
           fg-texture       (with-gl-context gl-lock window capabilities (texture-id next-pow-2-columns next-pow-2-rows (count layer-order) fg-image-data))
+          ;fg-texture       (texture-id next-pow-2-columns next-pow-2-rows (count layer-order) fg-image-data)
           bg-texture       (with-gl-context gl-lock window capabilities (texture-id next-pow-2-columns next-pow-2-rows (count layer-order) bg-image-data))
           [fbo-id fbo-texture]
                            (with-gl-context gl-lock window capabilities (fbo-texture screen-width screen-height))
@@ -988,7 +973,15 @@
                                  (get fx-shader :uniforms))
           _ (with-gl-context gl-lock window capabilities
               (doseq [idx (range (GL20/glGetProgrami fb-pgm-id GL20/GL_ACTIVE_UNIFORMS))]
-                (log/info "Found uniform" (GL20/glGetActiveUniform fb-pgm-id idx 100 nil))))
+                (let [length-buffer (BufferUtils/createIntBuffer 1)
+                      size-buffer (BufferUtils/createIntBuffer 1)
+                      type-buffer (BufferUtils/createIntBuffer 1)
+                      name-buffer (BufferUtils/createByteBuffer 100)
+                      uniform-name (GL20/glGetActiveUniform fb-pgm-id idx 256 size-buffer type-buffer)]
+                (log/info "Found uniform" uniform-name))))
+          key-callback (proxy [GLFWKeyCallback] []
+                                        (invoke [window key scancode action mods]
+                                          (on-key-fn (zkeyboard/convert-key-code key scancode))))
           terminal
           ;; Create and return terminal
           (OpenGlTerminal. columns
@@ -1067,6 +1060,7 @@
                          :options {:recursive true}}])
       ;; Poll keyboard in background thread and offer input to key-chan
       ;; If gl-lock is false ie: the window has been closed, put :exit on the key-chan
+      (GLFW/glfwSetKeyCallback window key-callback)
       #_(go-loop []
         (with-gl-context gl-lock window capabilities
           (try
@@ -1118,5 +1112,39 @@
             (Thread/sleep 5)
             (recur))
           (on-key-fn :exit)))
-      terminal))
-
+      (future
+        ;; Wait for Display to be created
+        (.await latch)
+        (f terminal))
+      (loop []
+        (.countDown latch)
+        (if (with-gl-context gl-lock window capabilities
+              (except-gl-errors "Start of loop")
+              ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
+              ; input on the thread that created the window
+              ;(Display/processMessages)
+              (log/info "glfwPollEvents")
+              (GLFW/glfwPollEvents)
+              ;; Close the display if the close window button has been clicked
+              ;; or the gl-lock has been released programmatically (e.g. by destroy!)
+              (or (= (GLFW/glfwWindowShouldClose window) GLFW/GLFW_TRUE) @destroyed))
+          (do
+            (log/info "Destroying display")
+            (with-gl-context gl-lock window capabilities
+              (reset! gl-lock false)
+              ;; TODO: Clean up textures and programs
+              ;;(let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id vao-id fbo-id]} :buffers
+              ;;       {:keys [font-texture glyph-texture fg-texture bg-texture fbo-texture]} :textures
+              ;;       program-id :program-id
+              ;;       fb-program-id :fb-program-id} gl]
+                (doseq [id [pgm-id fb-pgm-id]]
+                  (GL20/glDeleteProgram id))
+                (doseq [id [font-texture glyph-texture fg-texture bg-texture fbo-texture]]
+                  (GL11/glDeleteTextures id)))
+              (GLFW/glfwDestroyWindow window)
+            (log/info "Exiting")
+            (on-key-fn :exit))
+          (do
+            (Thread/sleep 5)
+            (recur))))))
+      
