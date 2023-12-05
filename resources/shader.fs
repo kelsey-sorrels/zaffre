@@ -59,7 +59,7 @@ void main(void) {
         // multiply
         Fa = 1;
         Fb = 1 - Cs.a;
-        blend = result.rgb * Cs.rbg;
+        blend = result.rgb * Cs.rgb;
         break;
     }
 
