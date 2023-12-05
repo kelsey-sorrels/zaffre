@@ -4,6 +4,7 @@
             [zaffre.font :as zfont]
             [zaffre.util :as zutil]
             [zaffre.imageutil :as zimg]
+            [zaffre.lwjglutil :as zlwjgl]
             [zaffre.keyboard :as zkeyboard]
             [nio.core :as nio]
             [taoensso.timbre :as log]
@@ -184,18 +185,11 @@
      (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
      [fbo-id texture-id])))
         
-
-(defn platform []
-  (condp = (Platform/get)
-    Platform/LINUX :linux
-    Platform/MACOSX :macosx
-    Platform/WINDOWS :windows))
-
 ;; Extract native libs and setup system properties
 (defn init-natives []
   (when (.exists (File. "natives"))
   ;(System/setProperty "java.library.path", (.getAbsolutePath (File. "natives")))
-  (condp = [(platform) (.endsWith (System/getProperty "os.arch") "64")]
+  (condp = [(zlwjgl/platform) (.endsWith (System/getProperty "os.arch") "64")]
     [:linux false]
       (System/setProperty "org.lwjgl.librarypath", (.getAbsolutePath (File. "natives/linux/x86")))
     [:linux true]
@@ -557,7 +551,7 @@
   (alter-group-font! [_ group-id font-fn]
     (let [gg (with-gl-context gl-lock window capabilities
                (let [old-texture  (-> group->font-texture group-id deref :font-texture)
-                     font         (font-fn (platform))
+                     font         (font-fn (zlwjgl/platform))
                      gg           (if (zfont/glyph-graphics? font)
                                     font
                                     (zfont/glyph-graphics font))
@@ -961,7 +955,7 @@
 
         group->font-texture (into {}
                               (mapv (fn [[k v]]
-                                      [k (ref (let [font ((get @v :font) (platform))
+                                      [k (ref (let [font ((get @v :font) (z/lwjgl/platform))
                                                     gg   (if (zfont/glyph-graphics? font)
                                                              font
                                                              (zfont/glyph-graphics font))

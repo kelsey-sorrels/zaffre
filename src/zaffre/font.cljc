@@ -1,11 +1,13 @@
 (ns zaffre.font
   (:require [zaffre.util :as zutil]
             [zaffre.imageutil :as zimg]
+            [zaffre.lwjglutil :as zlwjgl]
             [clojure.java.io :as jio]
             [taoensso.timbre :as log])
   (:import (zaffre.imageutil Image)
            (java.io File)
            (java.nio ByteBuffer)
+           (java.nio.file Files)
            (org.lwjgl BufferUtils)
            (org.lwjgl.stb STBTruetype STBTTFontinfo)
            (org.apache.commons.io IOUtils)))
@@ -13,26 +15,109 @@
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* true)
 
+(defn- byte-buffer->str [^ByteBuffer buffer]
+  (if buffer
+    (loop [s ""]
+      (if (pos? (.remaining buffer))
+         (recur (str s (char (.get buffer))))
+         s))
+    nil))
+
+(defn font-family [font-info]
+  (byte-buffer->str (STBTruetype/stbtt_GetFontNameString font-info 1 0 0 1)))
+
+(defn font-name [font-info]
+  (byte-buffer->str (STBTruetype/stbtt_GetFontNameString font-info 1 0 0 4)))
+
+(defn- linux-font-paths []
+  (let [paths [(str (System/getProperty "user.home") "/.fonts")
+               "/usr/share/fonts/truetype"
+               "/usr/share/fonts/TTF"]]
+    (filter (fn [path]
+              (let [file (clojure.java.io/as-file path)]
+                (and (.exists file)
+                     (.isDirectory file)
+                     (.canRead file))))
+            paths)))
+
+(defn- macosx-font-paths []
+  [(str (System/getProperty "user.home") File/separator ".fonts")
+   "/Library/Fonts"
+   "/System/Library/Fonts"])
+
+(defn- windows-font-paths []
+  [(str (System/getenv "WINDIR") "\\" "Fonts")])
+
+(defn- files [path]
+  (file-seq (jio/file path)))
+
+(defn- font-files []
+  (let [extensions #{"ttf" "TTF"}
+        font-paths (case (zlwjgl/platform)
+                     :linux (linux-font-paths)
+                     :macosx (macosx-font-paths)
+                     :window (windows-font-paths))]
+    (for [path font-paths
+          ^File file (files path)
+          :when (some (fn [extension] (.endsWith (.getAbsolutePath file)  extension))
+                      extensions)]
+      file)))
+
+(declare make-font)
+
+(def system-fonts-map
+  (delay
+    (into {}
+          (mapcat identity
+            (for [file (font-files)]
+              (try
+                (let [font-info (make-font file)
+                      font-name (font-name font-info)
+                      font-family (font-family font-info)]
+                  [[font-name file]
+                   [font-family file]])
+                (catch Exception e
+                  (log/error "Error loading" file e))))))))
+
+(defn system-fonts []
+  @system-fonts-map)
+
+(defn- as-font-file
+  [x]
+  (if (and (isa? (type x) File)
+           (.exists x))
+    x
+    (let [file (clojure.java.io/as-file x)]
+      (log/info x "," (type x) "," file "," (type file))
+      (cond
+        (.exists file)
+          file
+        (Files/isSymbolicLink (.toPath file))
+          (let [link (Files/readSymbolicLink file)]
+            (when (.exists link))
+              (Files/readSymbolicLink link))
+        :else
+          (get (system-fonts) x)))))
+  
 (defn- make-font
-  [path]
-  (let [font-file ^File (clojure.java.io/as-file path)]
-    (if (.exists font-file)
-      ;; Load font from file
-      (do
-        (log/info "Loading font from file" path)
-        (let [info         (STBTTFontinfo/calloc)
-              buffer       (-> font-file
-                             jio/input-stream
-                             IOUtils/toByteArray
-                             ByteBuffer/wrap)
-             direct-buffer (BufferUtils/createByteBuffer (.limit buffer))]
-          (doto direct-buffer
-            (.put buffer)
-            (.flip))
-          (when (zero? (STBTruetype/stbtt_InitFont info direct-buffer))
-            (throw (RuntimeException. "Error loading font")))
-          info))
-      (throw (RuntimeException. "Font does not exit")))))
+  [x]
+  (if-let [font-file ^File (as-font-file x)]
+    ;; Load font from file
+    (do
+      (log/info "Loading font from file" (.getAbsolutePath font-file))
+      (let [info         (STBTTFontinfo/calloc)
+            buffer       (-> font-file
+                           jio/input-stream
+                           IOUtils/toByteArray
+                           ByteBuffer/wrap)
+           direct-buffer (BufferUtils/createByteBuffer (.limit buffer))]
+        (doto direct-buffer
+          (.put buffer)
+          (.flip))
+        (when (zero? (STBTruetype/stbtt_InitFont info direct-buffer))
+          (throw (RuntimeException. "Error loading font")))
+        info))
+    (throw (RuntimeException. "Font does not exit"))))
 
 (def cjk-blocks
   (set
