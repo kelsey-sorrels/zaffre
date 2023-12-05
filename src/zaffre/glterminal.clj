@@ -607,7 +607,14 @@
   (args [_]
     term-args)
   (groups [_]
-     (into {} (map (fn [[id ref]] [id @ref]) group-map)))
+     (into {} (map (fn [[id ref]]
+                     (let [group @ref
+                           gg @(get group->font-texture id)]
+                       [id (merge group (select-keys gg [:font-texture-width
+                                                         :font-texture-height 
+                                                         :character-width
+                                                         :character-height]))]))
+                   group-map)))
   (alter-group-pos! [_ group-id pos-fn]
     (alter (get group-map group-id) (fn [group] (update group :pos (fn [pos] (mapv int (pos-fn pos)))))))
   (alter-group-font! [_ group-id font-fn]
@@ -1016,6 +1023,7 @@
         group->font-texture (into {}
                               (mapv (fn [[k v]]
                                       [k (ref (let [font ((get @v :font) (zlwjgl/platform))
+                                                    _    (log/info "Creating glyph-graphics for" font (zlwjgl/platform))
                                                     gg   (if (zfont/glyph-graphics? font)
                                                              font
                                                              (zfont/glyph-graphics font))
@@ -1213,8 +1221,8 @@
         framebuffer-size-callback
                               (proxy [GLFWFramebufferSizeCallback] []
                                 (invoke [window framebuffer-width framebuffer-height]
-                                  (let [fbo-texture-width  (inc framebuffer-width) #_(int (zutil/next-pow-2 framebuffer-width))
-                                        fbo-texture-height (inc framebuffer-height) #_(int (zutil/next-pow-2 framebuffer-height))
+                                  (let [fbo-texture-width  framebuffer-width #_(int (zutil/next-pow-2 framebuffer-width))
+                                        fbo-texture-height framebuffer-height #_(int (zutil/next-pow-2 framebuffer-height))
                                         ^ByteBuffer bbnil  nil]
                                     (with-gl-context gl-lock window capabilities
                                       (log/info "Changing size of fbo" fbo-texture)
