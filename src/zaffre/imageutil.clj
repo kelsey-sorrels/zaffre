@@ -118,6 +118,7 @@
   (.flip dbytes)
   dimg)
 
+;; From http://stackoverflow.com/questions/19753134/get-the-points-of-intersection-from-2-rectangles
 (defn rect-intersect [x0 y0 x1 y1 x2 y2 x3 y3]
   (let [x4 (max x0 x2)
         y4 (max y0 y2)
