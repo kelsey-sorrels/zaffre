@@ -41,4 +41,4 @@
               ["-XstartOnFirstThread"
                "-Dorg.lwjgl.opengl.Display.enableHighDPI=true"
                "-Djava.library.path=native/"]
-              [#_"-Dorg.lwjgl.system.allocator=system"]))
+              ["-Djava.library.path=native/"]))
