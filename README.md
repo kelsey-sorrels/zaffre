@@ -124,13 +124,12 @@ In the main loop, read a key, process messages, and possibly change font-size:
 
 ## `make-terminal` parameters
 
-### Required
+The terminal creation function `make-terminal` takes two parameters: `layer-order` and `opts`.
 
 `layer-order` a vector of layer identifiers. The order specifies the ordering of layers from bottommost to topmost.
 Most often this will be a series of keywords like [:base :text :fx :ui].
 
-### `opts` optional parameters
-
+All options are optional. If none are specified an empty map {} may passed to `make-terminal`.
 ```clojure
 (def example-options
   :title            ; String to use in window's title bar
@@ -154,7 +153,6 @@ Most often this will be a series of keywords like [:base :text :fx :ui].
                     )
 ```
 
-All options are optional. If none are specified an empty map {} may passed to `make-terminal`.
 
 
 ## Terminal interface
