@@ -634,7 +634,13 @@
                 (.position bg-image-data i))
               (if (not= chr (char 0))
                 (do
-                  (assert (or (not (nil? x)) (not (nil? y))) (format "X/Y nil - glyph not found for character %s %s" (or (str chr) "nil") (or (format "%x" (int chr)) "nil")))
+                  (assert (or (not (nil? x)) (not (nil? y)))
+                          (format "X/Y nil - glyph not found for character %s %s"
+                            (or (str chr) "nil")
+                            (or (cond
+                                  (nil? chr) "nil"
+                                  (char? chr) (format "%x" (int chr))
+                                  :else (str chr)))))
                   (.put glyph-image-data (unchecked-byte x))
                   (.put glyph-image-data (unchecked-byte y))
                   ;; TODO fill with appropriate type

@@ -22,10 +22,16 @@
         (< h 360) [c 0 x]))))
 
 
-(def font (CompositeFont. [ztiles/pastiche-16x16
+#_(def font (CompositeFont. [ztiles/pastiche-16x16
                            ztiles/two-bit-tileset]))
 
-(def palette (for [[row line] (map-indexed vector ztiles/two-bit-map)
+#_(def font (CompositeFont. [ztiles/pastiche-16x16
+                           ztiles/d-roguelike]))
+
+(def font (CompositeFont. [ztiles/pastiche-16x16
+                           ztiles/fantasy]))
+
+(def palette (for [[row line] (map-indexed vector ztiles/fantasy-map)
                    [col id]   (map-indexed vector line)]
                {:c id :fg [255 255 255] :bg [0 0 0] :x col :y row}))
 
@@ -33,7 +39,7 @@
   ;; render in background thread
    (let [terminal     (zgl/make-terminal [:ui :0 :1 :2 :3]
                                          {:title "Zaffre demo"
-                                          :columns 25 :rows 14
+                                          :columns 31 :rows 35
                                           :default-fg-color [250 250 250]
                                           :default-bg-color [5 5 8]
                                           :windows-font font
@@ -49,12 +55,12 @@
                        :2 (atom {})
                        :3 (atom {})}
         current-layer (atom :0)
-        current-tile  (atom :land)
+        current-tile  (atom (ffirst ztiles/fantasy-map))
         ;; Every 33ms, draw a full frame
         render-chan (go-loop []
                       (dosync
                         (zat/clear! terminal)
-                        (zutil/put-string terminal :ui 2 13 (format "layer: %s" (str @current-layer)))
+                        (zutil/put-string terminal :ui 2 33 (format "layer: %s" (str @current-layer)))
                         (zat/put-chars! terminal :ui palette)
                         (zat/put-chars! terminal :ui [{:c @current-tile :fg [255 255 255] :bg [128 128 128] :x 0 :y 13}])
                         (zat/put-chars! terminal :0 (map (fn [[[col row] t]]
@@ -96,7 +102,7 @@
             (when (= state :mouseup)
               (if (< col 12)
                 ;; select new tile
-                (reset! current-tile (get-in ztiles/two-bit-map [row col]))
+                (reset! current-tile (get-in ztiles/fantasy-map [row col]))
                 ;; draw new tile
                 (swap! (get layers @current-layer) (fn [layer] (assoc layer [col row] @current-tile)))))))
         (if (= new-event :exit)
