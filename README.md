@@ -6,12 +6,14 @@ Zaffre is fast console library for drawing characters to a screen.
 
 ## Features
   * It's fast. Zaffre uses LWJGL and OpenGL to render characters as fast as possible.
+  * Unicode support (minus CJK code points)
   * Cross-platform codebase
   * Thread safe
 
 ## Not Features
   * Multiple fonts
   * Glyph stacking
+  * Font sheets
 
 ## Usage
 
