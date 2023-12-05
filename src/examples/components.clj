@@ -29,6 +29,7 @@
 (zc/def-component UI
   [this]
   (let [{:keys [fps a text-value]} (zc/props this)]
+    (log/info "UI render")
     (zc/csx
       [:terminal {} [
         [:group {:id :ui} [
@@ -80,7 +81,7 @@
                                    (reset! frames 0))
                                  zc/*pool*)]
           ;; Every 20ms, draw a full frame
-          (zat/do-frame terminal 16
+          (zat/do-frame terminal 1
             (binding [zc/*updater* updater]
               (let [key-in (or @last-key \?)
                     [key-events _] (reset-vals! key-event-queue [])
