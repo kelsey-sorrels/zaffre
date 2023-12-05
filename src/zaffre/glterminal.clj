@@ -955,7 +955,7 @@
 
         group->font-texture (into {}
                               (mapv (fn [[k v]]
-                                      [k (ref (let [font ((get @v :font) (z/lwjgl/platform))
+                                      [k (ref (let [font ((get @v :font) (zlwjgl/platform))
                                                     gg   (if (zfont/glyph-graphics? font)
                                                              font
                                                              (zfont/glyph-graphics font))
