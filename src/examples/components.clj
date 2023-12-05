@@ -16,9 +16,9 @@
   (:import (zaffre.font CompositeFont)))
 
 
-(def font ztiles/pastiche-16x16-op) 
+(def font ztiles/pastiche-16x16) 
 
-(def width 30)
+(def width 40)
 (def height 40)
 
 (def text "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.; Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.")
@@ -28,7 +28,10 @@
 (binding [zc/*updater* updater]
 (zc/def-component UI
   [this]
-  (let [{:keys [fps a text-value]} (zc/props this)]
+  (let [{:keys [fps show-popup text-value]} (zc/props this)
+        popup (if show-popup
+                [[zcui/Popup {} [[:text {} ["popup"]]]]]
+                [])]
     (log/info "UI render")
     (zc/csx
       [zcui/InputSelect {} [
@@ -37,10 +40,8 @@
             [:layer {:id :main} [
               [:view {} [
                 [:text {} [(str fps)]]]]
-              #_[:view {} [
-                [:text {} [(if a "A" "Not A")]]]]
               [:view {} [
-                [zcui/Input {:style {:cursor-fg [244 208 65]}
+                [zcui/Input {:style {:cursor-fg [244 208 65 255]}
                              :on-change (fn [e] (reset! text-value (get e :value)))} []]
                 [zcui/Input {:style {:cursor-fg [65 244 208]}
                              :on-change (fn [e] (reset! text-value (get e :value)))} []]
@@ -52,7 +53,7 @@
                   [zcui/Image {:src "/home/santos/Downloads/Food.png" :style {:clip [0 0 16 16]}}]
                   [zcui/Image {:src "/home/santos/Downloads/Food.png" :style {:clip [0 (* 5 16) 16 (* 6 16)]}}]
                   [zcui/Image {:src "/home/santos/Downloads/Food.png" :style {:clip [0 (* 6 16) 16 (* 7 16)]}}]
-                #_[:text {} [
+                [:text {} [
                   [:text {:style {:fg [255 0 0]}} ["he"]]
                   [:text {:style {:fg [255 255 0]}} ["ll"]]
                   [:text {:style {:fg [0 255 0]}} ["o w"]]
@@ -60,12 +61,15 @@
                   [:text {:style {:fg [0 0 255]}} ["ld"]]
                   [:text {:style {:fg [0 0 0] :bg [255 255 255]}} [@text-value]]]]]]
               #_[:view {:style {:border 1 :border-style :double}} [
-                [:text {:style {:text-align :right}} [text]]]]]]]]]]]]))))
-
+                [:text {:style {:text-align :right}} [text]]]]]]
+            [:layer {:id :popup} 
+                [[zcui/Popup {} [#_[:text {} ["popup"]]
+                                 [zcui/Image {:src "/home/santos/src/zaffre/ad.xp"}]]]]
+]]]]]]]))))
 (defn -main [& _]
   (zgl/create-terminal
     [{:id :ui
-      :layers [:main] ;; With four layers
+      :layers [:main :popup] ;; With four layers
       :columns width
       :rows height
       :pos [0 0]
@@ -82,6 +86,7 @@
               width (atom 16)
               frames (atom 0)
               fps (atom 0)
+              show-popup (atom true)
               text-value (atom "")
               last-dom (atom nil)
               key-event-queue (atom [])
@@ -98,7 +103,7 @@
                     dom (zcr/render-into-container terminal
                           @last-dom
                           (zc/csx [UI {:fps @fps
-                                       :a true #_(= @last-key \a)
+                                       :show-popup @show-popup
                                        :text-value text-value}]))]
                 (when @first-render
                   (reset! first-render false)

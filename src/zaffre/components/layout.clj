@@ -45,15 +45,19 @@
 
 (defmethod measure-text :bi-restricted
   [width width-mode height height-mode text]
-    (log/debug "measure-text :bi-restricted" width height text)
-    [width (min height (count (ztext/word-wrap width text)))])
+    (log/info "measure-text :bi-restricted" width height text)
+    (let [words (clojure.string/split (clojure.string/trim text) #"\s+")
+          measure [(reduce max width (map count words))
+                   (count (ztext/word-wrap width text))]]
+      (log/info "measure-text :bit-restricted " measure)
+      ;; Split by number of words and then find max line length
+      measure))
 
 (defn img-measure-func [{:keys [width height]}]
   (let [img-width width
         img-height height]
     (YGMeasureFunc/create (reify YGMeasureFuncI
       (invoke [_ node width width-mode height height-mode]
-        (log/info "img-measure-fun width:" width " height:" height)
         (with-open[stack (MemoryStack/stackPush)]
             (-> (YGSize/mallocStack stack)
                 (.width img-width)
@@ -259,7 +263,7 @@
             (and (string? margin)
                  (clojure.string/ends-with? margin"%"))
               (let [margin-percent (parse-percent margin)]
-                (Yoga/YGNodeStyleSetMarginPercent node (yoga-edge margin-key) margin))
+                (Yoga/YGNodeStyleSetMarginPercent node (yoga-edge margin-key) margin-percent))
             (= :auto)
               (Yoga/YGNodeStyleSetMarginAuto node (yoga-edge margin-key))))))
             
@@ -300,12 +304,15 @@
       (Yoga/YGNodeInsertChild parent node index))
  
     (when (= type :text)
-      (Yoga/YGNodeSetMeasureFunc node (text-measure-func (last children))))
+      (if (every? string? children)
+        (Yoga/YGNodeSetMeasureFunc node (text-measure-func (first children)))
+        (Yoga/YGNodeSetMeasureFunc node (text-measure-func (ztext/text element)))))
 
     (when (= type :img)
       (Yoga/YGNodeSetMeasureFunc node (img-measure-func props)))
 
     (log/trace "node" node)
+    ;; don't recurse into :text and :img
     (if (or (= type :text) (= type :img))
       [type props children node]
       [type

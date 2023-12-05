@@ -4,7 +4,9 @@
     [clj-http.client :as client]
     [clojure.java.io :as jio]
     [taoensso.timbre :as log]
+    rockpick.core
     [zaffre.components :as zc]
+    [zaffre.font :as zfont]
     [zaffre.imageutil :as ziu]))
 
 (log/set-level! :info)
@@ -232,8 +234,8 @@
       (let [img-characters (mapv (fn [[line1 line2]]
                       (mapv (fn [px1 px2]
                              {:c \u2580
-                              :fg (mapv (partial bit-and 0xFF) px1)
-                              :bg (mapv (partial bit-and 0xFF) px2)}) ; ▀
+                              :fg (conj (mapv (partial bit-and 0xFF) px1) 255)
+                              :bg (conj (mapv (partial bit-and 0xFF) px2) 255)}) ; ▀
                            line1 line2))
                     (partition 2 lines))]
         (log/trace "img-characters" img-characters)
@@ -246,7 +248,28 @@
 (def RexPaintImage (zc/create-react-class {
   :display-name "RexPaintImage"
   :render (fn [this]
-    (let [{:keys [data]} (zc/props this)]))}))
+    (let [{:keys [data layer-index]} (zc/props this)
+          layer-index (or layer-index 0)
+          layers (rockpick.core/read-xp (clojure.java.io/input-stream data))
+          layer (nth layers layer-index)
+          pixels (mapv (fn [line]
+               (log/info "line" line)
+               (mapv (fn [{:keys [ch fg bg]}]
+                      (let [fg-r (get fg :r)
+                            fg-g (get fg :g)
+                            fg-b (get fg :b)
+                            fg-a 255
+                            bg-r (get bg :r)
+                            bg-g (get bg :g)
+                            bg-b (get bg :b)
+                            bg-a 255]
+                      {:c (get zfont/cp437-unicode (int ch))
+                       :fg [fg-r fg-g fg-b fg-a]
+                       :bg [bg-r bg-g bg-b bg-a]}))
+                     line))
+               layer)]
+      (log/info "pixels" pixels)
+      (zc/csx [:img {:width (count (first pixels)) :height (count pixels)} pixels])))}))
 
 (def DataImage  (zc/create-react-class {
   :display-name "DataImage"
@@ -268,4 +291,31 @@
       (log/trace "Image render" (get props :src))
       ;; passes :src :style, etc through
       (zc/csx [Resource props []])))}))
+
+;; style taken from https://www.nucleo.com.au/using-flexbox-for-modal-dialogs/
+(def Popup (zc/create-react-class {
+  :display-name "Popup"
+  :render (fn [this]
+    (log/trace "Popup render")
+    (let [{:keys [children] :as props} (zc/props this)]
+      (zc/csx [:view {:style {:max-height "100%" :max-width "100%"
+                              :height "100%"
+                              :align-items :center
+                              :justify-content :center
+                              :position :fixed
+                              :top 0 :left 0
+                              :fg [0 0 0 128]
+                              :bg [0 0 0 128]}} [
+                [:view {:style {:bg [0 0 0 255]
+                                :fg [255 255 255 255]
+                                :margin-top 10
+                                :margin-bottom 10
+                                :padding 0
+                                :border 1 :border-style :single
+                                :text-align :center
+                                #_#_:max-height "90%"
+                                #_#_:max-width "90%"
+                                :overlow-x :scroll}} [
+                  [:view {:style {:margin 0 :margin-top 0 :border 0}}
+                    (get props :children)]]]]])))}))
 
