@@ -91,11 +91,10 @@
   (let [w           (BufferUtils/createIntBuffer 1)
         h           (BufferUtils/createIntBuffer 1)
         c           (BufferUtils/createIntBuffer 1)
-        buffer      (->
+        buffer      (ByteBuffer/wrap
                       (if (string? location-or-bytes)
                         (cache-load location-or-bytes)
-                        location-or-bytes)
-                      ByteBuffer/wrap)
+                        location-or-bytes))
         direct-buffer (BufferUtils/createByteBuffer (.limit buffer))]
     (doto direct-buffer
       (.put buffer)
@@ -116,7 +115,7 @@
   (let [scaled-bytes (BufferUtils/createByteBuffer (* (* s width)
                                                       (* s height)
                                                       channels))]
-    (when (= false
+    (when (false?
             (STBImageResize/stbir_resize_uint8_generic
               byte-buffer width height 0
               scaled-bytes (* s width) (* s height) 0
