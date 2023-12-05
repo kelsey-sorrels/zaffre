@@ -3,6 +3,7 @@
             [zaffre.glterminal :as zgl]
             [zaffre.font :as zfont]
             [zaffre.tilesets :as ztiles]
+            [zaffre.events :as zevents]
             [zaffre.util :as zutil]
             [clojure.core.async :as async :refer [go-loop]]
             [taoensso.timbre :as log])
@@ -50,9 +51,8 @@
                   "images/icon-128x128.png"]}
     (fn [terminal]
       (let [term-pub      (zat/pub terminal)
-            key-chan      (async/chan)
+            ;key-chan      (async/chan)
             mouse-chan    (async/chan 100)
-            close-chan    (async/chan)
             layers        {:0 (atom {})
                            :1 (atom {})
                            :2 (atom {})
@@ -83,12 +83,10 @@
                           ;; ~30fps
                           (Thread/sleep 33)
                           (recur))]
-        (async/sub term-pub :keypress key-chan)
+        ;(async/sub term-pub :keypress key-chan)
         (async/sub term-pub :click mouse-chan)
-        (async/sub term-pub :close close-chan)
-        ;; get key presses in fg thread
-        (go-loop []
-          (let [keypress (async/<! key-chan)]
+        (zevents/add-event-listener terminal :keypress 
+          (fn [keypress]
             (log/info "got keypress" keypress)
             ;; change font size on s/m/l keypress
             (case keypress
@@ -105,11 +103,9 @@
                                           :2 :1
                                           :3 :2)))
               \q (zat/destroy! terminal)
-              nil)
-            (recur)))
-         (go-loop []
-           (let [click (async/<! mouse-chan)
-                 {:keys [button state col row]} click]
+              nil)))
+        (zevents/add-event-listener terminal :click
+          (fn [{:keys [button state col row] :as click}]
             (log/info "got click" click)
             (if (< col 12)
               ;; select new tile
@@ -119,14 +115,5 @@
               ;; draw new tile
               (do
                 (log/info "placing tile at" [row col])
-                (swap! (get layers @current-layer) (fn [layer] (assoc layer [col row] @current-tile))))))
-            (recur))
-         (let [_ (async/<! close-chan)]
-          (log/info "got close")
-          (async/close! render-chan)
-          (async/close! key-chan)
-          (async/close! mouse-chan)
-          (async/close! close-chan)
-          (System/exit 0))))))
-
-
+                (swap! (get layers @current-layer) (fn [layer] (assoc layer [col row] @current-tile)))))))
+        (zevents/wait-for-close terminal [render-chan mouse-chan])))))
