@@ -292,8 +292,8 @@
       0.0
       (int glyph-index))
     (zimg/draw-image chr-img img left-side-bearing y)
-    (zimg/write-png chr-img (str "char-image/" (int codepoint) ".png"))
-    (zimg/write-png img (str "char-image/" (int codepoint) "-raw.png"))
+    ;(zimg/write-png chr-img (str "char-image/" (int codepoint) ".png"))
+    ;(zimg/write-png img (str "char-image/" (int codepoint) "-raw.png"))
     ;; convert to rgba
     (zimg/mode chr-img :rgba)))
   
@@ -402,7 +402,7 @@
               (catch Throwable t
                 (log/error t))))
         ;; cleanup texture resource
-        (zimg/write-png texture-image "glyph-texture.png")
+        ;(zimg/write-png texture-image "glyph-texture.png")
         {:font-texture-width width
          :font-texture-height height
          :font-texture-image texture-image
@@ -436,6 +436,7 @@
       (let [width              (zutil/next-pow-2 (reduce max 0 (map :font-texture-width glyphs)))
             height             (zutil/next-pow-2 (reduce + 0 (map :font-texture-height glyphs)))
             composite-image    (zimg/image width height)
+            color-table-texture-image  (some :color-table-texture-image glyphs)
             character-width    (-> glyphs first :character-width)
             character-height   (-> glyphs first :character-height)]
         (loop [y 0
@@ -461,12 +462,13 @@
               {:font-texture-width width
                :font-texture-height height
                :font-texture-image composite-image
+               :color-table-texture-image color-table-texture-image
                :character-width character-width
                :character-height character-height
                :character->col-row character->col-row
                :character->transparent character->transparent})))))))
 
-(defrecord TileSet [path-or-url alpha tile-width tile-height margin tile-id->col-row tile-id->transparent]
+(defrecord TileSet [path-or-url alpha tile-width tile-height margin scale tile-id->col-row tile-id->transparent color-table]
   GlyphGraphics
   (glyph-graphics [this]
     #_{:post [(glyph-graphics? %)]}
@@ -475,20 +477,52 @@
                        (compact tile-width
                                 tile-height
                                 margin)
-                       (as-> font-image
-                           (if-not (= alpha :alpha)
-                             (zimg/copy-channels font-image alpha)
-                             font-image)))
+                       (cond->
+                         (not= alpha :alpha)
+                           (zimg/copy-channels alpha)
+                         (not= scale 1)
+                           (zimg/scale scale)
+                         color-table
+                           zimg/index-colors))
           width         (zutil/next-pow-2 (zimg/width font-image))
           height        (zutil/next-pow-2 (zimg/height font-image))
-          texture-image (zimg/resize font-image width height)]
-      (zimg/write-png font-image "tileset-texture.png")
+          texture-image (zimg/resize font-image width height)
+          color-table-texture-image (zimg/seq->img color-table)
+          color-table-texture-image (zimg/resize color-table-texture-image 
+                                      (zutil/next-pow-2 (zimg/width color-table-texture-image))
+                                      (zutil/next-pow-2 (zimg/height color-table-texture-image)))]
+      ;(zimg/write-png texture-image "tileset-texture.png")
       {:font-texture-width width
        :font-texture-height height
        :font-texture-image texture-image
-       :character-width tile-width
-       :character-height tile-height
+       :color-table-texture-image color-table-texture-image
+       :character-width (* tile-width scale)
+       :character-height (* tile-height scale)
        :character->col-row tile-id->col-row
        :character->transparent tile-id->transparent})))
 
-(defn construct [font] (glyph-graphics font))
+(defn tileset
+  ([path-or-url alpha tile-width tile-height margin tile-id->col-row tile-id->transparent]
+    (tileset path-or-url alpha tile-width tile-height margin 1 tile-id->col-row tile-id->transparent nil))
+  ([path-or-url alpha tile-width tile-height margin scale tile-id->col-row tile-id->transparent color-table]
+    (->TileSet path-or-url alpha tile-width tile-height margin scale tile-id->col-row tile-id->transparent color-table)))
+
+(defn construct
+  [font]
+  (glyph-graphics font))
+
+(defn map->tile->col-row [tilemap]
+  (reduce (fn [m [t col row]]
+            (assoc m t [col row]))
+          {}
+          (mapcat concat
+            (map-indexed (fn [row line]
+                           (map-indexed (fn [col t]
+                                          [t col row])
+                                        line))
+                         tilemap))))
+
+(defn map->tile->transparent [tilemap v]
+  (zipmap (flatten tilemap) (repeat v)))
+
+

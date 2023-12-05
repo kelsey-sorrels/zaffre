@@ -36,7 +36,25 @@
             (cons channel-values (pixel-seq this)))))))
   AutoCloseable
   (close [_]
-    (STBImage/stbi_image_free byte-buffer)))
+  (STBImage/stbi_image_free byte-buffer)))
+
+(defn seq->img
+  "Creates an image from nested sequences
+  Nesting is line, pixel, [r g b a].
+  The r g b a values will be cast to bytes (unchecked).
+  The height will be computed using (count s).
+  The width will be computed using (count (first s)).
+  The number of channels will be computed using (count (first (first s)))."
+  [s]
+  (let [height (count s)
+        width (-> s first count)
+        channels (-> s first first count)
+        rgba-bytes (->> s
+                     (mapcat identity)
+                     (mapcat identity)
+                     (map unchecked-byte))]
+    (->Image width height channels (ByteBuffer/wrap (byte-array rgba-bytes)))))
+  
   
 #_(defmacro close-> [x & forms]
   (close-threaded `(-> ~x ~@forms)))
@@ -332,3 +350,21 @@
     (log/info "copy-channels" result-buffer)
     (->Image width height channels result-buffer)))
 
+(defn index-colors
+  "Palettize rgb channels. Leaves alpha untouched."
+  [{:keys [width height channels byte-buffer] :as img}]
+  (let [pixels (pixel-seq img)
+        red-val (fn [[r _ _ _ ]] (if (neg? r) (+ 256 (int r)) r))
+        pixel->index (->> pixels
+                       (into #{})
+                       vec
+                       (sort-by red-val)
+                       (map-indexed (comp vec reverse vector))
+                       (into {}))
+       rgba-bytes (mapcat (fn [[r g b a :as pixel]]
+                            (let [v (unchecked-byte (get pixel->index pixel))]
+                              [v v v (unchecked-byte a)]))
+                          pixels)]
+    (->Image width height channels 
+      (ByteBuffer/wrap (byte-array rgba-bytes)))))
+    

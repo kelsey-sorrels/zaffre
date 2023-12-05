@@ -1,8 +1,8 @@
 #version 330 core
 
-uniform sampler2D uFont;
+uniform sampler2D uFont, uColorTable;
 uniform sampler2DArray uFg, uBg;
-uniform usampler2DArray uGlyphs, uPalette;
+uniform usampler2DArray uGlyphs;
 uniform vec2 fontSize, termDimensions, fontTextureDimensions, glyphTextureDimensions;
 uniform int numLayers;
 
@@ -27,12 +27,12 @@ vec3 screen(vec3 Cb, vec3 Cs) {
 
 
 float color_dodge(float Cb, float Cs) {
-	if(Cb == 0) {
-		return 0;
+	if(Cb == 0.0) {
+		return 0.0;
     } else if(Cs == 1) {
-		return 1;
+		return 1.0;
 	} else {
-		return min(1, Cb / (1 - Cs));
+		return min(1.0, Cb / (1.0 - Cs));
     }
 }
 
@@ -41,12 +41,12 @@ vec3 color_dodge(vec3 Cb, vec3 Cs) {
 }
 
 float color_burn(float Cb, float Cs) {
-	if (Cb == 1) {
-		return 1;
-    } else if (Cs == 0) {
-		return 0;
+	if (Cb == 1.0) {
+		return 1.0;
+    } else if (Cs == 0.0) {
+		return 0.0;
 	} else {
-		return 1 - min(1, (1 - Cb ) /  Cs);
+		return 1.0 - min(1.0, (1.0 - Cb ) /  Cs);
     }
 }
 
@@ -109,10 +109,11 @@ void main(void) {
   //int numLayers = 1;
   for (uint i = 0u; i < uint(numLayers); i++) {
     ivec3 termXYZ = ivec3(termXY.x, termXY.y, (i + 0u));
-    uvec4 glyphXYTP = texelFetch(uGlyphs, termXYZ, 0);
-    uint paletteIndex = glyphXYTP.w;
-    uint glyphType = glyphXYTP.z;
-    ivec2 fontIndex = ivec2(glyphXYTP.xy);
+    // contains glyph_x, glyph_y, blend_mode, palette_index
+    uvec4 glyphXYMP = texelFetch(uGlyphs, termXYZ, 0);
+    ivec2 fontIndex = ivec2(glyphXYMP.xy);
+    uint blendMode = glyphXYMP.z;
+    uint paletteIndex = glyphXYMP.w;
     ivec2 fontXY = ivec2(int(fontIndex.x) * charSize.x, int(fontIndex.y) * charSize.y);
     // calc the position of the fragment relative to the terminal cell
     ivec2 charXY = ivec2(fract(vTextureCoord.x * termDimensions.x) * charSize.x,
@@ -120,11 +121,11 @@ void main(void) {
     vec4 fnt = texelFetch(uFont, fontXY + charXY, 0);
 
     vec4 fg  = texelFetch(uFg, termXYZ, 0);
-    if (paletteIndex != 0) {
-        fg = texelFetch(uPalette, vec2(paletteIndex, fg.r), 0);
-    }
     vec4 bg  = texelFetch(uBg, termXYZ, 0);
-    uint r = uint(256u * result.r);
+    if (paletteIndex != 0u) {
+        uint colorIndex = uint(256u * fnt.r);
+        fg = texelFetch(uColorTable, ivec2(colorIndex, paletteIndex - 1u), 0);
+    }
 
 
     // from https://www.w3.org/TR/compositing-1/#csscompositingrules_CSS
@@ -142,7 +143,7 @@ void main(void) {
 
     Fa = 1;
     Fb = 1 - Cs.a;
-    switch (glyphType) {
+    switch (blendMode) {
       case 0u:
         // src_over (normal)
         blend = Cs.rgb;

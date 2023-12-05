@@ -128,11 +128,15 @@
   
 
 (defn- texture-id-2d
-  ([{:keys [width height byte-buffer]}]
+  ([{:keys [width height byte-buffer] :as img}]
+  (log/info "texture-id-2d" img)
   (let [texture-id     (GL11/glGenTextures)
         ^ByteBuffer byte-buffer byte-buffer]
      (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
      (GL11/glPixelStorei GL11/GL_UNPACK_ALIGNMENT 1)
+     (GL11/glPixelStorei GL11/GL_UNPACK_ROW_LENGTH 0)
+     (GL11/glPixelStorei GL11/GL_UNPACK_SKIP_PIXELS 0)
+     (GL11/glPixelStorei GL11/GL_UNPACK_SKIP_ROWS 0)
      (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MIN_FILTER GL11/GL_NEAREST)
      (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MAG_FILTER GL11/GL_NEAREST)
      (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGBA (long width) (long height) 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE byte-buffer)
@@ -541,6 +545,7 @@
   (alter-group-pos! [_ group-id pos-fn]
     (alter (get group-map group-id) (fn [group] (update group :pos (fn [pos] (mapv int (pos-fn pos)))))))
   (alter-group-font! [_ group-id font-fn]
+    ;; TODO: alter color table?
     (let [gg (with-gl-context gl-lock window capabilities
                (let [old-texture  (-> group->font-texture group-id deref :font-texture)
                      font         (font-fn (zlwjgl/platform))
@@ -584,7 +589,8 @@
           texture-rows    (int (zutil/next-pow-2 rows))
           layer-size      (* 4 texture-columns texture-rows)
           layer-index     (layer-id->index layer-id)]
-      (doseq [{:keys [c x y fg bg blend-mode] :or {blend-mode :normal}} characters
+      (doseq [{:keys [c x y fg bg blend-mode palette-index] :or {blend-mode :normal
+                                                                 palette-index 0}} characters
               :when (and (< -1 x) (< x columns)
                          (< -1 y) (< y rows)
                          (not= c (char 0)))
@@ -616,9 +622,8 @@
 
           (.put glyph-image-data (unchecked-byte x))
           (.put glyph-image-data (unchecked-byte y))
-          ;; TODO fill with appropriate type
           (.put glyph-image-data (unchecked-byte (zt/blend-mode->byte blend-mode)))
-          (.put glyph-image-data (unchecked-byte 0))
+          (.put glyph-image-data (unchecked-byte palette-index))
           (.putInt fg-image-data (unchecked-int fg))
           (.putInt bg-image-data (unchecked-int bg)))))
       
@@ -630,6 +635,7 @@
           group-index  (group-id->index group-id)
           data (:data gl)
           ^ByteBuffer glyph-image-data (get-in data [:glyph-image-data group-index])
+          ^ByteBuffer color-table-image-data (get-in data [:color-table-image-data group-index])
           ^ByteBuffer fg-image-data    (get-in data [:fg-image-data group-index])
           ^ByteBuffer bg-image-data    (get-in data [:bg-image-data group-index])
           character->col-row (:character->col-row (-> group-id group->font-texture deref))
@@ -640,7 +646,7 @@
           num-cols         (int (zt/num-cols buffers))
           num-rows         (int (zt/num-rows buffers))]
       (try
-        #_(log/info "put-layer! characters" columns rows group-id group-index layer-index glyph-image-data fg-image-data bg-image-data)
+        #_(log/info "put-layer! characters" columns rows group-id group-index layer-index glyph-image-data color-table-image-data fg-image-data bg-image-data)
         #_(log/info "put-layer!" num-cols num-rows)
         #_(log/info "put-layer!" (-> group-id group->font-texture deref))
         #_(log/info "put-layer!" character->col-row)
@@ -712,7 +718,7 @@
              {:keys [glyph-textures fg-textures bg-textures fbo-texture]} :textures
              program-id :program-id
              fb-program-id :fb-program-id
-             {:keys [u-MVMatrix u-PMatrix u-fb-MVMatrix u-fb-PMatrix u-font u-glyphs u-fg u-bg u-num-layers font-size term-dim font-tex-dim
+             {:keys [u-MVMatrix u-PMatrix u-fb-MVMatrix u-fb-PMatrix u-font u-color-table u-glyphs u-fg u-bg u-num-layers font-size term-dim font-tex-dim
                      font-texture-width font-texture-height glyph-tex-dim u-fb]} :uniforms
              {:keys [glyph-image-data
                      fg-image-data
@@ -775,7 +781,8 @@
                                 character->transparent
                                 font-texture-width
                                 font-texture-height
-                                font-texture]} (-> group->font-texture group-id deref)
+                                font-texture
+                                color-table-texture]} (-> group->font-texture group-id deref)
                         ^ByteBuffer glyph-image-data glyph-image-data
                         ^ByteBuffer fg-image-data fg-image-data
                         ^ByteBuffer bg-image-data bg-image-data
@@ -786,6 +793,7 @@
             (assert (not (nil? font-texture-width)) "font-texture-width nil")
             (assert (not (nil? font-texture-height)) "font-texture-height")
             (assert (not (nil? font-texture)) "font-texture nil")
+            (assert (not (nil? color-table-texture)) "color-table-texture nil")
             (flip-byte-buffer glyph-image-data)
             (flip-byte-buffer fg-image-data)
             (flip-byte-buffer bg-image-data)
@@ -813,11 +821,12 @@
                    1.0]
                   mv-matrix-buffer))
               (except-gl-errors (str "u-MVMatrix - glUniformMatrix4  " u-MVMatrix))
-              ; Setup uniforms for glyph, fg, bg, textures
+              ; Setup uniforms for font, color-table, glyph, fg, bg, textures
               (GL20/glUniform1i u-font 0)
-              (GL20/glUniform1i u-glyphs 1)
-              (GL20/glUniform1i u-fg 2)
-              (GL20/glUniform1i u-bg 3)
+              (GL20/glUniform1i u-color-table 1)
+              (GL20/glUniform1i u-glyphs 2)
+              (GL20/glUniform1i u-fg 3)
+              (GL20/glUniform1i u-bg 4)
               (GL20/glUniform1i u-num-layers layer-count)
               (except-gl-errors "uniformli bind")
               #_(log/info "drawing" group-id)
@@ -838,18 +847,23 @@
                 (except-gl-errors "font texture glActiveTexture")
                 (GL11/glBindTexture GL11/GL_TEXTURE_2D font-texture)
                 (except-gl-errors "font texture glBindTexture"))
+              (when (GL11/glIsTexture color-table-texture)
+                (GL13/glActiveTexture GL13/GL_TEXTURE1)
+                (except-gl-errors "font texture glActiveTexture")
+                (GL11/glBindTexture GL11/GL_TEXTURE_2D color-table-texture)
+                (except-gl-errors "font texture glBindTexture"))
               ; Send updated glyph texture to gl
-              (GL13/glActiveTexture GL13/GL_TEXTURE1)
+              (GL13/glActiveTexture GL13/GL_TEXTURE2)
               (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY glyph-texture)
               (GL12/glTexSubImage3D GL30/GL_TEXTURE_2D_ARRAY 0 0 0 0 texture-columns texture-rows layer-count GL30/GL_RGBA_INTEGER GL11/GL_UNSIGNED_BYTE glyph-image-data)
               (except-gl-errors "glyph texture data")
               ; Send updated fg texture to gl
-              (GL13/glActiveTexture GL13/GL_TEXTURE2)
+              (GL13/glActiveTexture GL13/GL_TEXTURE3)
               (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY fg-texture)
               (GL12/glTexSubImage3D GL30/GL_TEXTURE_2D_ARRAY 0 0 0 0 texture-columns texture-rows layer-count GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE fg-image-data)
               (except-gl-errors "fg color texture data")
               ; Send updated bg texture to gl
-              (GL13/glActiveTexture GL13/GL_TEXTURE3)
+              (GL13/glActiveTexture GL13/GL_TEXTURE4)
               (except-gl-errors "bg color glActiveTexture")
               (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY bg-texture)
               (except-gl-errors "bg color glBindTexture")
@@ -1045,9 +1059,14 @@
                                                     gg   (if (zfont/glyph-graphics? font)
                                                              font
                                                              (zfont/glyph-graphics font))
-                                                    font-texture (texture-id-2d (get gg :font-texture-image))]
+                                                    font-texture (texture-id-2d (get gg :font-texture-image))
+                                                    color-table-texture (texture-id-2d (get gg :color-table-texture-image
+                                                                                         (zimg/image 0 0)))]
                                                 (log/info "loaded font-texture for" k font-texture (select-keys gg [:font-texture-width :font-texture-height :character-width :character-height]))
-                                             (assoc gg :font-texture font-texture)))])
+                                                (log/info "loaded color-table-texture for" k color-table-texture)
+                                             (-> gg
+                                               (assoc :font-texture font-texture)
+                                               (assoc :color-table-texture color-table-texture))))])
                                  group-map))
         ;; create empty character maps
         cursor-xy           (atom nil)
@@ -1139,6 +1158,7 @@
          u-MVMatrix
          u-PMatrix
          u-font
+         u-color-table
          u-glyphs
          u-fg
          u-bg
@@ -1150,6 +1170,7 @@
                                   "uMVMatrix"
                                   "uPMatrix"
                                   "uFont"
+                                  "uColorTable"
                                   "uGlyphs"
                                   "uFg"
                                   "uBg"
@@ -1286,6 +1307,7 @@
                                        :u-fb-MVMatrix u-fb-MVMatrix
                                        :u-fb-PMatrix u-fb-PMatrix
                                        :u-font u-font
+                                       :u-color-table u-color-table
                                        :u-glyphs u-glyphs
                                        :u-fg u-fg
                                        :u-bg u-bg

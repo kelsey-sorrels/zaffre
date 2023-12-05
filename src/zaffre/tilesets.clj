@@ -3,7 +3,7 @@
             [zaffre.util :as zutil]
             [clojure.java.io :as jio]
             [taoensso.timbre :as log])
-  (:import (zaffre.font CP437Font TileSet TTFFont)))
+  (:import (zaffre.font CP437Font TTFFont)))
 
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* true)
@@ -34,9 +34,9 @@
                   [:dark-water :locked-door :open-door    :masonry-parapet :window     :ladder       :stairs-up   :stairs-down]
                   [:cactus     :skull       :boulder      :crate           :barrel     :chest-closed :chest-open  :blank]])
 
-(def one-bit-tileset (TileSet. "http://opengameart.org/sites/default/files/tileset_1bit.png" :green 16 16 0
-                               (map->tile->col-row one-bit-map)
-                               (map->tile->transparent one-bit-map false)))
+(def one-bit-tileset (zfont/tileset "http://opengameart.org/sites/default/files/tileset_1bit.png" :green 16 16 0
+                                    (map->tile->col-row one-bit-map)
+                                    (map->tile->transparent one-bit-map false)))
 
 ;; 2-bit tileset by Muziak
 ;; http://pixeljoint.com/pixelart/71895.htm
@@ -54,9 +54,9 @@
                   [:pine-nw :pine-ne :empty :empty :empty :empty :empty :empty :empty :empty :empty :empty]
                   [:pine-sw :pine-se :empty :empty :empty :empty :empty :empty :empty :empty :empty :empty]])
 
-(def two-bit-tileset (TileSet. "http://pixeljoint.com/files/icons/full/tileset__r1752392111.png" :alpha 16 16 1
-                               (map->tile->col-row two-bit-map)
-                               (map->tile->transparent two-bit-map true)))
+(def two-bit-tileset (zfont/tileset "http://pixeljoint.com/files/icons/full/tileset__r1752392111.png" :alpha 16 16 1
+                                    (map->tile->col-row two-bit-map)
+                                    (map->tile->transparent two-bit-map true)))
 
 ;; Roguelike tileset by Derek
 ;; Non-commercial
@@ -78,9 +78,9 @@
    [:staff :nunchuck :three-section-staff :halberd :glave :fauchard :armor-leather :armor-pelt :armor-chain :armor-plate :silver-plate :bronze-plate :iron-plate :gold-plate :ice-wolf]
    [:wand-blue :wand-red :wand-yellow :wand-purple :wand-green :wand-brown :quiver :ice-quiver :robes :red-armor :grey-armor :grey-plate :full-armor :? :?]])
 
-(def d-roguelike (TileSet. "http://40.media.tumblr.com/7a9682566f3c68afb661f347116fad90/tumblr_mh2mhude3E1qcptgwo1_250.png" :alpha 16 16 0
-                           (map->tile->col-row roguelike-map)
-                           (map->tile->transparent roguelike-map true)))
+(def d-roguelike (zfont/tileset "http://40.media.tumblr.com/7a9682566f3c68afb661f347116fad90/tumblr_mh2mhude3E1qcptgwo1_250.png" :alpha 16 16 0
+                                (map->tile->col-row roguelike-map)
+                                (map->tile->transparent roguelike-map true)))
 
 ;; 16x16 Fantasy tileset by Jerom
 ;; CC-BY-SA 3.0
@@ -117,9 +117,9 @@
 
 ;(assert (every? (fn [line] (= (count line) 10)) fantasy-map))
 
-(def fantasy (TileSet. "http://opengameart.org/sites/default/files/16x16_Jerom_CC-BY-SA-3.0_0.png" :alpha 16 16 0
-                       (map->tile->col-row fantasy-map)
-                       (map->tile->transparent fantasy-map true)))
+(def fantasy (zfont/tileset "http://opengameart.org/sites/default/files/16x16_Jerom_CC-BY-SA-3.0_0.png" :alpha 16 16 0
+                            (map->tile->col-row fantasy-map)
+                            (map->tile->transparent fantasy-map true)))
 
 
 ;; CP437 tilesets from
