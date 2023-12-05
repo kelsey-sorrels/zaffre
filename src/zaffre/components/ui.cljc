@@ -81,19 +81,17 @@
         (log/trace "InputSelect render")
         (first children)))}))
   
-(def c (atom 0))
 (def Input (zc/create-react-class {
     :display-name "Input"
     :get-initial-state (fn []
                          (log/info "Input get-initial-state" (zc/element-id-str zc/*current-owner*))
-                         (when (< 10 @c )
-                           (assert false (zc/element-id-str zc/*current-owner*)))
-                         (swap! c inc)
                          (assert (not (nil? zc/*current-owner*)) "Input *current-owner* nil")
                          (assert (not= (zc/element-id-str zc/*current-owner*) "null") "Input *current-owner* null")
                          {:value ""
                           :show-cursor false
                           :focused false})
+    :get-derived-state-from-props (fn [this next-props next-state]
+                                    (select-keys next-props [:value :focused]))
     :get-default-props (fn input-get-default-props [] {
       :max-length 28
       :style {:width 30
@@ -125,7 +123,8 @@
               {:keys [style] :as props} (zc/props this)
               prop-value (get props :value)
               value (or prop-value value)
-              {:keys [cursor-char-on cursor-char-off
+              {:keys [width
+                      cursor-char-on cursor-char-off
                       cursor-fg cursor-bg]}  style
               duty-on 400
               duty-off 400
@@ -133,11 +132,10 @@
               show-cursor (< t duty-on)
               cursor (if (and focused show-cursor) cursor-char-on cursor-char-off)]
           (log/debug "Input render" show-cursor (dissoc props :children))
-          (zc/csx [:view {:style {:border-style :single
-                                  :border-bottom 1}} [
-                    [:text {} [
-                      [:text {} [value]]
-                      [:text {:style {:color cursor-fg :background-color cursor-bg}} [(str cursor)]]]]]])))}))
+          (zc/csx [:text {} [
+                    [:text {} [value]]
+                    [:text {:style {:color cursor-fg :background-color cursor-bg}} [(str cursor)]]
+                    [:text {} [(apply str (repeat (- width (count value)) "_"))]]]])))}))
 
 (def FileResource (zc/create-react-class {
   :display-name "FileResource"
