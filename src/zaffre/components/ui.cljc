@@ -336,7 +336,7 @@
                   :render (fn [data]
                             {:post [(zc/element? %)]}
                             (let [props (assoc (zc/props this) :data data)]
-                              (log/info "Image render-prop fn" (get props :src))
+                              (log/trace "Image render-prop fn" (get props :src))
                               (zc/csx [DataImage props]))))]
       (log/trace "Image render" (get props :src))
       ;; passes :src :style, etc through
@@ -370,7 +370,7 @@
 (def AnimateProps (zc/create-react-class {
   :display-name "AnimateProps"
   :get-initial-state (fn []
-                       (log/info "AnimateProps get-initial-state")
+                       (log/debug "AnimateProps get-initial-state")
                        {:t 0})
   :component-will-mount (fn [this]
                           (log/debug "AnimateProps component-will-mount" (get zc/*current-owner* :id))
