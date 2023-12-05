@@ -215,7 +215,7 @@
                                Platform/LINUX   (into-array ByteBuffer [(zimgutil/png-bytes (get icon-paths 1))])
                                Platform/MACOSX  (into-array ByteBuffer [(zimgutil/png-bytes (get icon-paths 2))])
                                Platform/WINDOWS (into-array ByteBuffer [(zimgutil/png-bytes (get icon-paths 0))
-                                                                                  (zimgutil/png-bytes (get icon-paths 1))])))]
+                                                                        (zimgutil/png-bytes (get icon-paths 1))])))]
      ;; init-natives must be called before the Display is created
      (init-natives)
      ;;(GLFW/glfwSetErrorCallback (GLFWErrorCallback/createPrint System/out))
@@ -569,38 +569,30 @@
     (-> fx-uniforms (get k) first (reset! v)))
   (pub [_]
     term-pub)
-  (apply-font! [_ windows-font else-font]
-    #_(with-gl-context gl-lock window capabilities
-      (reset! normal-font
-              (if (= (Platform/get) Platform/WINDOWS)
-                windows-font
-                else-font))
-      (let [{:keys [framebuffer-width
-                    framebuffer-height
-                    character-width
-                    character-height
-                    font-texture-width
-                    font-texture-height
-                    font-texture-image]} (get @font-textures (font-key @normal-font))
-            ;; type nil as ByteBuffer to avoid reflection on glTexImage2D
-            ^ByteBuffer bbnil nil]
-        (log/info "framebuffer size" framebuffer-width "x" framebuffer-height)
-        (try
+  (apply-font! [_ group-id font-fn]
+    (with-gl-context gl-lock window capabilities
+      (alter (get group->font-texture group-id)
+             (fn [font-texture]
+               (let [font (font-fn (platform))
+                     gg   (zfont/glyph-graphics font)
+                     font-texture (texture-id-2d (get gg :font-texture-image))]
+                 (log/info "loaded font-texture for" group-id font-texture)
+                 (assoc gg :font-texture font-texture))))))
           ; TODO: uncomment when LWJGL version is newer
-          #_(when-not @fullscreen
-            (GLFW/glfwSetWindowMonitor window
-                                       (GLFW/glfwGetWindowMonitor window)
-                                       0
-                                       0
-                                       (* columns character-width)
-                                       (* rows character-height)
-                                       60))
-          ;; resize FBO
-          (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
-          (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB (int framebuffer-width) (int framebuffer-height) 0 GL11/GL_RGB GL11/GL_UNSIGNED_BYTE bbnil)
-          (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture (texture-id-2d font-texture-image))))
-          (catch Throwable t
-            (log/error "Error changing font" t))))))
+          ;;(when-not @fullscreen
+          ;;  (GLFW/glfwSetWindowMonitor window
+          ;;                             (GLFW/glfwGetWindowMonitor window)
+          ;;                             0
+          ;;                             0
+          ;;                             (* columns character-width)
+          ;;                             (* rows character-height)
+          ;;                             60))
+          ;;;; resize FBO
+          ;;(GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
+          ;;(GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB (int framebuffer-width) (int framebuffer-height) 0 GL11/GL_RGB GL11/GL_UNSIGNED_BYTE bbnil)
+          ;;(swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture (texture-id-2d font-texture-image))))
+          ;;(catch Throwable t
+          ;;  (log/error "Error changing font" t))))))
   (set-cursor! [_ x y]
     (reset! cursor-xy [x y]))
   (refresh! [_]
@@ -700,33 +692,38 @@
             (doseq [line (partition (* 4 texture-columns) layer)]
               (log/info (vec line))))
           (try
-            ; Setup font texture
-            (GL13/glActiveTexture GL13/GL_TEXTURE0)
-            (except-gl-errors "font texture glActiveTexture")
-            (GL11/glBindTexture GL11/GL_TEXTURE_2D font-texture)
-            (except-gl-errors "font texture glBindTexture")
-            (GL20/glUniform1i u-font 0)
-            (except-gl-errors "font texture glUniform1i")
             (GL20/glUniformMatrix4fv
               u-MVMatrix
               false
               (position-matrix-buffer
                 [(+ x-pos (- (/ framebuffer-width 2))) (+ y-pos (- (/ framebuffer-height 2))) -1.0 0.0]
-                [framebuffer-width framebuffer-height 1.0]
+                [(* character-width columns) (* character-height rows) 1.0]
                 mv-matrix-buffer))
             (except-gl-errors (str "u-MVMatrix - glUniformMatrix4  " u-MVMatrix))
             ; Setup uniforms for glyph, fg, bg, textures
+            (GL20/glUniform1i u-font 0)
             (GL20/glUniform1i u-glyphs 1)
             (GL20/glUniform1i u-fg 2)
             (GL20/glUniform1i u-bg 3)
             (GL20/glUniform1i u-num-layers layer-count)
             (except-gl-errors "uniformli bind")
-            (GL20/glUniform2f font-size, character-width character-height)
+            (log/info "drawing" group-id)
+            (log/info "font-size" character-width character-height)
+            (log/info "term-dim" columns rows)
+            (log/info "font-tex-dim" font-texture-width font-texture-height)
+            (log/info "glyph-tex-dim" texture-columns texture-rows)
+            (GL20/glUniform2f font-size character-width character-height)
             (GL20/glUniform2f term-dim columns rows)
             (GL20/glUniform2f font-tex-dim font-texture-width font-texture-height)
             (GL20/glUniform2f glyph-tex-dim texture-columns texture-rows)
             (except-gl-errors "uniform2f bind")
             (except-gl-errors "gl(en/dis)able")
+            ; Bind font texture
+            (log/info "binding font texture" font-texture)
+            (GL13/glActiveTexture GL13/GL_TEXTURE0)
+            (except-gl-errors "font texture glActiveTexture")
+            (GL11/glBindTexture GL11/GL_TEXTURE_2D font-texture)
+            (except-gl-errors "font texture glBindTexture")
             ; Send updated glyph texture to gl
             (GL13/glActiveTexture GL13/GL_TEXTURE1)
             (GL11/glBindTexture GL30/GL_TEXTURE_2D_ARRAY glyph-texture)
@@ -905,37 +902,6 @@
           font-textures    (atom {})
           fullscreen       (atom fullscreen)
           antialias        (atom antialias)
-          ;_                (add-watch
-          ;                   normal-font
-          ;                   :font-watcher
-          ;                   (fn [_ _ _ new-font]
-          ;                     (log/info "Using font" new-font)
-          ;                     (let [;; create texture atlas as Buffered texture
-          ;                           {:keys [font-texture-width
-          ;                                   font-texture-height
-          ;                                   font-texture-image
-          ;                                   character-width
-          ;                                   character-height
-          ;                                   character->col-row
-          ;                                   character->transparent]
-          ;                            :as font-parameters} (zfont/glyph-graphics new-font)
-          ;                           _ (log/info "cw" character-width)]
-          ;                       ;(log/info "Created font texture " (dissoc font-parameters :character->col-row) " screen-width" screen-width "screen-height" screen-height)
-          ;                       (log/info "Created font texture " font-parameters " screen-width" screen-width "screen-height" screen-height)
-          ;                       (swap! font-textures assoc
-          ;                                           (font-key new-font)
-          ;                                           {:screen-width screen-width
-          ;                                            :screen-height screen-height
-          ;                                            :character-width character-width
-          ;                                            :character-height character-height
-          ;                                            :character->col-row character->col-row
-          ;                                            :character->transparent character->transparent
-          ;                                            :font-texture-width font-texture-width
-          ;                                            :font-texture-height font-texture-height
-          ;                                            :font-texture-image font-texture-image}))))
-          ;_                  (reset! normal-font (if is-windows
-          ;                                         windows-font
-          ;                                         else-font))
           ;; Last [col row] of mouse movement
           mouse-col-row      (atom nil)
           mousedown-col-row (atom nil)
@@ -943,14 +909,6 @@
           destroyed          (atom false)
           gl-lock            (atom true)
           latch              (java.util.concurrent.CountDownLatch. 1)
-          ;{:keys [screen-width
-          ;        screen-height
-          ;        character-width
-          ;        character-height
-          ;        font-texture-width
-          ;        font-texture-height
-          ;        font-texture-image]} (get @font-textures (font-key @normal-font))
-          ;_                  (log/info "screen size" screen-width "x" screen-height)
           [window
            capabilities
            framebuffer-width
@@ -959,18 +917,16 @@
           _                  (log/info "window" window "capabilities" capabilities)
           _                  (log/info "framebuffer size" framebuffer-width "x" framebuffer-height)
 
-          ;font-texture       (with-gl-context gl-lock window capabilities (texture-id-2d font-texture-image))
-          ;_                  (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture font-texture)))
           group->font-texture
                            (with-gl-context gl-lock window capabilities
                              (into {}
-                               (map (fn [[k v]]
-                                      [k (ref (let [font ((get @v :font) (platform))
-                                                    gg   (zfont/glyph-graphics font)
-                                                    font-texture (texture-id-2d (get gg :font-texture-image))]
-                                                (log/info "loaded font-texture for" k font-texture)
-                                                (assoc gg :font-texture font-texture)))])
-                                    group-map)))
+                               (mapv (fn [[k v]]
+                                       [k (ref (let [font ((get @v :font) (platform))
+                                                     gg   (zfont/glyph-graphics font)
+                                                     font-texture (texture-id-2d (get gg :font-texture-image))]
+                                                 (log/info "loaded font-texture for" k font-texture (select-keys gg [:font-texture-width :font-texture-height :character-width :character-height]))
+                                                 (assoc gg :font-texture font-texture)))])
+                                     group-map)))
           ;; create empty character maps
           layer-character-map-cleared (into {}
                                         (for [[id group-ref] layer-id->group
@@ -1013,26 +969,26 @@
                                    np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
                                (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 (count (get @layer-group :layers))))))
           glyph-textures   (with-gl-context gl-lock window capabilities
-                             (map (fn [layer-group glyph-image-data]
-                                    (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                          np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
-                                      (xy-texture-id np2-columns np2-rows (count (get @layer-group :layers)) glyph-image-data)))
-                                  (vals group-map)
-                                  glyph-image-data))
+                             (mapv (fn [layer-group glyph-image-data]
+                                     (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                           np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
+                                       (xy-texture-id np2-columns np2-rows (count (get @layer-group :layers)) glyph-image-data)))
+                                   (vals group-map)
+                                   glyph-image-data))
           fg-textures      (with-gl-context gl-lock window capabilities
-                             (map (fn [layer-group fg-image-data]
-                                    (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                          np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
-                                      (texture-id np2-columns np2-rows (count (get @layer-group :layers)) fg-image-data)))
-                                  (vals group-map)
-                                  fg-image-data))
+                             (mapv (fn [layer-group fg-image-data]
+                                     (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                           np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
+                                       (texture-id np2-columns np2-rows (count (get @layer-group :layers)) fg-image-data)))
+                                   (vals group-map)
+                                   fg-image-data))
           bg-textures      (with-gl-context gl-lock window capabilities
-                             (map (fn [layer-group bg-image-data]
-                                    (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                          np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
-                                      (texture-id np2-columns np2-rows (count (get @layer-group :layers)) bg-image-data)))
-                                  (vals group-map)
-                                  bg-image-data))
+                             (mapv (fn [layer-group bg-image-data]
+                                     (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                           np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
+                                       (texture-id np2-columns np2-rows (count (get @layer-group :layers)) bg-image-data)))
+                                   (vals group-map)
+                                   bg-image-data))
           [fbo-id fbo-texture]
                            (with-gl-context gl-lock window capabilities (fbo-texture framebuffer-width framebuffer-height))
           ; init shaders

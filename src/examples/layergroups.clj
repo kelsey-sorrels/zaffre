@@ -6,7 +6,8 @@
             [clojure.core.async :as async :refer [go-loop]]
             [taoensso.timbre :as log])
   (:import (zaffre.aterminal ATerminal)
-           (zaffre.font CompositeFont CP437Font TileSet TTFFont)))
+           (zaffre.font CompositeFont CP437Font TileSet TTFFont))
+  (:gen-class))
 
 (defn hsv->rgb [h s v]
   (let [c (* v s)
@@ -48,6 +49,11 @@
                                      (map->tile->col-row one-bit-map)
                                      (map->tile->transparent one-bit-map))]))
                                      
+(defn background-chars []
+  (for [x (range 1 11)
+        y (range 5 10)]
+    {:c :metal       :fg [4 4 5] :bg [0 128 0] :x x :y y}))
+
 (defn -main [& _]
   ;; render in background thread
    (zgl/make-terminal
@@ -59,17 +65,17 @@
         :font (fn [_] font)}
       :foreground {
         :layers [:overlay]
-        :columns 16
-        :rows 16
+        :columns 32
+        :rows 32
         :pos [8 8]
-        :font (fn [_] (CP437Font.  "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 true))}
+        :font (fn [_] (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 true))}
      }
      {:title "Zaffre demo"
       :screen-width (* 16 16)
       :screen-height (* 16 16)
       :default-fg-color [250 250 250]
       :default-bg-color [5 5 8]
-      :icon-paths ["images/icon-16x16.png"
+      #_#_:icon-paths ["images/icon-16x16.png"
                    "images/icon-32x32.png"
                    "images/icon-128x128.png"]}
      (fn [terminal]
@@ -87,10 +93,9 @@
                                  (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
                                (zutil/put-string terminal :text 12 0 (str key-in))
                                (zutil/put-string terminal :overlay 2 7 "Overlay")
+                               (zutil/put-string terminal :overlay 2 8 "Overlay")
                                (zat/put-chars! terminal :text
-                                 (for [x (range 1 11)
-                                       y (range 5 10)]
-                                   {:c :metal       :fg [4 4 5] :bg [0 128 0] :x x :y y}))
+                                 (background-chars))
                                (zat/alter-group-pos!
                                  terminal
                                  :foreground
