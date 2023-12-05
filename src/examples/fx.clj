@@ -21,6 +21,16 @@
         (< h 300) [x 0 c]
         (< h 360) [c 0 x]))))
 
+(defn dot [u v]
+  (reduce + 0 (map * u v)))
+
+(defn norm [v]
+  (Math/sqrt (reduce + 0 (map (fn [x] (* x x)) v))))
+  
+(defn unit [v]
+  (let [l (norm v)]
+    (map #(/ % l) v)))
+
 (def font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2 false))
 
 (defn -main [& _]
@@ -34,13 +44,21 @@
        :font (constantly font)}
      ;; fx-mul layer is a multiplicative blend layer
      :fx-mul {
-       :layers [:rainbow]
+       :layers [:dark]
        :columns 16
        :rows 16
        :pos [0 0]
        :font (constantly font)
        :gl-blend-equation :gl-func-add
-       :gl-blend-func [:gl-dst-color :gl-zero]}}
+       :gl-blend-func [:gl-dst-color :gl-zero]}
+     :fx-add {
+       :layers [:light]
+       :columns 16
+       :rows 16
+       :pos [0 0]
+       :font (constantly font)
+       :gl-blend-equation :gl-func-add
+       :gl-blend-func [:gl-one :gl-one]}}
     {:title "Zaffre demo"
      :screen-width (* 16 16)
      :screen-height (* 16 16)
@@ -50,29 +68,38 @@
       (let [last-key    (atom nil)]
         ;; Every 33ms, draw a full frame
         (zat/do-frame terminal 33
-          (let [key-in (or @last-key \?)]
+          (let [key-in (or @last-key \?)
+                t      (/ (.getTime (new java.util.Date)) 1000)
+                ;; light pos
+                lx     (+ (* 5 (Math/cos t)) 8.0)
+                ly     (+ (* 5 (Math/sin t)) 8.0)]
             ; text
+            (doseq [y (range 16)]
+              (zutil/put-string terminal :text 0 y "a b c d e f g h "))
             (zutil/put-string terminal :text 0 0 "Hello world")
-            (zutil/put-string terminal :text 1 1 "Rainbow")
-            (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
-              (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
             (zutil/put-string terminal :text 12 0 (str key-in))
             ; fx (note the only characters we're drawing if full-cell boxes
             (doseq [y (range 16)]
-              (zutil/put-string terminal :rainbow 0 y (apply str (repeat 16 " "))))
+              (zutil/put-string terminal :dark 0 y (apply str (repeat 16 " ")))
+              (zutil/put-string terminal :light 0 y (apply str (repeat 16 " "))))
+            (zat/set-bg! terminal :light 8 8 [32 32 16])
             (doseq [x (range 16)
                     y (range 16)]
-                (zat/set-bg! terminal :rainbow x y [255, 255, 255]))
-            (doseq [x (range (count "Rainbow"))
-                    :let [rgb (hsv->rgb (double (rand 360)) 1.0 1.0)]]
-                (zat/set-bg! terminal :rainbow (inc x) 1 rgb))))
-      ;; get key presses in fg thread
-      (zevents/add-event-listener terminal :keypress
-        (fn [new-key]
-          (reset! last-key new-key)
-          (case new-key
-            ;; quit on \q keypress
-            \q (zat/destroy! terminal)
-            nil)))))))
+                (zat/set-bg! terminal :dark x y [32, 32, 128])
+                (let [rlx (- lx x) ;; vector from x, y to lx, ly
+                      rly (- ly y)
+                      rlz 3
+                      rl  [rlx rly rlz]
+                      d   (norm rl) ; distance from [x y] to light
+                      i (min 1.0 (/ (* 8.5 (dot (unit [0 0 1]) (unit rl))) (* d d)))]
+                  (zat/set-bg! terminal :light x y (mapv (partial * i) [255 255 128]))))))
+        ;; get key presses in fg thread
+        (zevents/add-event-listener terminal :keypress
+          (fn [new-key]
+            (reset! last-key new-key)
+            (case new-key
+              ;; quit on \q keypress
+              \q (zat/destroy! terminal)
+              nil)))))))
 
 
