@@ -60,7 +60,7 @@
         :layers [:overlay]
         :columns 16
         :rows 16
-        :pos [0 0]}
+        :pos [8 8]}
      }
      {:title "Zaffre demo"
       :screen-width (* 16 16)
@@ -91,6 +91,13 @@
                                  (for [x (range 1 11)
                                        y (range 5 10)]
                                    {:c :metal       :fg [4 4 5] :bg [0 128 0] :x x :y y}))
+                               (zat/alter-group-pos!
+                                 terminal
+                                 :foreground
+                                 (fn [_]
+                                   (let [t (System/currentTimeMillis)
+                                         y (int (* 32 (Math/sin (/ t 2000))))]
+                                     [0 y])))
                                (zat/refresh! terminal)))
                                ;; ~30fps
                              (Thread/sleep 33)
