@@ -230,7 +230,7 @@
        (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_PROFILE GLFW/GLFW_OPENGL_CORE_PROFILE)
        (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_FORWARD_COMPAT GLFW/GLFW_TRUE)
        (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_DEBUG_CONTEXT GLFW/GLFW_TRUE)
-       (if-let [window (GLFW/glfwCreateWindow screen-width screen-height title 0 0)]
+       (if-let [window (GLFW/glfwCreateWindow (int screen-width) (int screen-height) (str title) 0 0)]
          (do
            ;(Display/setDisplayMode (DisplayMode. screen-width screen-height))
            ;(Display/setTitle title)
@@ -758,16 +758,16 @@
           #_(Display/setFullscreen true)))))
   (fullscreen-sizes [_]
     (with-gl-context gl-lock window capabilities
-      (let [desktop-mode (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor))
-            modes (GLFW/glfwGetVideoModes (GLFW/glfwGetPrimaryMonitor))
+      (let [desktop-mode     (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor))
+            modes            (GLFW/glfwGetVideoModes (GLFW/glfwGetPrimaryMonitor))
             compatible-modes (filter (fn [^GLFWVidMode mode]
-                                       (and (= (.getBitsPerPixel mode) (.getBitsPerPixel desktop-mode))
-                                            (= (.getFrequency mode) (.getFrequency desktop-mode))))
-                                     (map (fn [i] (.get modes i)) (range (.count modes))))]
-        (mapv (fn [^GLFWVidMode mode] [(.getWidth mode)
-                          (.getHeight mode)
-                          mode])
-             compatible-modes))))
+                                       (= (.refreshRate mode) (.refreshRate desktop-mode)))
+                                     (map (fn [i] (.get modes (int i))) (range (.capacity modes))))]
+        (mapv (fn [^GLFWVidMode mode]
+                [(.width mode)
+                 (.height mode)
+                 mode])
+              compatible-modes))))
   (set-fx-fg! [_ layer-id x y fg]
     {:pre [(vector? fg)
            (= (count fg) 3)
@@ -989,7 +989,7 @@
                                                    GLFW/GLFW_RELEASE :mouseup)
                                           [col
                                            row]   @mouse-col-row]
-                                      (async/put! mouse-chan (case button
+                                      (async/put! mouse-chan (case (int button)
                                         0 {:button :left :state state :col col :row row}
                                         1 {:button :right :state state :col col :row row}
                                         2 {:button :middle :state state :col col :row row})))))
@@ -1163,9 +1163,9 @@
               ;;       program-id :program-id
               ;;       fb-program-id :fb-program-id} gl]
                 (doseq [id [pgm-id fb-pgm-id]]
-                  (GL20/glDeleteProgram id))
+                  (GL20/glDeleteProgram (int id)))
                 (doseq [id [font-texture glyph-texture fg-texture bg-texture fbo-texture]]
-                  (GL11/glDeleteTextures id)))
+                  (GL11/glDeleteTextures (int id))))
               (GLFW/glfwDestroyWindow window)
             (log/info "Exiting")
             (on-key-fn :exit))
