@@ -187,6 +187,15 @@
       [0x03B1 0x00DF 0x0393 0x03C0 0x03A3 0x03C3 0x00B5 0x03C4 0x03A6 0x0398 0x03A9 0x03B4 0x221E 0x03C6 0x03B5 0x2229]
       [0x2261 0x00B1 0x2265 0x2264 0x2320 0x2321 0x00F7 0x2248 0x00B0 0x2219 0x00B7 0x221A 0x207F 0x00B2 0x25A0 0x00A0])))
 
+
+(defn ^BufferedImage convert-type [^BufferedImage buffered-image image-type]
+  (let [converted-image (BufferedImage. (.getWidth buffered-image) (.getHeight buffered-image) image-type)
+        converted-graphics (.createGraphics converted-image)]
+    (doto converted-graphics
+      (.drawImage buffered-image 0 0 nil)
+      (.dispose))
+    converted-image))
+
 (defn copy-channel [v channel]
   (let [channel-shift (case channel
                        :alpha 24
@@ -222,31 +231,38 @@
 
 (defmulti glyph-graphics class)
 (defmethod glyph-graphics CP437Font [font]
-  (let [characters    (map char cp437-unicode)
-        font-image    (copy-channels! (scale-image (ImageIO/read (jio/input-stream (get font :path-or-url))) (get font :scale)) (get font :alpha))
-        ;font-image    (ImageIO/read (jio/input-stream (get font :path-or-url)))
-        width         (next-pow-2 (.getWidth font-image))
-        height        (next-pow-2 (.getHeight font-image))
-        cwidth        (/ (.getWidth font-image) 16)
-        cheight       (/ (.getHeight font-image) 16)
-        texture-image (BufferedImage. width height BufferedImage/TYPE_4BYTE_ABGR)
-        texture-graphics (.createGraphics texture-image)]
-    (doto texture-graphics
-      (.setColor (Color. 0 0 0 0))
-      (.fillRect 0 0 width height)
-      (.drawImage font-image 0 0 nil)
-      (.dispose))
-    (ImageIO/write font-image "png", (File. "font-texture.png"))
-    {:font-texture-width width
-     :font-texture-height height
-     :font-texture-image texture-image
-     :character-width cwidth
-     :character-height cheight
-     :character->col-row (zipmap
-                           characters
-                           (for [row (range 16)
-                                 col (range 16)]
-                             [col row]))}))
+  (with-open [image-stream (jio/input-stream (get font :path-or-url))]
+    (let [characters    (map char cp437-unicode)
+          font-image    (->
+                          (ImageIO/read image-stream)
+                          (convert-type BufferedImage/TYPE_4BYTE_ABGR)
+                          (scale-image (get font :scale))
+                          (copy-channels! (get font :alpha)))
+          width         (next-pow-2 (.getWidth font-image))
+          height        (next-pow-2 (.getHeight font-image))
+          cwidth        (/ (.getWidth font-image) 16)
+          cheight       (/ (.getHeight font-image) 16)
+          texture-image (BufferedImage. width height BufferedImage/TYPE_4BYTE_ABGR)
+          texture-graphics (.createGraphics texture-image)]
+
+      (log/info "Using cp437 font image" (.getType font-image))
+      (doto texture-graphics
+        (.setColor (Color. 0 0 0 0))
+        (.fillRect 0 0 width height))
+      (while (not (.drawImage texture-graphics font-image 0 0 nil))
+        (Thread/sleep(100)))
+      (.dispose texture-graphics)
+      (ImageIO/write font-image "png", (File. "font-texture.png"))
+      {:font-texture-width width
+       :font-texture-height height
+       :font-texture-image texture-image
+       :character-width cwidth
+       :character-height cheight
+       :character->col-row (zipmap
+                             characters
+                             (for [row (range 16)
+                                   col (range 16)]
+                               [col row]))})))
        
 (defmethod glyph-graphics TTFFont [font]
   ;; Adjust canvas to fit character atlas size
@@ -699,12 +715,12 @@
     (-> fx-uniforms (get k) first (reset! v)))
   (get-key-chan [_]
     key-chan)
-  (apply-font! [_ windows-font else-font size smooth]
+  (apply-font! [_ windows-font else-font]
     (with-gl-context gl-lock
       (reset! normal-font
               (if (= (LWJGLUtil/getPlatform) LWJGLUtil/PLATFORM_WINDOWS)
-                (make-font windows-font Font/PLAIN size)
-                (make-font else-font Font/PLAIN size)))
+                windows-font
+                else-font))
       (let [{:keys [screen-width
                     screen-height
                     character-width
@@ -722,8 +738,7 @@
           (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB (int screen-width) (int screen-height) 0 GL11/GL_RGB GL11/GL_UNSIGNED_BYTE bbnil)
           (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture (texture-id font-texture-image))))
           (catch Throwable t
-            (log/error "Eror changing font" t))))
-      (reset! antialias smooth)))
+            (log/error "Eror changing font" t))))))
   (set-cursor! [_ x y]
     (reset! cursor-xy [x y]))
   (refresh! [_]
@@ -1246,9 +1261,15 @@
           (log/info "got key" (or (str @last-key) "nil"))
           ;; change font size on s/m/l keypress
           (case @last-key
-            \s (zat/apply-font! terminal "Consolas" "Monospaced" 12 true)
-            \m (zat/apply-font! terminal "Consolas" "Monospaced" 18 true)
-            \l (zat/apply-font! terminal "Consolas" "Monospaced" 24 true)
+            \s (zat/apply-font! terminal 
+                 (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1)
+                 (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1))
+            \m (zat/apply-font! terminal
+                 (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2)
+                 (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2))
+            \l (zat/apply-font! terminal
+                 (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 3)
+                 (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 3))
             nil)
           (recur))]
     ;; get key presses in fg thread
@@ -1284,13 +1305,17 @@
                                     :columns 80 :rows 24
                                     :default-fg-color [250 250 250]
                                     :default-bg-color [5 5 8]
-                                    :windows-font "Consolas"
+                                    :windows-font (TTFFont. "Consolas" 12)
                                     ;:else-font "/home/santos/Downloads/cour.ttf"
                                     ;:else-font (TTFFont. "/home/santos/Downloads/cour.ttf" 12)
                                     ;:else-font (TTFFont. "Monospaced" 12)
                                     ;:else-font (TTFFont. "/home/santos/src/robinson/fonts/Boxy/Boxy.ttf" 12)
-                                    ;:else-font (CP437Font. "http://dwarffortresswiki.org/images/2/29/Potash_8x8.png" :green)
-                                    :else-font (CP437Font. "/home/santos/Pictures/LN_EGA8x8.png" :green 2)
+                                    ;:else-font (CP437Font. "http://dwarffortresswiki.org/images/2/29/Potash_8x8.png" :green 2)
+                                    ;:else-font (CP437Font. "http://dwarffortresswiki.org/images/2/29/Potash_8x8.png" :green 2)
+                                    ;:else-font (CP437Font. "http://dwarffortresswiki.org/images/b/b7/Kein_400x125.png" :green 2)
+                                    ;:else-font (CP437Font. "http://dwarffortresswiki.org/images/0/03/Alloy_curses_12x12.png" :green 2)
+                                    :else-font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1)
+                                    ;:else-font (CP437Font. "/home/santos/Pictures/LN_EGA8x8.png" :green 2)
                                     :antialias true
                                     :icon-paths ["images/icon-16x16.png"
                                                  "images/icon-32x32.png"
@@ -1333,9 +1358,15 @@
         (log/info "got key" (or (str @last-key) "nil"))
         ;; change font size on s/m/l keypress
         (case new-key
-          \s (zat/apply-font! terminal "Consolas" "/home/santos/Downloads/cour.ttf" 12 true)
-          \m (zat/apply-font! terminal "Consolas" "/home/santos/Downloads/cour.ttf" 18 true)
-          \l (zat/apply-font! terminal "Consolas" "/home/santos/Downloads/cour.ttf" 24 true)
+          \s (zat/apply-font! terminal 
+               (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1)
+               (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1))
+          \m (zat/apply-font! terminal
+               (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2)
+               (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2))
+          \l (zat/apply-font! terminal
+               (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 3)
+               (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 3))
           \0 (zat/assoc-fx-uniform! terminal "brightness" (swap! brightness #(- % 0.02)))
           \1 (zat/assoc-fx-uniform! terminal "brightness" (swap! brightness #(+ % 0.02)))
           \2 (do (swap! contrast #(- % 0.02))
