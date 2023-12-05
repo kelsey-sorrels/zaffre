@@ -175,9 +175,8 @@ All options are optional. If none are specified an empty map {} may passed to `m
   (set-fx-char! [this x y c])
   ; Clear all of the fx overrides in the back buffer
   (clear-fx! [this])
-  ; Must be called periodically in the same thread that created the terminal using make-terminal
-  ; in order to process the windowing system messages
-  (process-messages [this]))
+  ; Destroy terminal and end processing.
+  (destroy! [this]))
 
 ```
 
