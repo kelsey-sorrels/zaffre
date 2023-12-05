@@ -150,7 +150,7 @@ void main(void){
     rawcolor.g = mix(scanlineDepth * green, green, wavePos);
     rawcolor.b = mix(scanlineDepth * blue, blue, wavePos);
     
-    float n = noise * snoise(vec3(vTextureCoord.x * 100 , vTextureCoord.y * 100, time));
+    float n = noise * snoise(vec3(vTextureCoord.x * 400 , vTextureCoord.y * 400, time));
     //vec3 n = vec3(int(time / 20) % 255);
     //vec3 n = vec3(time * noise / 20);
 

@@ -1180,12 +1180,12 @@
   "Show a terminal and echo input."
   [& _]
   ;; render in background thread
-   (let [colorShift    (atom 0.0)
+   (let [colorShift    (atom 0.0001)
          brightness    (atom 0.68)
          contrast      (atom 2.46)
-         scanlineDepth (atom 0.6)
+         scanlineDepth (atom 0.94)
          time          (atom 0.0)
-         noise         (atom 0.0)
+         noise         (atom 0.002)
          terminal   (make-terminal [:text :rainbow]
                                    {:title "Zaffre demo"
                                     :columns 80 :rows 24
@@ -1249,8 +1249,8 @@
           \5 (zat/assoc-fx-uniform! terminal "scanlineDepth" (swap! scanlineDepth #(+ % 0.02)))
           \6 (zat/assoc-fx-uniform! terminal "colorShift" (swap! colorShift #(- % 0.0001)))
           \7 (zat/assoc-fx-uniform! terminal "colorShift" (swap! colorShift #(+ % 0.0001)))
-          \8 (zat/assoc-fx-uniform! terminal "noise" (swap! noise #(- % 0.001)))
-          \9 (zat/assoc-fx-uniform! terminal "noise" (swap! noise #(+ % 0.001)))
+          \8 (zat/assoc-fx-uniform! terminal "noise" (swap! noise #(- % 0.0001)))
+          \9 (zat/assoc-fx-uniform! terminal "noise" (swap! noise #(+ % 0.0001)))
           \p (log/info "brightness" @brightness
                        "contrast" @contrast
                        "scanlineDepth" @scanlineDepth
