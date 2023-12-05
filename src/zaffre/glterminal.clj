@@ -271,18 +271,6 @@
                         (video-modes (GLFW/glfwGetVideoModes monitor)))))
               (range (.limit monitors))))))
 
-(defn- glfw-current-monitor [window]
-  (let [monitor       (GLFW/glfwGetWindowMonitor window)
-        width-buffer  (BufferUtils/createIntBuffer 1)
-        height-buffer (BufferUtils/createIntBuffer 1)]
-    (GLFW/glfwGetFramebufferSize (long window) width-buffer height-buffer)
-    (cond->
-      {:width (.get width-buffer)
-       :height (.get height-buffer)
-       :refresh-rate 0
-       :monitor monitor}
-      (pos? monitor) (assoc :name (GLFW/glfwGetMonitorName monitor)))))
-
 (defn- glfw-framebuffer-size [window]
   (let [width-buffer (BufferUtils/createIntBuffer 1)
         height-buffer (BufferUtils/createIntBuffer 1)]
@@ -290,6 +278,25 @@
     (let [framebuffer-width (.get width-buffer)
           framebuffer-height (.get height-buffer)]
       [framebuffer-width framebuffer-height])))
+
+(defn- glfw-monitor-size
+  []
+  (let [monitor  (GLFW/glfwGetPrimaryMonitor)
+        vid-mode (GLFW/glfwGetVideoMode monitor)]
+    [(.width vid-mode)
+     (.height vid-mode)]))
+
+(defn- glfw-window-video-mode
+  [window]
+  (let [monitor        (GLFW/glfwGetWindowMonitor window) 
+        [width height] (glfw-framebuffer-size window)]
+  (log/info "glfw-monitor-video-mode" window monitor)
+  (cond->
+    {:width width
+     :height height
+     :refresh-rate 0
+     :monitor monitor}
+    (pos? monitor) (assoc :name (GLFW/glfwGetMonitorName monitor)))))
 
 
 (defn- load-shader
@@ -640,6 +647,7 @@
           (GL11/glDisable GL11/GL_DEPTH_TEST)
           (GL14/glBlendEquation GL14/GL_FUNC_ADD)
           (GL11/glBlendFunc GL11/GL_ONE GL11/GL_ONE_MINUS_SRC_ALPHA)
+          ;(log/info "glViewport" 0 0 framebuffer-width framebuffer-height)
           (GL11/glViewport 0 0 framebuffer-width framebuffer-height)
           (except-gl-errors (str "glViewport " framebuffer-width framebuffer-height))
           (GL11/glClearColor 0.0 0.0 0.0 0.0)
@@ -715,18 +723,18 @@
               (doseq [line (partition (* 4 texture-columns) layer)]
                 (log/info (vec line))))
             (try
-              #_(log/info "y" (+ y-pos #_(- framebuffer-height (* rows character-height)) (- (/ framebuffer-height 2)))
+              (log/info "y" (+ y-pos (- (/ framebuffer-height 2)) (quot (- framebuffer-height (* rows character-height)) 2))
                 "y-pos" y-pos "fb-h" framebuffer-height "rows" rows "ch-h" character-height)
               (GL20/glUniformMatrix4fv
                 (long u-MVMatrix)
                 false
                 (position-matrix-buffer
-                  [(+ x-pos (- (/ framebuffer-width 2)))
-                   (+ y-pos (- framebuffer-height (* rows character-height)) (- (/ framebuffer-height 2)))
+                  [(+ x-pos (- (/ framebuffer-width 2)) (quot (- framebuffer-width (* columns character-width)) 2))
+                   (+ y-pos (- (/ framebuffer-height 2)) (quot (- framebuffer-height (* rows character-height)) 2))
                    -1.0
                    0.0]
-                  [(* columns character-width (quot framebuffer-width screen-width))
-                   (* rows character-height (quot framebuffer-height screen-height))
+                  [(* columns character-width (/ framebuffer-width screen-width))
+                   (* rows character-height (/ framebuffer-height screen-height))
                    1.0]
                   mv-matrix-buffer))
               (except-gl-errors (str "u-MVMatrix - glUniformMatrix4  " u-MVMatrix))
@@ -1145,12 +1153,15 @@
         framebuffer-size-callback
                               (proxy [GLFWFramebufferSizeCallback] []
                                 (invoke [window framebuffer-width framebuffer-height]
-                                  (let [^ByteBuffer bbnil nil]
+                                  (let [fbo-texture-width  (inc framebuffer-width) #_(int (zutil/next-pow-2 framebuffer-width))
+                                        fbo-texture-height (inc framebuffer-height) #_(int (zutil/next-pow-2 framebuffer-height))
+                                        ^ByteBuffer bbnil  nil]
                                     (with-gl-context gl-lock window capabilities
                                       (log/info "Changing size of fbo" fbo-texture)
-                                      (log/info "framebuffer size changed" screen-width screen-height framebuffer-width framebuffer-height)
+                                      (let [[screen-width screen-height] ((juxt :width :height) @window-size)]
+                                        (log/info "framebuffer size changed" screen-width screen-height fbo-texture-width fbo-texture-height))
                                       (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
-                                      (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB (int framebuffer-width) (int framebuffer-height) 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bbnil)
+                                      (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB fbo-texture-width fbo-texture-height 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bbnil)
                                       (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
                                       (reset! framebuffer-size [framebuffer-width framebuffer-height])))))
                                    
@@ -1246,12 +1257,13 @@
           ;; Wait for main thread loop to start
           (.await latch)
           (f terminal))
-        (let [^GLFWVidMode primary-video-mode (with-gl-context gl-lock window capabilities
-                                   (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor)))
-              ^GLFWVidMode current-video-mode (atom (with-gl-context gl-lock window capabilities
-                                         (glfw-current-monitor window)))]
-          (log/info "current-video-mode" @current-video-mode)
-          (reset! window-size @current-video-mode)
+        (let [[monitor-width
+               monitor-height] (with-gl-context gl-lock window capabilities
+                                (glfw-monitor-size))
+              last-video-mode (atom (with-gl-context gl-lock window capabilities
+                                         (glfw-window-video-mode window)))]
+          (log/info "current-video-mode" @last-video-mode)
+          (reset! window-size @last-video-mode)
           (loop []
             (.countDown latch)
             (if (with-gl-context gl-lock window capabilities
@@ -1278,8 +1290,8 @@
                   (GLFW/glfwDestroyWindow window)
                 (log/info "Exiting"))
               (do
-                (when-not (= @current-video-mode @window-size)
-                  (log/info "window change. Old size" @current-video-mode "New size" @window-size)
+                (when-not (= @last-video-mode @window-size)
+                  (log/info "window change. Old size" @last-video-mode "New size" @window-size)
                   (with-gl-context gl-lock window capabilities
                     (cond
                       ;; fullscreen mode
@@ -1294,7 +1306,7 @@
                                                    height
                                                    refresh-rate))
                       ;; fullscren -> windowed mode
-                      (pos? (get @current-video-mode :monitor 0))
+                      (pos? (get @last-video-mode :monitor 0))
                       (let [{:keys [width height]} @window-size]
                         (log/info "setting window monitor windowed from fullscreen" window 0 0 0 width height 0)
                         (GLFW/glfwSetWindowMonitor window
@@ -1303,22 +1315,16 @@
                                                    (int 0)
                                                    (int width)
                                                    (int height)
-                                                   (int 0)))
+                                                   (int 0))
+                        (GLFW/glfwSetWindowPos window (quot (- monitor-width width) 2)
+                                                      (quot (- monitor-height height) 2)))
                       :else
                       (let [{:keys [width height]} @window-size]
                         (log/info "setting window monitor windowed from windowed" window 0 0 0 width height 0)
                         (GLFW/glfwSetWindowSize window width height)
-                        (GLFW/glfwSetWindowPos window (quot (- (.width primary-video-mode) screen-width) 2)
-                                                      (quot (- (.height primary-video-mode) screen-height) 2))
-                        #_(let [[framebuffer-width framebuffer-height :as fb-size] (glfw-framebuffer-size window)
-                              ^ByteBuffer bbnil nil]
-                          (reset! framebuffer-size fb-size)
-                          (log/info "Changing size of fbo" fbo-texture)
-                          (log/info "window size changed" width height screen-width screen-height framebuffer-width framebuffer-height)
-                          (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
-                          (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB (int framebuffer-width) (int framebuffer-height) 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bbnil)
-                          (GL11/glBindTexture GL11/GL_TEXTURE_2D 0))))
-                    (reset! current-video-mode @window-size)))
+                        (GLFW/glfwSetWindowPos window (quot (- monitor-width width) 2)
+                                                      (quot (- monitor-height height) 2))))
+                    (reset! last-video-mode @window-size)))
                 (GLFW/glfwWaitEvents)
                 (recur)))))))
       
