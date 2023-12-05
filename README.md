@@ -40,23 +40,25 @@ Create a terminal:
 
 ```clojure
   ;; render in background thread
-  (let [terminal   (zaffre.glterminal/make-terminal [:text :rainbow]
-                                                    {:title "Zaffre demo"
-                                                     :columns 80 :rows 24
-                                                     :default-fg-color [250 250 250]
-                                                     :default-bg-color [5 5 8]
-                                                     ;; Specify font to use for windows platform
-                                                     ;; In this case let's pull a font from the dwarf fortress tileset repository
-                                                     ;; Use the :green channel and a scale of 1. (2 would, for example, be twice as large)
-                                                     :windows-font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1)
-                                                     ;; Specify font to use for non-windows platforms
-                                                     ;; Here we'll load a ttf font by font-family. A font name or even a filesystem path can be used too
-                                                     :else-font (TTFFont. "Monospaced" 16)
-                                                     ;; Use fullscreen for fun
-                                                     :fullscreen true
-                                                     :icon-paths ["images/icon-16x16.png"
-                                                                  "images/icon-32x32.png"
-                                                                  "images/icon-128x128.png"]})
+  (let [terminal   (zaffre.glterminal/make-terminal
+                     ;; Two layers, :text on the bottom and :rainbow on top
+                     [:text :rainbow]
+                     {:title "Zaffre demo"
+                      :columns 80 :rows 24
+                      :default-fg-color [250 250 250]
+                      :default-bg-color [5 5 8]
+                      ;; Specify font to use for windows platform
+                      ;; In this case let's pull a font from the dwarf fortress tileset repository
+                      ;; Use the :green channel and a scale of 1. (2 would, for example, be twice as large)
+                      :windows-font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1)
+                      ;; Specify font to use for non-windows platforms
+                      ;; Here we'll load a ttf font by font-family. A font name or even a filesystem path can be used too
+                      :else-font (TTFFont. "Monospaced" 16)
+                      ;; Use fullscreen for fun
+                      :fullscreen true
+                      :icon-paths ["images/icon-16x16.png"
+                                   "images/icon-32x32.png"
+                                   "images/icon-128x128.png"]})
 ```
 
 Store some state, in this case the last key that was pressed:
@@ -182,6 +184,10 @@ All options are optional. If none are specified an empty map {} may passed to `m
   (set-fg! [this layer-id x y fg])
   ; Change the background color at (x, y) where bg is [red green blue] (0-255)
   (set-bg! [this layer-id x y bg])
+  ; Update the fx shader's uniform values
+  ; The key must match one of the uniforms specified in `make-terminal`'s options
+  ; The value must be convertable to a double
+  (assoc-fx-uniform! [this k v])
   ; Returns a core.async chan that holds keyboard key presses
   (get-key-chan [this])
   ; Changes the terminal's font.
@@ -196,6 +202,14 @@ All options are optional. If none are specified an empty map {} may passed to `m
   (clear! [this]
   ; Clear a specific layer
           [this layer-id])
+  ; Switch to or from fullscreen mode
+  ; Passing `false` disables fullscreen
+  ; Using one of the values returned from `fullscreen-sizes` will force the terminal to switch
+  ; to fullscreen mode at that resolution
+  (fullscreen! [this v])
+  ;; Returns a seq of valid fullscreen resolutions each of which is a [width height obj]
+  ; `width` and `height` are integer values and `obj` is an opaque object used internally
+  (fullscreen-sizes [this])
   ; Override the foreground color of the character at x y in the back buffer
   (set-fx-fg! [this layer-id x y fg])
   ; Override the background color of the character at x y in the back buffer
