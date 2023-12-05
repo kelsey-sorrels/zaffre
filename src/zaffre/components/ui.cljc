@@ -267,7 +267,7 @@ maps))
   (let [initial-value (int (get props :initial-value 0))
         [value set-value!] (g/use-state initial-value)
         [focused set-focus!] (g/use-state (get props :focus false))
-        [show-cursor set-show-cursor!] (g/use-state false)
+       [show-cursor set-show-cursor!] (g/use-state false)
         {:keys [name style]} props
         {:keys [width] :or {width 40}} style
         duty-on 400
@@ -325,6 +325,227 @@ maps))
                       :color :ref/on-surface
                       :width (str right "%")
                       :height 1}}]]))
+
+; Adapted from https://stackoverflow.com/questions/40153970/transpose-a-list-of-lists-clojure
+(defn transpose [xs]
+  (apply mapv vector xs))
+
+(defn- merge-slice
+  [slice1 slice2]
+  (map (fn [char1 char2]
+         (if (= (:c char1) \space)
+           char2
+           char1))
+       slice1 slice2))
+
+(defn map-vals [f m]
+  (into {} (for [[k v] m] [k (f v)])))
+
+(defn format-line-data
+  [series width height]
+  ; series is a map from fg to data
+  (assert (pos? (count series)))
+  #_(log/info "formatting" series)
+  (let [min-y (reduce min (map (fn [s] (reduce min s)) (vals series)))
+        max-y (reduce max (map (fn [s] (reduce max s)) (vals series)))
+        max-y (if (= min-y max-y) (inc max-y) max-y)
+        ; characters
+        star {:c \*
+               :fg (zcolor/color 255 255 255)
+               :bg (zcolor/color 0 0 0)}
+        blank {:c \space
+               :fg (zcolor/color 255 255 255)
+               :bg (zcolor/color 0 0 0)}
+        horizontal {:c \u2500
+               :fg (zcolor/color 255 255 255)
+               :bg (zcolor/color 0 0 0)}
+        vertical {:c \u2502
+               :fg (zcolor/color 255 255 255)
+               :bg (zcolor/color 0 0 0)}
+        tr {:c \u2510
+               :fg (zcolor/color 255 255 255)
+               :bg (zcolor/color 0 0 0)}
+        tl {:c \u250C
+               :fg (zcolor/color 255 255 255)
+               :bg (zcolor/color 0 0 0)}
+        br {:c \u2518
+               :fg (zcolor/color 255 255 255)
+               :bg (zcolor/color 0 0 0)}
+        bl {:c \u2514
+               :fg (zcolor/color 255 255 255)
+               :bg (zcolor/color 0 0 0)}
+        ; scale from [min-y max-y] to [0 height]
+        scaled-data (map-vals (fn [data]
+                           (map (fn [y] (zcolor/lerp 1 height (/ (- y min-y) (- max-y min-y)))) data))
+                         series)
+        series-pairs (take width
+                       (map (fn [[fg series-scaled-data]]
+                              (map (fn [& pair]
+                                     [fg pair])
+                                   (cons (first series-scaled-data) series-scaled-data)
+                                   series-scaled-data))
+                            scaled-data))]
+    #_(log/info "width" width "height" height "data" (vec scaled-data))
+    #_(log/info "min-y" min-y "max-y" max-y)
+    #_(log/info "scaled-data" (vec scaled-data))
+    #_(log/info "pairs" (vec series-pairs))
+    ; for all vertical slices
+    ; TODO: modify to operator over serieses
+    ; for each vertical slice, reduce over series
+    (->> series-pairs
+      transpose
+      (mapv (fn [pairs]
+        (->> pairs
+          (mapv (fn [[fg [prev-y y]]]
+            ; draw a vertical slice
+            (let [lower (int (min prev-y y))
+                  upper (int (max prev-y y))
+                  line (concat
+                         (repeat (- height upper) blank)
+                         (if
+                           ; no change
+                           (= (int upper) (int lower))
+                             [horizontal]
+                           (let [[top-char bottom-char] (if (< prev-y y)
+                                                          [tl br]
+                                                          [tr bl])]
+                             (concat
+                               [top-char]
+                               (repeat (- upper
+                                          lower 1) vertical)
+                               [bottom-char])))
+                         (repeat (inc lower) blank))]
+                (map (fn [c] (assoc c :fg fg)) line))))
+          (reduce merge-slice)))))))
+
+(defn -main [& args]
+  (let [data (format-line-data
+               {:fg1 (map (partial * 1.) (range 16))
+                :fg2 (map (fn [y]  (+ 4 (* -1. y))) (range 16))}
+               16 8)]
+    (doseq [line data]
+      (println (apply str (map :c line))))
+    (doseq [line (transpose data)]
+      (println (apply str (map :c line))))))
+
+;; Dummy component for XYPlot
+(g/defcomponent LineSeries
+  [_ _])
+
+(g/defcomponent XYPlot
+  [props _]
+  "[XYPlot {}
+     [LineSeries {:style {:color ...} :data [0 1 2 3]}]
+     [LineSeries {:style {:color ...} :data [4 3 2 1]}]]"
+  (let [{:keys [min-y max-y style children]} props
+        style-width (get style :width 0)
+        style-height (get style :height 0)
+        [width set-width!] (g/use-state style-width)
+        [height set-height!] (g/use-state style-height)
+        r (g/use-ref nil)
+        img-characters (g/use-memo
+          ; TODO: create img-characters based on data, width, height
+          (fn []
+            ; scale data from [min-y, max-y] to [0, height]
+            (format-line-data (into {}
+                                (map (fn [child]
+                                       (let [child-props (nth child 1)]
+                                       [(get-in child-props [:style :color] (zcolor/color 255 255 255))
+                                        (get child-props :data)]))
+                                     children))
+                              width height))
+          [width height children])]
+    #_(g/use-effect (fn []
+      (log/info "ref" r)
+      (when-let [layout (some-> r (get "current") (nth 3) deref)]
+        (let [{:keys [x y width height]} layout]
+          (set-width! width)
+          (set-height! height))))
+      [r #_(get r "current")])
+
+    #_(log/info "plotting data" children)
+    #_(log/info "image-characters" (transpose img-characters))
+    #_(System/exit 1)
+
+    [:view {:ref r
+            :style {:display :flex
+                    :flex-direction :column
+                    :width width
+                    :justify-content :space-between
+                    :height height}}
+     [:img {:width width
+            :height height
+            :pixels (transpose img-characters)}]]))
+
+(g/defcomponent Dropdown
+  [props _]
+  (let [{:keys [children]} props
+        [index set-index!] (g/use-state 0)
+        [focused set-focus!] (g/use-state (get props :focus false))
+        [show-cursor set-show-cursor!] (g/use-state false)
+        [expanded set-expanded!] (g/use-state false)
+        on-focus (fn [_] (set-focus! true))
+        on-blur (fn [_]
+                  (set-focus! false)
+                  (set-expanded! false))
+        on-keypress (fn [e]
+                      (if expanded
+                        (case (:key e)
+                          :up (set-index! (fn [idx] (max 0 (dec idx))))
+                          :down (set-index! (fn [idx] (min (dec (count children)) (inc idx))))
+                          (:enter :space)
+                            (set-expanded! not)
+                          nil)
+                        (set-expanded! not)))
+        default-props {:on-focus on-focus
+                       :on-blur on-blur
+                       ; TODO Implement arrow up/down
+                       :on-keypress on-keypress
+                       :gossamer.components/type :dropdown
+                       :gossamer.components/focusable true
+                       :style {:width 30
+                               :height 1
+                               :display :flex
+                               :flex-direction :row
+                               :cursor-char-on \u2592
+                               :cursor-char-off \u25BC
+                               :cursor-fg :ref/secondary
+                               :cursor-bg :ref/surface}}
+        props (assoc (merge default-props props)
+                :style (merge (:style default-props)
+                              (:style props)))
+        {:keys [width
+                cursor-char-on
+                cursor-char-off
+                cursor-fg
+                cursor-bg]} (get props :style)
+        cursor-fg (if (and focused show-cursor) cursor-fg :ref/on-surface)
+        cursor (if (and focused show-cursor) cursor-char-on cursor-char-off)]
+     (g/use-effect (fn []
+       (go-loop []
+         (<! (timeout 400))
+         (set-show-cursor! not)
+         (recur))) [])
+    #_(log/info "cursor" cursor)
+    #_(log/info "fg" cursor-fg)
+
+    (conj [:view props]
+      (concat
+        [(nth children index)
+         [:text {:key "cursor"
+                 :style {:color cursor-fg}} (str cursor)]]
+        (if expanded
+          [[:view {:key "menu"
+                   :style {:position :absolute
+                           :top 1}}
+            (map-indexed (fn [idx child]
+               (if (= idx index)
+                 (-> child
+                   (assoc-in [1 :style :color] :ref/surface)
+                   (assoc-in [1 :style :background-color] :ref/secondary))
+                 child))
+               children)]]
+          [])))))
 
 #_(g/defcomponent VScrollBar
   [props _]
@@ -549,7 +770,8 @@ maps))
   (let [{:keys [title border children]} props]
     (log/info "Panel props" props)
     (log/info "Panel children" children)
-    [:view {:style {:border (or border 1)
+    [:view {:key (get props :key "inset-panel")
+            :style {:border (or border 1)
                     :border-color-top :ref/background-overlay-4
                     :border-color-left :ref/background-overlay-4
                     :border-color-bottom :ref/surface-overlay-4
@@ -561,9 +783,9 @@ maps))
                             :top -1 :left 1
                             :display :flex
                             :flex-direction :row}}
-              [:text {:style {:color :ref/background-overlay-4}} "\u2524"]
-              [:text {:style {:color :ref/on-surface}} title]
-              [:text {:style {:color :ref/background-overlay-4}} "\u251C"]]
+              [:text {:key "left" :style {:color :ref/background-overlay-4}} "\u2524"]
+              [:text {:key "title" :style {:color :ref/on-surface}} title]
+              [:text {:key "right" :style {:color :ref/background-overlay-4}} "\u251C"]]
       children)]))
 
 (g/defcomponent OutsetPanel
@@ -571,7 +793,8 @@ maps))
   (let [{:keys [title border children]} props]
     (log/info "Panel props" props)
     (log/info "Panel children" children)
-    [:view {:style {:border (or border 1)
+    [:view {:key (get props :key)
+            :style {:border (or border 1)
                     :border-color-top :ref/surface-overlay-4
                     :border-color-left :ref/surface-overlay-4
                     :border-color-bottom :ref/background-overlay-4
@@ -583,9 +806,9 @@ maps))
                             :top -1 :left 1
                             :display :flex
                             :flex-direction :row}}
-              [:text {:style {:color :ref/background-overlay-4}} "\u2524"]
-              [:text {:style {:color :ref/on-surface}} title]
-              [:text {:style {:color :ref/background-overlay-4}} "\u251C"]]
+              [:text {:key "left" :style {:color :ref/background-overlay-4}} "\u2524"]
+              [:text {:key "title" :style {:color :ref/on-surface}} title]
+              [:text {:key "right" :style {:color :ref/background-overlay-4}} "\u251C"]]
       children)]))
 ;; style taken from https://www.nucleo.com.au/using-flexbox-for-modal-dialogs/
 (def Popup (zc/create-react-class {

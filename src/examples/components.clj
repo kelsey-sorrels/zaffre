@@ -11,6 +11,7 @@
             [zaffre.tilesets :as ztiles]
             [zaffre.util :as zutil]
             clojure.inspector
+            [clojure.core.async :refer [go-loop timeout <!]]
             [gossamer.core-graal :as g]
             [taoensso.timbre :as log]
             [overtone.at-at :as atat])
@@ -45,9 +46,7 @@
       (future
         (loop []
           (let [next-t (.format (now) formatter)]
-            #_(log/info "Time" t)
             (set-t! next-t))
-          #_(Thread/sleep 1000)
           (recur)))) [])
     [:text {} t]))
 
@@ -65,9 +64,8 @@
         [state dispatch! :as r] (g/use-reducer reducer {:frames 0 :fps 0})]
     (g/use-effect (fn []
       (zcr/request-animation-frame (fn []
-        ;(log/info "Animation frame" r state dispatch!)
         (dispatch! :frame))))
-      [(get state :frames)])
+      #_[(get state :frames)])
     (g/use-effect (fn []
       (future
         (loop []
@@ -79,26 +77,74 @@
       [:text {:key "fps"} (str "fps: " (get state :fps))]
       [zcui/ProgressBar {:key "fps-bar" :value (/ (get state :fps) 10)}]]))
 
+(defn use-random-data
+  [width height]
+  (let[[line-data set-line-data!] (g/use-state (vec (map (partial * 0.2) (range width))))]
+    (g/use-effect (fn []
+      (go-loop []
+        (<! (timeout 100))
+        (try
+          (set-line-data! (fn [line-data]
+            (let [last-line-data (last line-data)
+                  r (min height (max 1 (+ last-line-data (if (< (rand) 0.5) -1 1))))]
+              (vec (conj (vec (rest line-data)) r)))))
+          (catch Throwable t
+            (log/error t)))
+        (recur)))
+      [])
+    line-data))
+
+(def palette
+  [(zcolor/color 31, 119, 180) ; #1f77b4
+   (zcolor/color 255, 127, 14) ; #ff7f0e
+   (zcolor/color 44, 160, 44) ; #2ca02c
+   (zcolor/color 214, 39, 40) ; #d62728
+   (zcolor/color 148, 103, 189) ; #9467bd
+   (zcolor/color 140, 86, 75) ; #8c564b
+   (zcolor/color 227, 119, 194); #e377c2
+   (zcolor/color 127, 127, 127) ; #7f7f7f
+   (zcolor/color 188, 189, 34) ; #bcbd22
+  (zcolor/color 23 190 207) ;#17becf
+])
+
+(g/defcomponent RandomLines
+  [props _]
+  (let [{:keys [style]} props
+        style-width (get style :width 0)
+        style-height (get style :height 0)
+        r1 (use-random-data style-width style-height)
+        r2 (use-random-data style-width style-height)
+        r3 (use-random-data style-width style-height)]
+    [zcui/XYPlot {:key "plot"
+                  :style {
+                    :width 32 :height 8}}
+      [zcui/LineSeries {:key "s1"
+                        :data r1
+                        :style {:color (nth palette 0)}}]
+      [zcui/LineSeries {:key "s2"
+                        :data r2
+                        :style {:color (nth palette 1)}}]
+      [zcui/LineSeries {:key "s3"
+                        :data r3
+                        :style {:color (nth palette 2)}}]]))
+
 (zcr/defcomponent UI
   [{:keys [fps show-popup text-value text-value-on-change]} _]
-  (let [popup (if show-popup
-                [[zcui/Popup {} [[:text {} ["popup"]]]]]
-                [])]
     (log/debug "UI render " fps)
     [:terminal {}
       [:group {:id :ui}
         [:layer {:id :main}
           [:view {:key "inputs"}
-            #_[Clock {:key "clock"}]
-            #_[zcui/LoadingSpinner {:speed 100}]
+            [Clock {:key "clock"}]
+            [zcui/LoadingSpinner {:speed 100}]
             #_[FPSMeter {:key "fpsmeter"}]
             [zcui/OutsetPanel {:key "input-panel" :title "Inputs"
                          :style {:display :flex :flex-direction :row}}
-              [zcui/InsetPanel {:key "slider-panel" :title "Sliders" :style {:width 20}}
+              #_[zcui/InsetPanel {:key "slider-panel" :title "Sliders" :style {:width 20}}
                 [zcui/Slider {:key "slider1" :initial-value 25}]
                 [zcui/Slider {:key "slider2" :initial-value 50}]
                 [zcui/Slider {:key "slider3" :initial-value 75}]]
-              #_[zcui/InsetPanel {:key "input-panel" :title "Text" :style {:width 20}}
+              [zcui/InsetPanel {:key "input-panel" :title "Text" :style {:width 20}}
                 [zcui/Input {:key "input1"
                              :autofocus true
                              :style {:cursor-fg (zcolor/color 244 208 65 255)}
@@ -117,6 +163,12 @@
                 [zcui/Checkbox {:key "option1" :value "option1"} [:text {} "Option 1"]]
                 [zcui/Checkbox {:key "option2" :value "option2"} [:text {} "Option 2"]]
                 [zcui/Checkbox {:key "option3" :value "option3"} [:text {} "Option 3"]]]
+              [zcui/InsetPanel {:key "dropdown-panel" :title "Dropdowns" :style {:width 20}}
+                [zcui/Dropdown {:key "dropdown1"}
+                  [:view {:key "option1"} [:text {:key "option1"} "Option 1"]]
+                  [:view {:key "option2"} [:text {:key "option1"} "Option 2"]]
+                  [:view {:key "option3"} [:text {:key "option1"} "Option 3"]]
+                  [:view {:key "option4"} [:text {:key "option1"} "Option 4"]]]]
               #_[zcui/InsetPanel {:key "button-panel" :title "Buttons"
                            :style {
                              :width 20
@@ -125,6 +177,10 @@
                 [zcui/Button {:key "option1"} [:text {} "Button1"]]
                 [zcui/Button {:key "option2"} [:text {} "Button2"]]
                 [zcui/Button {:key "option3"} [:text {} "Button3"]]]]]
+            #_[zcui/OutsetPanel {:key "graph-panel" :title "Graphs"
+                         :style {:display :flex :flex-direction :row}}
+              [RandomLines {:key "plot"
+                            :style {:width 32 :height 8}}]]
           #_[:view {:key "images"
                   :style {:display :flex
                           :flex-direction :row
@@ -206,7 +262,7 @@
                                      [:view {:style {:width 1
                                                      :position :relative}}
                                        [:text {} ["*"]]]]]]
-]]]]]))
+]]]]])
 
 (defn -main [& _]
   (zgl/create-terminal

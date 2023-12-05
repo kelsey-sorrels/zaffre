@@ -29,18 +29,18 @@
 
 (defmethod measure-text :unrestricted
   [width width-mode height height-mode text]
-    (log/debug "measure-text :unrestricted" width height text)
+    #_(log/info "measure-text :unrestricted" width height text)
     [(count text) 1])
 
 (defmethod measure-text :width-restricted
   [width width-mode height height-mode text]
-    (log/debug "measure-text :width-restricted" width height text)
+    #_(log/info "measure-text :width-restricted" width height text)
     [width (count (ztext/word-wrap width text))])
 
 ;; TODO: Use https://cstheory.stackexchange.com/questions/10385/break-text-evenly-into-certain-number-of-lines
 (defmethod measure-text :height-restricted
   [width width-mode height height-mode text]
-    (log/debug "measure-text :height-restricted" width height text)
+    #_(log/info "measure-text :height-restricted" width height text)
     (let [words (clojure.string/split (clojure.string/trim text) #"\s+")]
       ;; Split by number of words and then find max line length
       [(reduce max 0 (map count (partition height words))) height]))
@@ -49,11 +49,11 @@
 ;; https://github.com/lunarraid/react-pixi-layout/blob/ed3f697a0cfa7c0430cf6989feecaecc99fb7135/src/elements/Text.js#L30
 (defmethod measure-text :bi-restricted
   [width width-mode height height-mode text]
-    (log/trace "measure-text :bi-restricted" width height text)
+    #_(log/info "measure-text :bi-restricted" width height text)
     (let [wrapped (ztext/word-wrap width text)
           measure [(reduce max 0 (map count wrapped))
                    (count (ztext/word-wrap width text))]]
-      (log/trace "measure-text :bi-restricted " measure)
+      #_(log/ifo "measure-text :bi-restricted " measure)
       ;; Split by number of words and then find max line length
       measure))
 
@@ -150,12 +150,12 @@
 
 (defn copy-property [style k type f]
   (when-let [value (get style k)]
-    (log/trace "copying property" k value)
+    #_(log/info "copying property" k value)
     (f (type value))))
 
 (defn copy-property-or-percent [style k type f f-percent]
   (when-let [value (type (get style k))]
-    (log/trace "copying property" k value)
+    #_(log/info "copying property" k value)
     (cond
       (number? value)
         (f value)
@@ -248,9 +248,9 @@
     (copy-property style :position yoga-position-type
       #(Yoga/YGNodeStyleSetPositionType node %)))
 
-  (log/trace "style" style "position-keys" (vec (position-keys style)))
+  #_(log/info "style" style "position-keys" (vec (position-keys style)))
   (doseq [position-key (position-keys style)]
-    (log/debug "setting position property" position-key (get style position-key) node)
+    #_(log/info "setting position property" position-key (get style position-key) node)
     (copy-property-or-percent style position-key identity
       #(Yoga/YGNodeStyleSetPosition node (yoga-edge position-key) %)
       #(Yoga/YGNodeStyleSetPositionPercent node (yoga-edge position-key) %)))
@@ -293,19 +293,22 @@
 (defn build-yoga-tree [max-width max-height parent index element]
   "Takes [type props] elements and annotates them with yoga nodes like
    [type props node]. Does this recursively to the element's children"
-  (log/trace "build-yoga-tree" index element)
-  (let [[type {:keys [style] :as props} children :as styled-element] (if (nil? parent)
-                                                                       (-> element
-                                                                         (assoc-in [1 :style :width] max-width)
-                                                                         (assoc-in [1 :style :height] max-height))
-                                                                       element)
+  #_(log/info "build-yoga-tree" index element)
+  (let [[type
+         {:keys [style] :as props}
+         children
+         host-dom :as styled-element] (if (nil? parent)
+                                        (-> element
+                                          (assoc-in [1 :style :width] max-width)
+                                          (assoc-in [1 :style :height] max-height))
+                                        element)
         node (Yoga/YGNodeNew)]
     (Yoga/YGNodeStyleSetFlexDirection node Yoga/YGFlexDirectionColumn)
     
 
     ;; set style
     (style-node style node)
-    (log/trace "build-yoga-tree children" children)
+    #_(log/info "build-yoga-tree children" children)
 
     (when parent
       (Yoga/YGNodeInsertChild parent node index))
@@ -317,11 +320,11 @@
 
     (when (= type :img)
       (let [{:keys [width height]} props]
-        (log/trace "img style width x height: " width "x" height)
+        #_(log/info "img style width x height: " width "x" height)
         (Yoga/YGNodeStyleSetWidth node width)
         (Yoga/YGNodeStyleSetHeight node height)))
 
-    (log/trace "node" node)
+    #_(log/info "node" node)
     ;; don't recurse into :text and :img
     (let [result
       (with-meta
@@ -340,10 +343,11 @@
                        (build-yoga-tree max-width max-height node index child)))
                    child))
                  children))
-             [])]) {:node node})]
+             [])
+             host-dom]) {:node node})]
       ;; if no parent, then calculate layout before returning
       (when (nil? parent)
-        (log/trace "build-yoga-tree YGNodeCalculateLayout" result)
+        #_(log/info "build-yoga-tree YGNodeCalculateLayout" result)
         (Yoga/YGNodeCalculateLayout node Yoga/YGUndefined Yoga/YGUndefined Yoga/YGDirectionLTR))
       result)))
 
@@ -354,9 +358,9 @@
   ([yoga-tree]
     (transfer-layout 0 0 yoga-tree))
   ([parent-layout-x parent-layout-y yoga-tree]
-    (log/trace "transfer-layout" yoga-tree)
+    #_(log/info "transfer-layout" yoga-tree)
     (if-let [node (-> yoga-tree meta :node)]
-      (let [[type props children] yoga-tree
+      (let [[type props children host-dom] yoga-tree
             style (get props :style)
             layout (get style :layout-type :static)
             left (Yoga/YGNodeLayoutGetLeft node)
@@ -374,22 +378,27 @@
                                    (+ parent-layout-y top)])
             layout-width (Yoga/YGNodeLayoutGetWidth node)
             layout-height (Yoga/YGNodeLayoutGetHeight node)
+            layout {:x layout-x
+                    :y layout-y
+                    :width layout-width
+                    :height layout-height}
             props-with-layout (assoc props
-                                :zaffre/layout {
-                                  :x layout-x
-                                  :y layout-y
-                                  :width layout-width
-                                  :height layout-height})]
-        (log/trace "layout params" {:left left :top top
+                                :zaffre/layout layout)]
+        #_(log/info "layout params" {:left left :top top
                                    :layout-x layout-x :layout-y layout-y
                                    :layout-width layout-width :layout-height layout-height})
         (Yoga/YGNodeFree node)
+        ; set host-dom so that refs have access to layouts
+        #_(log/info "setting host-dom" host-dom layout)
+        (reset! host-dom layout)
         [type
+          ; copy layout into props so that render code has access to immutable version of layout
          props-with-layout
          (if children
            (mapv (partial transfer-layout layout-x layout-y)
                  children)
-           [])])
+           [])
+         host-dom])
       yoga-tree)))
 
 (def yoga-logger
@@ -412,7 +421,7 @@
     (try
       (Yoga/YGConfigSetLogger yoga-config yoga-logger)
       (let [yoga-tree (build-yoga-tree width height nil nil element)]
-        (log/trace "yoga-tree" yoga-tree)
+        #_(log/info "yoga-tree" yoga-tree)
         (transfer-layout yoga-tree))
       (catch Throwable t
         (Yoga/YGConfigFree yoga-config)))))

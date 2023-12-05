@@ -1,6 +1,7 @@
 (ns zaffre.components
   (:require clojure.data
             clojure.string
+            [clojure.zip :as zip]
             [overtone.at-at :as atat]
             [taoensso.timbre :as log]))
  
@@ -517,11 +518,10 @@
   (instance? Component v))
 
 (defn element? [v]
-  (and (instance? ReactElement v)
-       ; keyword-typed elements don't have instances and therefore don't have ids
-       ; but every other type must have an instance and therefore an id
-       (or (keyword? (get v :type))
-           (not (nil? (get v :id))))))
+  (and (vector? v)
+       (= (count v) 4)
+       (keyword? (first v))
+       (map? (second v))))
 
 (defn- valid-children? [type children]
   (assert (sequential? children) (format "%s not sequential" children))
@@ -721,88 +721,96 @@
                                           (log/info (display-name this) "component-did-catch"))}]
    (lifecycle spec))) 
 
-(defn tree-indent [level]
-  (str (apply str (map (fn [is-last] (if is-last "  " "\u2502 ")) (butlast level))) ; │
-       (if (last level)
-         "\u2514 " ; └
-         "\u251c "))) ;├
+(defn tree-edges
+  ([loc]
+    (tree-edges loc true))
+  ([loc rightmost]
+    (if loc
+      (let [has-right-sibling (some? (zip/right loc))]
+        (conj (tree-edges (zip/up loc) false)
+              (cond
+                (and rightmost has-right-sibling)
+                  "\u251c" ;├
+                (and rightmost (not has-right-sibling))
+                  "\u2514" ; └
+                (and (not rightmost) has-right-sibling)
+                  "\u2502" ; │
+                (and (not rightmost) (not has-right-sibling))
+                  " ")))
+              
+      [])))
 
-(defmulti tree-level->str (fn [v _] (cond (vector? v)
-                                            :vector
-                                          (element? v)
-                                            :element
-                                          (map? v)
-                                            :map
-                                          :else
-                                            (type v))))
-(defmethod tree-level->str nil [s level]
-  (let [indent (tree-indent level)]
-    (format "%s%s (Nil @%s)\n" indent s (System/identityHashCode s))))
-(defmethod tree-level->str String [s level]
-  (let [indent (tree-indent level)]
-    (format "%s %s (String @%s)\n" indent s (System/identityHashCode s))))
-(defmethod tree-level->str :vector [[k v children] level]
-  (let [elem-indent (tree-indent level)
-        indent (tree-indent (conj level false))
-        last-indent (tree-indent (conj level true))]
-    (if (map? v)
-      (apply str
-        (concat
-          [(format "%s%c[32m%s%c[39m\n" elem-indent (char 27) k (char 27))
-           (format "%s:props\n" indent)
-           (tree-level->str v (conj level false))]
-           [(format "%schildren (%d)\n" last-indent (count children))]
-           (map (fn [child child-is-last] (tree-level->str child (-> level (conj true) (conj child-is-last))))
-                children
-                (concat (repeat (dec (count children)) false)
-                        (repeat true)))))
-      (format "%s%s: %s\n" indent k (if (fn? v) "fn" v)))))
-(defmethod tree-level->str :map [m level]
-  (let [indent (tree-indent level)]
-    (apply str
-      (map (fn [kv child-is-last] (tree-level->str kv (conj level child-is-last)))
-           m
-           (concat (repeat (dec (count m)) false)
-                   (repeat true))))))
-(defmethod tree-level->str Component [component level is-last]
-  (let [indent (apply str (repeat (* 2 level) " "))]
-    (apply str
-      [(format "%s%s (Component @%x)\n" indent (component-display-name component) (System/identityHashCode component))
-       (format "%s  :props %s\n" indent (dissoc (props component) :children))
-       (format "%s  :state %s\n" indent (when-let [s (state component)] @s))])))
-(defmethod tree-level->str ComponentInstance [instance level is-last]
-  (let [indent (apply str (repeat (* 2 level) " "))]
-    (apply str
-      [(format "%s%s (ComponentInstance @%x)\n" indent (component-display-name instance) (System/identityHashCode instance))
-       (format "%s  :props %s\n" indent (dissoc (props instance) :children))
-       (format "%s  :state %s\n" indent (when-let [s (state instance)] @s))])))
-(defmethod tree-level->str :element [element level]
-  (let [elem-indent (tree-indent level)
-        indent (tree-indent (conj level false))
-        last-indent (tree-indent (conj level true))
-        children (element-children element)]
-    (apply str
-      (concat
-        [(format "%s%c[32m%s%c[39m(Element(id=%s)@%x)\n" elem-indent (char 27) (element-display-name element) (char 27) (element-id-str element) (System/identityHashCode element))
-         (format "%s:props\n" indent)
-         (tree-level->str (dissoc (get element :props) :children) (conj level false))]
-         (let [props (dissoc (get element :props) :children)]
-           (map (fn [kv child-is-last] (tree-level->str kv (-> level (conj false) (conj child-is-last))))
-                props
-                (concat (repeat (dec (count props)) false)
-                        (repeat true))))
-         [(let [s (get-state *updater* element)]
-           (format "%s:state@(%x)\n" indent (System/identityHashCode s)))]
-         (let [s  (get-state *updater* element)]
-           (map (fn [kv child-is-last] (tree-level->str kv (-> level (conj false) (conj child-is-last))))
-                s
-                (concat (repeat (dec (count s)) false)
-                        (repeat true))))
-         [(format "%schildren (%d)\n" last-indent (count children))]
-         (map (fn [child child-is-last] (tree-level->str child (-> level (conj true) (conj child-is-last))))
-              children
-              (concat (repeat (dec (count children)) false)
-                      (repeat true)))))))
+(defn zipper-elements
+  [root-element]
+  (zip/zipper
+    ; can have children
+    (fn [v] (or (element? v) (map? v) (map-entry? v)))
+    ; children
+    (fn [v]
+      (cond
+        (element? v)
+          (vec (array-map
+            :props (nth v 1)
+            :host-dom @(nth v 3)
+            :children (nth v 2)))
+        (map? v)
+          (vec v)
+        (map-entry? v)
+          (if (coll? (second v))
+            (second v)
+            [(second v)])))
+    ; with children
+    (fn [v children]
+      (cond
+        (element? v)
+          (let [[tag props _ host-dom] v]
+            [tag props children host-dom])
+        (map? v)
+          {(ffirst v) children}
+        (map-entry? v)
+          (first {(first v) children})))
+    root-element))
 
-(defn tree->str [v]
-  (str "\n" (tree-level->str v [true])))
+
+(defn zipper-descendants
+  [z]
+  #_(log/info "zipper-descendants" z)
+  (if-not (zip/end? z)
+    (lazy-seq
+      (cons z (zipper-descendants (zip/next z))))
+    []))
+
+(defn tree->str [root-element]
+  (clojure.string/join "\n"
+    (cons "\nroot-element"
+      (for [z (-> root-element zipper-elements zipper-descendants)
+            :let [node (zip/node z)]]
+        (str (clojure.string/join (tree-edges z))
+             (cond
+               (element? node)
+                 (first node)
+               (map-entry? node)
+                 (first node)
+               (map? node)
+                 {}
+               (nil? node)
+                 "nil"
+               :else
+                 node))))))
+  
+(defn -main [& args]
+  (println 
+    (clojure.string/join "\n"
+      (cons "\nX"
+        (for [z (-> (first {:root {:a [1 2] :b {3 "x"} :c "c"}}) zipper-elements zipper-descendants)
+              :let [node (zip/node z)]]
+          (str (clojure.string/join (tree-edges z))
+               (cond
+                 (element? node)
+                   (first node)
+                 (map-entry? node)
+                   (first node)
+                 (map? node)
+                   {}
+                 :else
+                   node)))))))
