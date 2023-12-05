@@ -422,7 +422,7 @@
                            antialias
                            layer-character-map-cleared
                            layer-character-map
-                           layer-groups
+                           group-map
                            layer-id->group
                            cursor-xy
                            fx-uniforms
@@ -436,13 +436,15 @@
   zat/ATerminal
   (get-size [_]
     [0 0])
+  (alter-group-pos! [_ group-id f]
+    (alter (get group-map group-id) f))
   ;; characters is a list of {:c \character :x col :y row :fg [r g b] :bg [r g b]}
   (put-chars! [_ layer-id characters]
     {:pre [(get layer-id->group layer-id)
            (get layer-character-map layer-id)]}
     #_(log/info "characters" (str characters))
-    (let [columns (-> layer-id layer-id->group :columns)
-          rows    (-> layer-id layer-id->group :rows)]
+    (let [columns (-> layer-id layer-id->group deref :columns)
+          rows    (-> layer-id layer-id->group deref :rows)]
       ;(log/info "writing to layer" layer-id "dim:" columns "x" rows)
       (alter (get layer-character-map layer-id)
              (fn [cm]
@@ -552,7 +554,7 @@
                  fg-image-data
                  bg-image-data] (map
                                   vector
-                                  layer-groups
+                                  (dosync (map (fn [[_ group-ref]] @group-ref) group-map))
                                   glyph-textures
                                   fg-textures
                                   bg-textures
@@ -844,7 +846,7 @@
 
 
 (defn make-terminal
-  [layer-groups {:keys [title screen-width screen-height default-fg-color default-bg-color on-key-fn windows-font else-font font-size fullscreen antialias icon-paths fx-shader]
+  [group-map {:keys [title screen-width screen-height default-fg-color default-bg-color on-key-fn windows-font else-font font-size fullscreen antialias icon-paths fx-shader]
     :or {title "Zaffre"
          default-fg-color [255 255 255]
          default-bg-color [0 0 0]
@@ -856,12 +858,15 @@
          icon-paths       nil
          fx-shader        {:name "passthrough.fs"}}}
    f]
-    (let [layer-id->group  (->> layer-groups
-                              (mapcat (fn [layer-group]
+    (let [group-map        (into {} (map (fn [[k v]] [k (ref v)]) group-map))
+          layer-id->group  (->> group-map
+                              (mapcat (fn [[id layer-group]]
                                         (map (fn [layer-id]
                                                [layer-id layer-group])
-                                             (get layer-group :layers))))
+                                             (get @layer-group :layers))))
                               (into {}))
+          _                     (log/info "group-map" group-map)
+          _                     (log/info "layer-id->group" layer-id->group)
           is-windows       (>= (.. System (getProperty "os.name" "") (toLowerCase) (indexOf "win")) 0)
           normal-font      (atom nil)
           font-textures    (atom {})
@@ -925,13 +930,13 @@
           _                  (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture font-texture)))
           ;; create empty character maps
           layer-character-map-cleared (into {}
-                                        (for [[id {:keys [columns rows]}] layer-id->group]
+                                        (for [[id group-ref] layer-id->group
+                                              :let [{:keys [columns rows]} @group-ref]]
                                           [id (vec (repeat rows (vec (repeat columns (make-terminal-character
                                                                                        (char 0)
                                                                                        default-fg-color
                                                                                        default-bg-color
                                                                                        #{})))))]))
-          _                     (log/info "layer-groups" layer-groups)
           layer-character-map  (into {}
                                      (for [id (keys layer-id->group)]
                                        [id (ref (get layer-character-map-cleared id))]))
@@ -951,39 +956,39 @@
 
           ;; create width*height texture that gets updated each frame that determines which character to draw in each cell
           _ (log/info "Creating glyph array")
-          glyph-image-data (for [layer-group layer-groups]
-                             (let [np2-columns (zutil/next-pow-2 (get layer-group :columns))
-                                   np2-rows    (zutil/next-pow-2 (get layer-group :rows))]
+          glyph-image-data (for [[_ layer-group] group-map]
+                             (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                   np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
                                (log/info "creating buffers for glyph/fg/bg textures" np2-columns "x" np2-rows)
-                               (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 (count (get layer-group :layers))))))
-          fg-image-data    (for [layer-group layer-groups]
-                             (let [np2-columns (zutil/next-pow-2 (get layer-group :columns))
-                                   np2-rows    (zutil/next-pow-2 (get layer-group :rows))]
-                               (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 (count (get layer-group :layers))))))
-          bg-image-data    (for [layer-group layer-groups]
-                             (let [np2-columns (zutil/next-pow-2 (get layer-group :columns))
-                                   np2-rows    (zutil/next-pow-2 (get layer-group :rows))]
-                               (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 (count (get layer-group :layers))))))
+                               (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 (count (get @layer-group :layers))))))
+          fg-image-data    (for [[_ layer-group] group-map]
+                             (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                   np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
+                               (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 (count (get @layer-group :layers))))))
+          bg-image-data    (for [[_ layer-group] group-map]
+                             (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                   np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
+                               (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 (count (get @layer-group :layers))))))
           glyph-textures   (with-gl-context gl-lock window capabilities
                              (map (fn [layer-group glyph-image-data]
-                                    (let [np2-columns (zutil/next-pow-2 (get layer-group :columns))
-                                          np2-rows    (zutil/next-pow-2 (get layer-group :rows))]
-                                      (xy-texture-id np2-columns np2-rows (count (get layer-group :layers)) glyph-image-data)))
-                                  layer-groups
+                                    (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                          np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
+                                      (xy-texture-id np2-columns np2-rows (count (get @layer-group :layers)) glyph-image-data)))
+                                  (vals group-map)
                                   glyph-image-data))
           fg-textures      (with-gl-context gl-lock window capabilities
                              (map (fn [layer-group fg-image-data]
-                                    (let [np2-columns (zutil/next-pow-2 (get layer-group :columns))
-                                          np2-rows    (zutil/next-pow-2 (get layer-group :rows))]
-                                      (texture-id np2-columns np2-rows (count (get layer-group :layers)) fg-image-data)))
-                                  layer-groups
+                                    (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                          np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
+                                      (texture-id np2-columns np2-rows (count (get @layer-group :layers)) fg-image-data)))
+                                  (vals group-map)
                                   fg-image-data))
           bg-textures      (with-gl-context gl-lock window capabilities
                              (map (fn [layer-group bg-image-data]
-                                    (let [np2-columns (zutil/next-pow-2 (get layer-group :columns))
-                                          np2-rows    (zutil/next-pow-2 (get layer-group :rows))]
-                                      (texture-id np2-columns np2-rows (count (get layer-group :layers)) bg-image-data)))
-                                  layer-groups
+                                    (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                          np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
+                                      (texture-id np2-columns np2-rows (count (get @layer-group :layers)) bg-image-data)))
+                                  (vals group-map)
                                   bg-image-data))
           [fbo-id fbo-texture]
                            (with-gl-context gl-lock window capabilities (fbo-texture framebuffer-width framebuffer-height))
@@ -1098,7 +1103,7 @@
                            antialias
                            layer-character-map-cleared
                            layer-character-map
-                           layer-groups
+                           group-map
                            layer-id->group
                            cursor-xy
                            fx-uniforms
