@@ -293,7 +293,6 @@
   (assoc-shader-param! [_ k v] (swap! cmds conj (list zat/assoc-shader-param! terminal k v)))
   (pub [_] (zat/pub terminal))
   (refresh! [_]
-    #_(swap! cmds conj (list zat/refresh! terminal))
     (reset! last-cmds @cmds)
     (reset! cmds []))
   (clear! [_]
@@ -304,6 +303,7 @@
   (fullscreen-sizes [_] (zat/fullscreen-sizes terminal))
   (destroy! [_] (zat/destroy! terminal))
   (destroyed? [_] (zat/destroyed? terminal)))
+(defmethod zat/do-frame-clear BufferedTerminal [terminal] terminal)
 
 (defn create-animated-terminal
   [terminal-fn group-map opts f]

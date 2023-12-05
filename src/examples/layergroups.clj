@@ -62,19 +62,18 @@
 (defn -main [& _]
   ;; render in background thread
    (zgl/create-terminal
-     {:background {
+     [{:id :background
         :layers [:text]
         :columns 16
         :rows 16
         :pos [0 0]
         :font (constantly font)}
-      :foreground {
+      {:id :foreground
         :layers [:overlay]
         :columns 32
         :rows 32
         :pos [8 8]
-        :font (constantly fg-font-a)}
-     }
+        :font (constantly fg-font-a)}]
      {:title "Zaffre demo"
       :screen-width (* 16 16)
       :screen-height (* 16 16)

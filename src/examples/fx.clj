@@ -36,14 +36,14 @@
 (defn -main [& _]
   (zgl/create-terminal
     ;; base layer is text
-    {:app {
+    [{:id :app
        :layers [:text]
        :columns 16
        :rows 16
        :pos [0 0]
        :font (constantly font)}
      ;; fx-mul layer is a multiplicative blend layer
-     :fx-mul {
+     {:id :fx-mul
        :layers [:dark]
        :columns 16
        :rows 16
@@ -51,14 +51,14 @@
        :font (constantly font)
        :gl-blend-equation :gl-func-add
        :gl-blend-func [:gl-dst-color :gl-zero]}
-     :fx-add {
+     {:id :fx-add
        :layers [:light]
        :columns 16
        :rows 16
        :pos [0 0]
        :font (constantly font)
        :gl-blend-equation :gl-func-add
-       :gl-blend-func [:gl-one :gl-one]}}
+       :gl-blend-func [:gl-one :gl-one]}]
     {:title "Zaffre demo"
      :screen-width (* 16 16)
      :screen-height (* 16 16)

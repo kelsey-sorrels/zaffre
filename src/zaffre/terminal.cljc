@@ -23,6 +23,7 @@
   (destroy! [this] "Stops the terminal, and closes the window.")
   (destroyed? [this] "True if destroy! cas been called or the window closed."))
 
+(defmulti do-frame-clear type)
 
 (defmacro do-frame
   ([t d & body]
@@ -34,6 +35,7 @@
            (loop []
              (when-not (destroyed? terminal#)
                (dosync
+                 (do-frame-clear terminal#)
                  ~@body
                  (refresh! terminal#))
                (Thread/sleep sleep-time#)
