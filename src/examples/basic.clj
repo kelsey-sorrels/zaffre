@@ -11,12 +11,12 @@
                            ztiles/fantasy]))
 (defn -main [& _]
   (zgl/create-terminal
-    {:app {           ;; Setup a layer group `:app`
+    [{:id :app        ;; Setup a layer group `:app`
       :layers [:text] ;; With one layer `:text`
       :columns 16     ;; 16 characters wide
       :rows 16        ;; 16 characters tall
       :pos [0 0]      ;; With no position offset
-      :font (constantly font)}} ;; Give the group a nice font
+      :font (constantly font)}] ;; Give the group a nice font
     {:title "Zaffre demo"     ;; Set the window title
      :screen-width (* 16 16)  ;; Screen dimentions in pixels
      :screen-height (* 16 16)} ;; Since our font is 16x16 and our layer group
