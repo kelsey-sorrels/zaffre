@@ -332,6 +332,7 @@
          node])]
       ;; if no parent, then calculate layout before returning
       (when (nil? parent)
+        (log/trace "build-yoga-tree YGNodeCalculateLayout" result)
         (Yoga/YGNodeCalculateLayout node Yoga/YGUndefined Yoga/YGUndefined Yoga/YGDirectionLTR))
       result)))
 

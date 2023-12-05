@@ -292,10 +292,9 @@
   :render (fn [this]
     (let [{:keys [data layer-index]} (zc/props this)
           layer-index (or layer-index 0)
-          layers (rockpick.core/read-xp (clojure.java.io/input-stream data))
+          layers (if (sequential? data) data (rockpick.core/read-xp (clojure.java.io/input-stream data)))
           layer (nth layers layer-index)
           pixels (mapv (fn [line]
-                   (log/info "line" line)
                    (mapv (fn [{:keys [ch fg bg]}]
                           (let [fg-r (get fg :r)
                                 fg-g (get fg :g)
@@ -310,7 +309,7 @@
                            :bg [bg-r bg-g bg-b bg-a]}))
                          line))
                layer)]
-      (log/info "pixels" pixels)
+      (log/trace "pixels" pixels)
       (zc/csx [:img {:width (count (first pixels)) :height (count pixels)} pixels])))}))
 
 (defn data-to-pixels [data]

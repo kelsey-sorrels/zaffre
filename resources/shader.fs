@@ -33,35 +33,42 @@ void main(void) {
     vec4 fg  = texelFetch(uFg, termXYZ, 0);
     vec4 bg  = texelFetch(uBg, termXYZ, 0);
     uint r = uint(256u * result.r);
+
+
+    // from https://www.w3.org/TR/compositing-1/#csscompositingrules_CSS
+
+    // co: the premultiplied pixel value after compositing
+    // Cs: the color value of the source graphic element being composited
+    // αs: the alpha value of the source graphic element being composited
+    // Cb: the color value of the backdrop
+    // αb: the alpha value of the backdrop
+
+    // Cs as
+    vec4 Cs = mix(bg, fg, fnt.a);
+    float Fa, Fb;
+    vec3 blend;
+
     switch (glyphType) {
       case 0u:
-        //result.r = 0.2;
+        // src_over (normal)
+        Fa = 1;
+        Fb = 1 - Cs.a;
+        blend = Cs.rgb;
         break;
       case 1u:
-        result = mix(bg, fg, fnt.r);
-        //result.r = 0.5;
-        break;
-      case 2u:
-        // from https://www.w3.org/TR/compositing-1/#csscompositingrules_CSS
-
-		// co: the premultiplied pixel value after compositing
-		// Cs: the color value of the source graphic element being composited
-		// αs: the alpha value of the source graphic element being composited
-		// Cb: the color value of the backdrop
-		// αb: the alpha value of the backdrop
-
-        // Cs as
-        vec4 m = mix(bg, fg, fnt.a);
-
-        // co = Cs * αs + Cb * αb * (1 - αs)
-        result.rgb = m.rgb  * m.aaa +  result.rgb * result.aaa * (1.0 - m.aaa);
-        // αo = αs + αb * (1 - αs)
-        result.a = m.a + result.a * (1 - m.a);
+        // multiply
+        Fa = 1;
+        Fb = 1 - Cs.a;
+        blend = result.rgb * Cs.rbg;
         break;
     }
-    //result.r = ((r | (glyphType * 10u)  << (2u * i))/ 256u);
-    //result.r = 1.0;
-    //result.a = 1.0;
+
+    // Apply the blend in place
+    Cs.rgb = (1 - result.a) * Cs.rgb + result.a * blend.rgb;
+    // Composite
+    result.rgb = Cs.a * Fa * Cs.rgb + result.a * Fb * result.rgb;
+    // αo = αs + αb * (1 - αs)
+    result.a = Cs.a + result.a * (1 - Cs.a);
   }
   outcolor = result;
 }
