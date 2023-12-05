@@ -61,7 +61,7 @@
 
 (defn -main [& _]
   ;; render in background thread
-   (zgl/make-terminal
+   (zgl/create-terminal
      {:background {
         :layers [:text]
         :columns 16
