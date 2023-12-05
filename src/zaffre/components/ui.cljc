@@ -34,77 +34,37 @@ maps))
 (def resource-cache (atom (cache/ttl-cache-factory {} :ttl 30000)))
 (def image-cache (atom (cache/fifo-cache-factory {} :ttl 30000)))
 
-(declare Input)
-(declare InputSelect) 
-
-(defn input-element-seq [dom]
-  (zc/filter-element-tree (fn [{:keys [type]}]
-                            (= type Input))
-                          dom))
-
-(defn input-select-element [dom]
-  (first
-    (zc/filter-element-tree (fn [{:keys [type]}]
-							  (= type InputSelect))
-							dom)))
-
 (defn to-input-char [event]
   (if (= event :space)
-    \ 
+    \
     event))
 
-#_(g/defcomponent InputSelect
-  [_ _]
-  (let [[state set-state] (g/use-state {:index 0})]
-  :get-default-props (fn input-get-default-props [] {
-    :on-keypress (fn input-select-on-keypress [this e]
-                   (log/info "InputSelect on-keypress" (get e :key))
-                   (let [{:keys [key dom]} e
-                         {:keys [index]} (zc/state this)
-                         input-elements (input-element-seq dom)]
-                     (when-not (empty? input-elements)
-                       (let [curr-input (nth input-elements (mod index (count input-elements)))]
-                         (if (= key :tab)
-                           (let [next-input (nth input-elements (mod (inc index) (count input-elements)))]
-                             (when-not (= curr-input next-input)
-                               ;; blur curr input
-                               (binding [zc/*current-owner* curr-input]
-                                 (let [instance (zc/construct-instance curr-input)
-                                     {:keys [on-blur]} (zc/props instance)]
-                                   (on-blur
-                                     (assoc instance :updater zc/*updater*)
-                                     {})))
-                               ;; focus next input
-                               (binding [zc/*current-owner* next-input]
-                                 (let [instance (zc/construct-instance next-input)
-                                     {:keys [on-focus]} (zc/props instance)]
-                                   (on-focus
-                                     (assoc instance :updater zc/*updater*)
-                                     {})))
-                               ;; update this state
-                               (zc/set-state! this (fn [{:keys [index]}]
-                                                     {:index (inc index)}))))
-                            ;; dispatch event to curr input
-                            (binding [zc/*current-owner* curr-input]
-                              (let [instance (zc/construct-instance curr-input)
-                                  {:keys [on-keypress]} (zc/props instance)]
-                                (on-keypress
-                                  (assoc instance :updater zc/*updater*)
-                                  {:key key}))))))))})
-  :render
-    (fn [this]
-      (let [{:keys [children] :as props} (zc/props this)]
-        (log/trace "InputSelect render")
-        (first children)))))
-  
 (g/defcomponent Input
   [props _]
   (let [[value set-value!] (g/use-state (get props :value ""))
         [focused set-focus!] (g/use-state (get props :focus false))
         [show-cursor set-show-cursor!] (g/use-state false)
+        max-length (or (get props :max-length) 28)
         duty-on 400
         duty-off 400
-        default-props {:max-length 28
+        on-focus (fn [_] (set-focus! true))
+        on-blur (fn [_] (set-focus! false))
+        on-keypress (fn [e]
+          (log/info "Input on-keypress" e)
+          (let [k (get e :key)]
+            (log/info "value" value "max-length" max-length "k" k)
+            (cond
+              (= k :backspace)
+                (set-value! (subs value 0 (dec (count value))))
+              (and (or (char? k) (= k :space)) (not= k \newline))
+                (set-value! (if (< (count value) max-length)
+                              (str value (to-input-char k))
+                              value)))))
+        default-props {:max-length max-length
+                       :on-focus on-focus
+                       :on-blur on-blur
+                       :on-keypress on-keypress
+                       :class :tabable
                        :style {:width 30
                                :height 1
                                :display :flex
@@ -115,7 +75,13 @@ maps))
                                :cursor-bg (zcolor/color 0 0 0 255)}}
         props (assoc (merge default-props props)
                 :style (merge (:style props)
-                              (:style default-props)))]
+                              (:style default-props)))
+        {:keys [width
+                cursor-char-on
+                cursor-char-off
+                cursor-fg
+                cursor-bg]} (get props :style)
+        cursor (if (and focused show-cursor) cursor-char-on cursor-char-off)]
 
      (g/use-effect (fn []
        (go-loop []
@@ -123,37 +89,18 @@ maps))
          (set-show-cursor! not)
          (recur))) [])
 
-     #_(log/info "Input value" value (type value))
+     (log/info "Input value" value (type value))
      #_(log/info "props" props)
-     (letfn [(on-focus [_] true)
-             (on-blur [_] false)
-             (on-keypress [e]
-                (log/info "Input on-keypress" e)
-                (let [{:keys [max-length]} props
-                      k (get e :key)]
-                  (cond
-                    (= k :backspace)
-                      (set-value! (subs value 0 (dec (count value))))
-                    (and (or (char? k) (= k :space)) (not= k \newline))
-                      (set-value! (if (< (count value) max-length)
-                                    (str value (to-input-char k))
-                                    value)))))]
-        (let [{:keys [style]} props
-              {:keys [width
-                      cursor-char-on cursor-char-off
-                      cursor-fg cursor-bg]}  style
-              cursor (if (and focused show-cursor) cursor-char-on cursor-char-off)]
-          #_(log/debug "Input render" show-cursor (dissoc props :children))
-          #_(log/info "Input width" width (type width))
-          #_(log/info "cursor fg" cursor-fg "cursor-bg" cursor-bg "cursor" cursor)
-          [:view {:style style
-                  :class :tabable
-                  :on-focus on-focus
-                  :on-blur on-blur
-                  :on-keypress on-keypress}
-            [:text {:key "text"} value]
-            [:text {:key "cursor" :style {:color cursor-fg :background-color cursor-bg}} (str cursor)]
-            [:text {:key "rest"} (apply str (repeat (- width (count value)) "_"))]]))))
+     #_(log/debug "Input render" show-cursor (dissoc props :children))
+     #_(log/info "Input width" width (type width))
+     (log/info "cursor fg" cursor-fg "cursor-bg" cursor-bg "cursor" cursor)
+     [:view props #_{:style style
+             :on-focus on-focus
+             :on-blur on-blur
+             :on-keypress on-keypress}
+       [:text {:key "text"} value]
+       [:text {:key "cursor" :style {:color cursor-fg :background-color cursor-bg}} (str cursor)]
+       [:text {:key "rest"} (apply str (repeat (- width (count value)) "_"))]]))
 
 (defn async-load-file
   [path on-load on-error]

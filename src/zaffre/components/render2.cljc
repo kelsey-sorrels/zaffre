@@ -1,5 +1,6 @@
 (ns zaffre.components.render2
   (:require clojure.data
+            [clojure.zip :as zip]
             [clojure.core.async :as a :refer [buffer chan go-loop <! >!]]
             [clojure.string]
             [clojure.contrib.def]
@@ -666,7 +667,7 @@
 
 (defn in-element?
   [col row element]
-  (log/info "in-element?" col row element)
+  #_(log/info "in-element?" col row element)
   (let [minx (-> element second :zaffre/layout :x)
         miny (-> element second :zaffre/layout :y)
         width (-> element second :zaffre/layout :width)
@@ -711,48 +712,61 @@
 
 (defonce tab-index (atom -1))
 
+(defn zipper-elements
+  [root-element]
+  (zip/zipper
+    vector?
+    (fn [[_ _ children]] children)
+    (fn [[tag props _] children] [tag props children])
+    root-element))
+  
+(defn zipper-descendants
+  [z]
+  (when-not (zip/end? z)
+    (lazy-seq
+      (cons z (zipper-descendants (zip/next z))))))
 
-(defn tabbable-elements
-  [container]
-  (log/info "tabbable-elements")
-  (doseq [e (tree-seq vector? (fn [[_ _ children]] children) container)]
-    (log/info "tabbable element" (if (vector e) (vec (take 2 e)) e)))
-  (->> container
-    (tree-seq vector? (fn [[_ _ children]] children))
-    (filter vector?)
-    (filter (fn [e] (< 2 (count e))))
-    (filter (fn [[_ props _]]
-              #_(log/info "props" props)
-              (let [class-name (get props :class)
-                    class-name (cond
-                                 (set? class-name)
-                                   class-name
-                                 (nil? class-name)
-                                   #{}
-                                 :else
-                                   #{class-name})]
-                (log/info "class-name" class-name (contains? class-name :tabable))
-                (contains? class-name :tabable))))
-    vec))
+(defn tabable-elements
+  "Returns a sequence of all zippers pointing to tabable elements."
+  [root-element]
+  (->> root-element
+    zipper-elements
+    zipper-descendants
+    (filter (fn [z]
+      (let [element (zip/node z)]
+        (and (vector? element)
+             (< 2 (count element))
+             (let [[_ props _] element
+                   class-name (get props :class)
+                   class-name (cond
+                                (set? class-name)
+                                  class-name
+                                (nil? class-name)
+                                  #{}
+                                :else
+                                  #{class-name})]
+                #_(log/info "class-name" class-name (contains? class-name :tabable))
+                (contains? class-name :tabable))))))))
 
 (defn advance-tab-index!
   [container]
   (swap! tab-index (fn [index]
     (if (= -1 index)
       0
-      (mod (inc index) (count (tabbable-elements container)))))))
+      (mod (inc index) (count (tabable-elements container)))))))
 
 (defn decrease-tab-index!
   [container]
   (swap! tab-index (fn [index]
-    (mod (dec index) (count (tabbable-elements container))))))
+    (mod (dec index) (count (tabable-elements container))))))
 
 (defn active-element
   [container]
   (if-not (neg? @tab-index)
     (-> container
-      tabbable-elements
-      (nth @tab-index))
+      tabable-elements
+      (nth @tab-index)
+      zip/node)
     container))
 
 (defn handle-keypress
@@ -760,6 +774,17 @@
   (log/info "handle-keypress" (vec (take 2 target-element)))
   (when-let [on-keypress (-> target-element second :on-keypress)]
     (on-keypress {:key k :target target-element})))
+
+(defn handle-focus
+  [target-element]
+  (log/info "setting focus on" target-element)
+  (when-let [on-focus (-> target-element second :on-focus)]
+    (on-focus {:target target-element})))
+
+(defn handle-blur
+  [target-element]
+  (when-let [on-blur (-> target-element second :on-blur)]
+    (on-blur {:target target-element})))
 
 (defn render 
   [terminal component props]
@@ -799,8 +824,25 @@
                     ; capture element layout
                     {:keys [layout-elements]} (meta dom)]
                 #_(log/info "layout-elements" (vec layout-elements))
+                ; On first render set tabable index to first element claiming focus. -1 otherwise.
+                (when (nil? @last-render)
+                  #_(log/info "finding autofocus in" (mapv zip/node (zipper-descendants (zipper-elements root-element))))
+                  ;; set initial focused element
+                  (let [[initial-tab-index initial-element-loc]
+                          (->> root-element
+                            tabable-elements
+                            (map-indexed vector)
+                            (filter (fn [[_ element-loc]]
+                              #_(log/info "element-loc" element-loc)
+                              (let [element (zip/node element-loc)
+                                    props (second element)]
+                                #_(log/info "props" props)
+                                (get props :autofocus))))
+                            first)]
+                    (log/info "setting tab-index" initial-tab-index)
+                  (reset! tab-index initial-tab-index)
+                  (>! exec-in-context (partial handle-focus (zip/node initial-element-loc)))))
                 ; Store last render for event handlers
-                ; TODO: on first render set tabable index to last element claiming focus. -1 otherwise.
                 (reset! last-render root-element)
                 ; Store last layout for event handlers
                 (reset! last-layout layout-elements))))
@@ -818,7 +860,10 @@
                (let [[k action] event]
                  (case k
                    :tab
-                     (advance-tab-index! @last-render)
+                     (do
+                       (>! exec-in-context (partial handle-blur (active-element @last-render)))
+                       (advance-tab-index! @last-render)
+                       (>! exec-in-context (partial handle-focus (active-element @last-render))))
                    ; else, send to active element
                    (>! exec-in-context (partial handle-keypress (active-element @last-render) k action))))
              click-chan

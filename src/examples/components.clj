@@ -92,10 +92,10 @@
             [Clock {:key "clock"}]
             [FPSMeter {:key "fpsmeter"}]
             [zcui/Input {:key "input1"
-                         :focus true
+                         :autofocus true
                          :style {:cursor-fg (zcolor/color 244 208 65 255)}
                          :on-change text-value-on-change} []]
-            #_[zcui/Input {:key "input2"
+            [zcui/Input {:key "input2"
                          :style {:cursor-fg (zcolor/color 65 244 208)}
                          :on-change text-value-on-change} []]
             #_[zcui/Input {:key "input3"
