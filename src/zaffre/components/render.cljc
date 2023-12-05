@@ -112,7 +112,7 @@
           style #{}]
     (loop [index 0 s s]
       (let [target-index (+ x index)]
-        (when (and (seq s) (< target-index max-x))
+        (when (and (seq s) (< -1 target-index max-x))
           (aset target-line target-index {:c (first s) :fg fg :bg bg})
           (recur (inc index) (rest s))))))))
 
@@ -166,14 +166,14 @@
         overflow-bounds (or overflow-bounds (layout->bounds layout))
         [overflow-min-x overflow-min-y overflow-max-x overflow-max-y] overflow-bounds
         ;; bounds for overflow/target container (whichever is smaller)
-        min-x (max 0 overflow-min-x)
-        min-y (max 0 overflow-min-y)
+        min-x (dec (max 1 overflow-min-x))
+        min-y (dec (max 1 overflow-min-y))
         max-y (min overflow-max-y (count target))
         lines (last img-element)]
     (log/trace "render-img-into-container lines" (vec lines))
     (doseq [[dy line] (map-indexed vector lines)
             :let [target-y (+ y dy)]]
-      (when (and (< dy height) (not (empty? line)) (< target-y max-y))
+      (when (and (< dy height) (not (empty? line)) (< min-y target-y max-y))
         (log/trace "rendering line" (vec line))
         (doseq [[dx {:keys [c fg bg] :as pixel}] (map-indexed vector line)]
           (assert (char? c))
@@ -182,7 +182,7 @@
           (let [^"[Ljava.lang.Object;" target-line (aget target target-y)
                 max-x (min overflow-max-x(count target-line))
                 target-x (int (+ x dx))]
-            (when (< target-x max-x)
+            (when (< min-x target-x max-x)
               (log/trace "rendering pixel x:" target-x " y:" target-y " " pixel " max-x:" max-x " max-y:" (count target))
               (aset target-line target-x pixel))))))))
 

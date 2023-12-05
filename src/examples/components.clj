@@ -69,8 +69,8 @@
                                                  :max-width 20
                                                  :max-height 20
                                                  :overflow :hidden}} [
-                                   [zcui/Image {:style {:top -10 :left -40 :position :fixed}
-                                                :src "/home/santos/src/zaffre/earthmap.jpg"}]]]]]]
+                                   [:view {:style {:position-top -10 :position-left -40 :position-type :absolute}} [
+                                     [zcui/Image {:src "/home/santos/src/zaffre/earthmap.jpg"}]]]]]]]]
 ]]]]]]]))))
 (defn -main [& _]
   (zgl/create-terminal
