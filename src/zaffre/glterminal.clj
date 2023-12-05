@@ -52,6 +52,27 @@
   "Def's a memoized fn. Same semantics as defn."
   `(def ~fn-name (memoize (fn ~@body))))
 
+(defmacro loop-with-index [idx-name bindings & body]
+  "bindings => binding-form seq-expression
+
+  Repeatedly executes body (presumably for side-effects) with
+  binding form and idx-name in scope.  `idx-name` is repeatedly bound to the index of the item being
+  evaluated ex: to each successive value in `(range (count (second bindings)))`. Does not retain
+      the head of the sequence. Returns nil.
+
+   (loop-with-index idx [[k v] {:a 1 :b 2 :c 3}] (println \"idx\" idx \"k\" k \"v\" v))
+   idx 0 k :a v 1
+   idx 1 k :b v 2
+   idx 2 k :c v 3
+   nil"
+  (let [form (bindings 0) coll (bindings 1)]
+     `(loop [coll# ~coll
+             ~idx-name 0]
+        (when coll#
+          (let [~form (first coll#)]
+            ~@body
+            (recur (next coll#) (inc ~idx-name)))))))
+
 (defn convert-key-code [event-char event-key on-key-fn]
   ;; Cond instead of case. For an unknown reason, case does not match event-key to Keyboard/* constants.
   ;; Instead it always drops to the default case
@@ -224,29 +245,6 @@
     (.flip texture-buffer)
     texture-buffer))
 
-(defn- buffered-image-rgba-byte-buffer [^BufferedImage buffered-image]
-  (let [width          (.getWidth buffered-image)
-        height         (.getHeight buffered-image)
-        texture-buffer ^ByteBuffer (BufferUtils/createByteBuffer (* width height 4))
-        channel        (.getChannel (FileOutputStream. (File. (format "bytes-%dx%d.raw.data" width height)) false))]
-    (log/info "Gettting bytes for image with type" (.getType buffered-image))
-    (doseq [y (range height)
-            x (range width)
-            :let [abgr   (.getRGB buffered-image x y)
-                  g      (unsigned-bit-shift-right (bit-and 0x000000FF abgr) 0)
-                  b      (unsigned-bit-shift-right (bit-and 0x0000FF00 abgr) 8)
-                  a      (unsigned-bit-shift-right (bit-and 0x00FF0000 abgr) 16)
-                  r      (unsigned-bit-shift-right (bit-and 0xFF000000 abgr) 24)
-                  i ^int (int (+ (bit-shift-left r 24)
-                                 (bit-shift-left g 16)
-                                 (bit-shift-left b 8)
-                                 (bit-shift-left a 0)))]]
-      (.putInt texture-buffer i))
-    (.flip texture-buffer)
-    (.write channel texture-buffer)
-    (.close channel)
-    texture-buffer))
-
 (defn- get-fields [#^Class static-class]
   (. static-class getFields))
 
@@ -415,18 +413,6 @@
              (recur)))))
      ;; Wait for Display to be created
      (.await latch)))
-
-(defn- shader-error-str [shader-id]
-  (let [infoLogLength (BufferUtils/createIntBuffer 1)
-        _             (GL20/glGetShader shader-id GL20/GL_INFO_LOG_LENGTH, infoLogLength)
-        log-length    (.get infoLogLength 0)
-        infoLog ^ByteBuffer        (BufferUtils/createByteBuffer log-length)
-        _              (.clear infoLogLength)
-        _              (GL20/glGetShaderInfoLog shader-id, infoLogLength, infoLog)
-        infoLogBytes   (byte-array log-length)
-        _              (.get infoLog infoLogBytes, 0, log-length)]
-    (log/info "info length" log-length)
-    (String. infoLogBytes (Charset/forName "UTF-8"))))
 
 (defn- load-shader
   [^String shader-str ^Integer shader-type]
@@ -698,9 +684,11 @@
         (.clear fg-image-data)
         (.clear bg-image-data)
         (doseq [[layer-id character-map] layers-character-map]
-          (doseq [[row line] (map-indexed vector (reverse @character-map))
-                  [col c]    (map-indexed vector line)]
+        ;;  (doseq [[row line] (map-indexed vector (reverse @character-map))
+        ;;          [col c]    (map-indexed vector line)]
             ;;(log/info "row" row "col" col "c" c)
+        (loop-with-index row [line (reverse @character-map)]
+          (loop-with-index col [c line]
             (let [chr        (char (or (get c :fx-character) (get c :character)))
                   chr        (if (and (= layer-id base-layer-id)
                                       (= chr (char 0)))
@@ -745,7 +733,7 @@
                   (.position bg-image-data (+ 4 (.position bg-image-data)))))))
           (.rewind glyph-image-data)
           (.rewind fg-image-data)
-          (.rewind bg-image-data))
+          (.rewind bg-image-data)))
         (.position glyph-image-data (.limit glyph-image-data))
         (.position fg-image-data (.limit fg-image-data))
         (.position bg-image-data (.limit bg-image-data))
