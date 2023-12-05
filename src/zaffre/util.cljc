@@ -71,4 +71,19 @@
           (map (fn [[x y]] [(+ ox x) (+ oy y)])
                (line-segment [0 0] [(- dx ox) (- dy oy)]))))))))
 
+(defn dot [u v]
+  (reduce + 0 (map * u v)))
 
+(defn norm [v]
+  (Math/sqrt (reduce + 0 (map (fn [x] (* x x)) v))))
+
+(defn unit [v]
+  (let [l (norm v)]
+    (map #(/ % l) v)))
+
+(defn light-intensity [dx dy dz]
+  (let [rl  [dx dy dz]
+        d   (norm rl) ; distance from [x y] to light
+        i (min 1.0 (/ (* 1.0 (dot (unit [0 0 1]) (unit rl))) (* d d)))]
+    i))
+ 
