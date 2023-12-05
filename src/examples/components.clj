@@ -19,10 +19,10 @@
 
 (def font ztiles/pastiche-16x16)
 
-(def width 20)
-(def height 20)
+(def width 30)
+(def height 40)
 
-(def text "Lorem ipsum dolor sit amet, ");consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."); Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.")
+(def text "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.; Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.")
 
 (defn -main [& _]
   (zgl/create-terminal
@@ -39,6 +39,7 @@
     (fn [terminal] ;; Receive the terminal in a callback
       ;; Save the last key press in an atom
       (let [last-key (atom nil)
+            width (atom 16)
             render-state (atom {})]
         ;; Every 33ms, draw a full frame
         (zat/do-frame terminal 33 
@@ -46,7 +47,8 @@
             ;; Draw components
             (zcr/render-into-container terminal render-state
               [:ui {}
-                [:view {:left 5 :top 1}
+                [:text {} (str @width)]
+                [:view {:left 1 :top 1 :width @width}
                   [:text {}
                     [:text {} text]
                     #_[:text {:fg [255 0 0 255]} "llo"]
@@ -59,5 +61,7 @@
             (reset! last-key new-key)
             ;; Make the `q` key quit the application
             (case new-key
+              \b (swap! width inc)
+              \s (swap! width dec)
               \q (zat/destroy! terminal)
               nil)))))))

@@ -112,7 +112,6 @@
 
 (defn flatten-text [parent-style element]
   "Splits text into words and flattens all child text element"
-  (println "flatten-text" element)
   (lazy-seq
     (if (string? element)
       (let [words (clojure.string/split (clojure.string/trim element) #"\s+")]
@@ -126,7 +125,6 @@
           (assert false (format "found non-text element %s" type)))))))
 
 (defn text-length [text-element]
-  (println "text-length" text-element)
   (-> text-element second :children first count))
 
 (defn space? [text-element]
@@ -138,16 +136,16 @@
   (loop [left size line [] lines []
          words (or (flatten-text style text)
                    [[:text {:children [""]}]])]
-    (log/info "wrap-lines words" left style (vec words))
+    (log/trace "wrap-lines words" left style (vec words))
     (if-let [word (first words)]
-      (if (and (= left size) (space? word))
-        (recur size [] lines (next words))
-        (let [wlen (text-length word)
-              spacing (if (== left size) "" " ")
-              alen (+ (count spacing) wlen)]
-          (log/info "wlen" wlen "spacing" spacing "alen" alen)
-          (if (<= alen left)
-            (recur (- left alen) (conj line word) lines (next words))
+      (let [wlen (text-length word)
+            spacing (if (== left size) "" " ")
+            alen (+ (count spacing) wlen)]
+        (log/trace "wlen" wlen "spacing" spacing "alen" alen)
+        (if (<= alen left)
+          (recur (- left alen) (conj line word) lines (next words))
+          (if (space? word)
+            (recur size [] (conj lines line) (next words))
             (recur (- size wlen) [word] (conj lines line) (next words)))))
       (if (seq line)
         (conj lines line)
@@ -165,7 +163,7 @@
           (recur (inc index) (rest s))))))))
 
 (defn render-text-into-container [target parent-layout env text]
-    (log/info "render-text-into-container" parent-layout env text)
+  (log/trace "render-text-into-container" parent-layout env text)
   (let [{:keys [columns rows]} parent-layout
         {:keys [top left fg bg]} env
         [type {:keys [style children] :as props}] text
@@ -173,7 +171,7 @@
         lines (wrap-lines columns
                           style
                           text)]
-    (log/info "render-text-into-container lines" lines)
+    (log/trace "render-text-into-container lines" lines)
     (doseq [[index line] (map-indexed vector lines)]
       (let [offsets (cons 0 (reductions + (map (fn [word] (text-length word)) line)))]
         (doseq [[offset [_ {:keys [style children]}]] (map vector offsets line)]
@@ -185,8 +183,9 @@
    :fg [255 255 255 255]
    :bg [0 0 0 255]
 
-   ;:width nil
-   ;:height nil
+   :width 0
+   :height 0
+
    ;:margin-left 0
    ;:margin-top 0
    ;:margin-Right 0
@@ -226,7 +225,7 @@
       (doseq [child children]
         (render-layer-into-container target layer-info default-style child))))
   ([target parent-layout env component]
-    (log/info "render-layer-into-container" parent-layout env component)
+    (log/trace "render-layer-into-container" parent-layout env component)
     (cond
       ;; render strings
       (= :text (first component))

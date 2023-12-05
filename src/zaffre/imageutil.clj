@@ -77,7 +77,7 @@
   (let [scaled-bytes (BufferUtils/createByteBuffer (* (* s width)
                                                       (* s height)
                                                       channels))]
-    (when (zero?
+    (when (= false
             (STBImageResize/stbir_resize_uint8_generic
               byte-buffer width height 0
               scaled-bytes (* s width) (* s height) 0
