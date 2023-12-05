@@ -108,6 +108,8 @@ or
 
 etc.
 
+Got to https://github.com/kelsey-sorrels/zaffre/tree/master/src/examples for more.
+
 
 ## License
 
