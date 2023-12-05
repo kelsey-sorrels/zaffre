@@ -8,7 +8,7 @@
             [zaffre.animation.animatedterminal :as zaat]
             [zaffre.override :as zo]
             [zaffre.util :as zutil]
-            ;[taoensso.timbre :as log]
+            [taoensso.timbre :as log]
             [overtone.at-at :as atat])
   #?(:clj
      (:import  ;zaffre.terminal.Terminal
@@ -88,33 +88,33 @@
     nil))
 
 (defn render-rain-cell
-  [terminal x y cell] 
+  [terminal layer-id x y cell] 
   (case cell
     :drop
       (do
-        (zat/set-fx-char! terminal :fx x y \|)
-        (zat/set-fx-fg! terminal :fx x y (zcolor/color->rgb :blue))
-        (zat/set-fx-bg! terminal :fx x y (zcolor/color->rgb :black)))
+        (zat/set-fx-char! terminal layer-id x y \|)
+        (zat/set-fx-fg! terminal layer-id x y (zcolor/color->rgb :blue))
+        (zat/set-fx-bg! terminal layer-id x y (zcolor/color->rgb :black)))
     :splash1
       (do
-        (zat/set-fx-char! terminal :fx x y \*)
-        (zat/set-fx-fg! terminal :fx x y (zcolor/color->rgb :blue))
-        (zat/set-fx-bg! terminal :fx x y (zcolor/color->rgb :black)))
+        (zat/set-fx-char! terminal layer-id x y \*)
+        (zat/set-fx-fg! terminal layer-id x y (zcolor/color->rgb :blue))
+        (zat/set-fx-bg! terminal layer-id x y (zcolor/color->rgb :black)))
     :splash2
       (do
-        (zat/set-fx-char! terminal :fx x y \o)
-        (zat/set-fx-fg! terminal :fx x y (zcolor/color->rgb :blue))
-        (zat/set-fx-bg! terminal :fx x y (zcolor/color->rgb :black)))
+        (zat/set-fx-char! terminal layer-id x y \o)
+        (zat/set-fx-fg! terminal layer-id x y (zcolor/color->rgb :blue))
+        (zat/set-fx-bg! terminal layer-id x y (zcolor/color->rgb :black)))
     :splash3
       (do
-        (zat/set-fx-char! terminal :fx x y \°)
-        (zat/set-fx-fg! terminal :fx x y (zcolor/color->rgb :blue))
-        (zat/set-fx-bg! terminal :fx x y (zcolor/color->rgb :black)))
+        (zat/set-fx-char! terminal layer-id x y \°)
+        (zat/set-fx-fg! terminal layer-id x y (zcolor/color->rgb :blue))
+        (zat/set-fx-bg! terminal layer-id x y (zcolor/color->rgb :black)))
     :splash4
       (do
-        (zat/set-fx-char! terminal :fx x y \·)
-        (zat/set-fx-fg! terminal :fx x y (zcolor/color->rgb :blue))
-        (zat/set-fx-bg! terminal :fx x y (zcolor/color->rgb :black)))
+        (zat/set-fx-char! terminal layer-id x y \·)
+        (zat/set-fx-fg! terminal layer-id x y (zcolor/color->rgb :blue))
+        (zat/set-fx-bg! terminal layer-id x y (zcolor/color->rgb :black)))
     nil))
 
 (defn step-rain!
@@ -173,7 +173,7 @@
     (RandFgEffect. terminal mask opts palette)))
 
 (defrecord RainEffect
-  [terminal mask rain-state]
+  [terminal layer-id mask rain-state]
   AId
   (id [this]
     :rain)
@@ -185,24 +185,24 @@
         (doseq [[y line mask-line] (map vector (range) @rain-state @mask)
                 [x cell mask?] (map vector (range) line mask-line)
                 :when mask?]
-          (render-rain-cell terminal x y cell)))))
+          (render-rain-cell terminal layer-id x y cell)))))
   AMask
   (swap-mask! [this f]
     (swap! mask f)
-    ;(println "=====================")
-    ;(doseq [line @mask]
-    ;  (println (mapv (fn [v] (if v 1 0)) line)))
+    (log/info "=====================")
+    (doseq [line @mask]
+      (log/info (mapv (fn [v] (if v 1 0)) line)))
     this)
   (reset-mask! [this new-mask]
     (reset! mask new-mask)
     this))
 
 (defn make-rain-effect
-  [terminal cell-opts]
+  [layer-id terminal cell-opts]
   (let [[vw vh]    (size terminal)
         mask       (atom (repeat vh (repeat vw true)))
         rain-state (atom (repeat vh (vec (repeat vw nil))))]
-    (RainEffect. terminal mask rain-state)))
+    (RainEffect. terminal layer-id mask rain-state)))
 
 (defn swap-rain-mask! [terminal f]
   (zaat/swap-matching-effect-or-filter! terminal
@@ -413,12 +413,13 @@
   (set-fg! [_ layer-id x y fg] (zat/set-fg! terminal layer-id x y fg))
   (set-bg! [_ layer-id x y bg] (zat/set-bg! terminal layer-id x y bg))
   (assoc-shader-param! [_ k v] (zat/assoc-shader-param! terminal k v))
+  (pub [_] (zat/pub terminal))
   (refresh! [this]
     (reset! frame-count 0)
     (zat/clear-fx! terminal)
     (doseq [effect @effects]
       (zaat/apply-effect! effect terminal))
-    (println "done applying effects")
+    (log/info "done applying effects")
     (zat/refresh! terminal))
   (clear! [this]
     (reset! opts (nil-grid terminal))
@@ -474,7 +475,7 @@
     group-map
     opts
     (fn [terminal]
-      (let [effects-gen-fns (get opts :effects-gen-fns)
+      (let [effects-gen-fns (get opts :effect-gen-fns)
             filters         (get opts :filters)
             started         (atom false)
             ;; grid of cell-opts
@@ -483,14 +484,16 @@
             filters         (atom filters)
             _ (println "making atat pool")
             schedule-pool   (atat/mk-pool)]
-        (println "overriding terminal")
+        (log/info "overriding terminal")
+        (log/info "effects" @effects "filters" @filters)
         (let [animated-terminal (->WrappedAnimatedTerminal terminal
                                                            started
                                                            opts
                                                            effects
                                                            filters
                                                            schedule-pool)]
-         (zaat/start! animated-terminal 30))))))
+         (f animated-terminal)
+         #_(zaat/start! animated-terminal 30))))))
 
 (defn set-mask! [terminal mask-ids xys v] 
   {:pre [(set? mask-ids)
