@@ -164,7 +164,7 @@
   (stream [this]
     (go-loop [x (first s) xs (next s)]
       (let [[_ {:keys [layer-id]}] x]
-        (zat/clear! terminal layer-id))
+        #_(zat/clear! terminal layer-id))
       (let [[dt {:keys [layer-id characters]}] x]
         (zat/put-chars! terminal layer-id characters)
         (zat/refresh! terminal)
@@ -251,8 +251,8 @@
   [layer-id characters duration]
   (take 2 (make-blink-effect layer-id characters true (repeat duration))))
 
-;;; Queue cmds in a chan and foreard them to dst-chan on `(refresh)`.
-(defrecord WrappedAnimatedTerminal [terminal cmds dst-chan]
+;;; Queue cmds in a chan and foreard them to last-cmds on `(refresh)`.
+(defrecord BufferedTerminal [terminal cmds last-cmds]
   zat/Terminal
   ;; pass Terminal methods through to terminal
   (args [_] (zat/args terminal))
@@ -265,12 +265,13 @@
   (assoc-shader-param! [_ k v] (swap! cmds conj (list zat/assoc-shader-param! terminal k v)))
   (pub [_] (zat/pub terminal))
   (refresh! [_]
-    (swap! cmds conj (list zat/refresh! terminal))
-    (>!! dst-chan @cmds)
+    #_(swap! cmds conj (list zat/refresh! terminal))
+    (reset! last-cmds @cmds)
     (reset! cmds []))
   (clear! [_]
     (swap! cmds conj (list zat/clear! terminal)))
-  (clear! [_ layer-id] (swap! cmds conj (list zat/clear! terminal layer-id)))
+  (clear! [_ layer-id]
+    (swap! cmds conj (list zat/clear! terminal layer-id)))
   (set-window-size! [_ v] (swap! cmds conj (list zat/set-window-size! terminal v)))
   (fullscreen-sizes [_] (zat/fullscreen-sizes terminal))
   (destroy! [_] (zat/destroy! terminal))
@@ -282,31 +283,38 @@
     group-map
     opts
     (fn [terminal]
-      (let [effects-gen-fns (get opts :effects)
-            started         (atom false)
-            ;; grid of cell-opts
-            cmd-chan        (chan 1000)
-            effects-cmd-chan (chan 1000)
-            wrapped-term    (WrappedAnimatedTerminal. terminal (atom []) cmd-chan)
-            effects-term    (WrappedAnimatedTerminal. terminal (atom []) cmd-chan)
-            ;effects         (atom [((make-rain-effect :fx 16 16) effects-term)])]
-            effects         (atom [(->SeqEffect effects-term
-                                                #_(make-transform-effect :fx {:c \@ :fg [255 255 255] :bg [0 0 0]} [0 8] [16 8] 5)
-                                                #_(make-rain-effect :fx 16 16)
-                                                (make-blip-effect :fx [{:x 8 :y 8 :c \* :fg [128 128 0] :bg [0 0 0]}] 1000)
-                                                #_(make-blink-effect :fx [{:x 8 :y 8 :c \* :fg [128 128 0] :bg [0 0 0]}] true))])]
+      (let [effects-gen-fns   (get opts :effects)
+            dt                33
+            cmd-chan          (chan 1000)
+            effects-cmd-chan  (chan 1000)
+            wrapped-term-cmds (atom [])
+            wrapped-term      (->BufferedTerminal terminal (atom []) (atom []))
+            ;effects           (atom [((make-rain-effect :fx 16 16) effects-term)])]
+            ; seq [effect cmds-atom]
+            effects           (map (fn [effect]
+                                     (let [effect-cmds (atom nil)]
+                                       [(->SeqEffect (->BufferedTerminal terminal (atom []) effect-cmds) effect) effect-cmds]))
+                                   [(make-transform-effect :fx {:c \@ :fg [255 255 255] :bg [0 0 0]} [0 8] [16 8] 5)
+                                    (make-rain-effect :fx 16 16)
+                                    (make-blip-effect :fx [{:x 8 :y 8 :c \* :fg [128 128 0] :bg [0 0 0]}] 1000)
+                                    (make-blink-effect :fx [{:x 4 :y 4 :c \* :fg [255 128 0] :bg [0 0 0]}] false)
+                                    (make-blink-effect :fx [{:x 8 :y 8 :c \* :fg [128 128 0] :bg [0 0 0]}] true)])]
         #_(log/info "overriding terminal")
         #_(log/info "effects" @effects "filters" @filters)
         ;; start effects
-        (doseq [effect @effects]
+        (doseq [[effect _] effects]
           (stream effect))
         ;; start a background loop that renders events
-        (go-loop [cmds (<! cmd-chan)]
+        (go-loop []
           #_(log/info "rendering" (count cmds) "cmds")
           (dosync
-            (doseq [cmd cmds]
+            (zat/clear! terminal)
+            (doseq [[_ cmds] effects
+                    cmd      @cmds]
               #_(log/info "invoking" (first cmd) (rest (rest cmd)))
-              (apply (first cmd) (rest cmd))))
-          (recur (<! cmd-chan)))
+              (apply (first cmd) (rest cmd)))
+            (zat/refresh! terminal))
+          (<! (timeout dt))
+          (recur))
          (f wrapped-term)))))
 
