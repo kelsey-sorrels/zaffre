@@ -1,6 +1,7 @@
 ;; Functions for rendering characters to screen
 (ns zaffre.glterminal
   (:require [zaffre.aterminal :as zat]
+            [zaffre.util :as zutil]
             [taoensso.timbre :as log]
             [clojure.core.async :as async :refer [go go-loop]]
             [clojure-watch.core :as cwc]
@@ -898,21 +899,6 @@
                 (recur))
       terminal))
 
-(defn- put-string
-  ([^ATerminal screen x y string]
-   (put-string screen (int (Math/ceil x)) (int (Math/ceil y)) string [255 255 255] [0 0 0] #{}))
-  ([^ATerminal screen x y string fg bg]
-   (put-string screen (int (Math/ceil x)) (int (Math/ceil y)) string fg bg #{}))
-  ([^ATerminal screen x y string fg bg styles]
-   {:pre [(clojure.set/superset? #{:underline :bold} styles)]}
-   (let [characters (map-indexed (fn [i c] {:c  (str c)
-                                            :fg fg
-                                            :bg bg
-                                            :x  (+ x i)
-                                            :y  y})
-                                 string)]
-     (zat/put-chars! screen characters))))
-
 (defn single-thread-main
   "Show a terminal and echo input."
   [& _]
@@ -933,12 +919,12 @@
       ;(let [key-in (zat/wait-for-key terminal)]
         (dosync
           (zat/clear! terminal)
-          (put-string terminal 0 0 "Hello world 0 0")
-          (put-string terminal 0 1 "abcdefghijklmno")
-          (put-string terminal 60 0 "Hello world 60 0" [128 0 0] [0 0 128])
-          (put-string terminal 0 19 "Hello world 60 19" [0 128 0] [128 0 0])
-          (put-string terminal 60 19 "Hello world 0 19" [0 0 128] [0 128 0])
-          (put-string terminal 5 10 (str key-in))
+          (zutil/put-string terminal 0 0 "Hello world 0 0")
+          (zutil/put-string terminal 0 1 "abcdefghijklmno")
+          (zutil/put-string terminal 60 0 "Hello world 60 0" [128 0 0] [0 0 128])
+          (zutil/put-string terminal 0 19 "Hello world 60 19" [0 128 0] [128 0 0])
+          (zutil/put-string terminal 60 19 "Hello world 0 19" [0 0 128] [0 128 0])
+          (zutil/put-string terminal 5 10 (str key-in))
           (zat/refresh! terminal))
         (recur))))
   (Display/destroy)
@@ -977,10 +963,10 @@
         (zat/process-messages terminal)
         (dosync
           (zat/clear! terminal)
-          (put-string terminal 0 0 "Hello world")
+          (zutil/put-string terminal 0 0 "Hello world")
           (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
-            (put-string terminal 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
-          (put-string terminal 12 0 (str key-in))
+            (zutil/put-string terminal 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
+          (zutil/put-string terminal 12 0 (str key-in))
           (zat/refresh! terminal)))
       (recur))))
 
@@ -1012,11 +998,11 @@
                       (dosync
                         (let [key-in (or @last-key \?)]
                           (zat/clear! terminal)
-                          (put-string terminal 0 0 "Hello world")
+                          (zutil/put-string terminal 0 0 "Hello world")
                           (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
-                            (put-string terminal 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
-                          (put-string terminal 12 0 (str key-in))
-                          (put-string terminal 1 1 "Rainbow")
+                            (zutil/put-string terminal 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
+                          (zutil/put-string terminal 12 0 (str key-in))
+                          (zutil/put-string terminal 1 1 "Rainbow")
                           (zat/refresh! terminal)))
                           ;; ~30fps
                         (Thread/sleep 33)
