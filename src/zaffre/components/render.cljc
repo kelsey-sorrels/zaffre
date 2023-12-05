@@ -41,16 +41,64 @@
     :padding-horizontal
     :padding-vertical})
 
+; https://stackoverflow.com/questions/5612302/which-css-properties-are-inherited
+(def inheritable-styles #{
+  :azimuth
+  :border-collapse
+  :border-spacing
+  :caption-side
+  :color
+  :cursor
+  :direction
+  :elevation
+  :empty-cells
+  :font-family
+  :font-size
+  :font-style
+  :font-variant
+  :font-weight
+  :font
+  :letter-spacing
+  :line-height
+  :list-style-image
+  :list-style-position
+  :list-style-type
+  :list-style
+  :orphans
+  :pitch-range
+  :pitch
+  :quotes
+  :richness
+  :speak-header
+  :speak-numeral
+  :speak-punctuation
+  :speak
+  :speech-rate
+  :stress
+  :text-align
+  :text-indent
+  :text-transform
+  :visibility
+  :voice-family
+  :volume
+  :white-space
+  :widows
+  :word-spacing})
+
 (defn cascade-style
   ([element] (cascade-style {} element))
   ([parent-style [type props children]]
     (if (or (= type :text) (= type :img))
-      [type (update-in props [:style] #(apply dissoc (merge parent-style %) text-forbidden-styles)) children]
-      (let [new-style (merge parent-style (get props :style {}))]
+      [type (update-in props [:style] #(select-keys (merge parent-style %)
+                                                    inheritable-styles)) children]
+      (let [new-style (merge (select-keys parent-style inheritable-styles) (get props :style {}))]
         [type
          (assoc props :style new-style)
          (map (partial cascade-style new-style) children)]))))
       
+; bounds are [x1 y1 x2 y2]
+(defn layout->bounds [{:keys [x y width height]}]
+  [x y (+ x width) (+ y height)])
 
 (defn render-string-into-container [^"[[Ljava.lang.Object;" target x y fg bg s]
   {:pre [(number? x)
@@ -112,26 +160,31 @@
   {:pre [(= (first img-element) :img)
          (map? (second img-element))
          #_(not (empty? (last img-element)))]}
-  (log/debug "render-img-into-container" img-element)
+  (log/trace "render-img-into-container" img-element)
   (let [[type {:keys [style zaffre/layout] :or {style {}} :as props} children] img-element
-        {:keys [x y width height]} layout
+        {:keys [x y width height overflow-bounds]} layout
+        overflow-bounds (or overflow-bounds (layout->bounds layout))
+        [overflow-min-x overflow-min-y overflow-max-x overflow-max-y] overflow-bounds
+        ;; bounds for overflow/target container (whichever is smaller)
+        min-x (max 0 overflow-min-x)
+        min-y (max 0 overflow-min-y)
+        max-y (min overflow-max-y (count target))
         lines (last img-element)]
     (log/trace "render-img-into-container lines" (vec lines))
     (doseq [[dy line] (map-indexed vector lines)
             :let [target-y (+ y dy)]]
-      (when (and (< dy height) (not (empty? line)) (< target-y (count target)))
+      (when (and (< dy height) (not (empty? line)) (< target-y max-y))
         (log/trace "rendering line" (vec line))
         (doseq [[dx {:keys [c fg bg] :as pixel}] (map-indexed vector line)]
           (assert (char? c))
           (assert (vector? fg))
           (assert (vector? bg))
           (let [^"[Ljava.lang.Object;" target-line (aget target target-y)
-                max-x (count target-line)
-                target-x (+ x dx)
-                #_#_pixel {:c \x :fg [255 255 255] :bg [0 0 0]}]
-            (when (< target-x max-x))
-              (log/trace "rendering pixel x:" target-x " y:" target-y " " pixel)
-              (aset target-line target-x pixel)))))))
+                max-x (min overflow-max-x(count target-line))
+                target-x (int (+ x dx))]
+            (when (< target-x max-x)
+              (log/trace "rendering pixel x:" target-x " y:" target-y " " pixel " max-x:" max-x " max-y:" (count target))
+              (aset target-line target-x pixel))))))))
 
 (defn element-seq [element]
   "Returns :view and top-level :text elements."
@@ -222,11 +275,42 @@
   [_ component]
   (assert false (format "Found unknown component %s" component)))
 
+(defn intersect-bounds [[ax1 ay1 ax2 ay2 :as a-bounds] [bx1 by1 bx2 bt2 :as b-bounds]]
+  (cond
+    (nil? a-bounds)
+      b-bounds
+    (nil? b-bounds)
+      a-bounds
+    :else
+      []))
+
+(defn inherit-overflow-bounds
+  ([element]
+    (inherit-overflow-bounds nil element))
+  ([parent-bounds element]
+    (let [[type props children] element]
+      (cond
+        (or (= type :text) (= type :img))
+          [type
+           (assoc-in props [:zaffre/layout :overflow-bounds] parent-bounds)
+           children]
+        (= (get-in props [:style :overflow]) :hidden)
+          [type
+           props
+           (map (partial inherit-overflow-bounds (layout->bounds (get props :zaffre/layout))) children)]
+        :else
+          [type
+           props
+           (map (partial inherit-overflow-bounds parent-bounds) children)]))))
+      
+
 (defn render-layer-into-container
   [target layer]
   (log/trace "render-layer-into-container" layer)
   (let [layer-en-place (zl/layout-element layer)
-        elements (vec (element-seq layer-en-place))]
+        elements (-> (inherit-overflow-bounds layer-en-place)
+                   element-seq
+                   vec)]
     (log/trace "render-layer-into-container elements" elements)
     (doseq [element elements]
       (log/debug "render-layer-into-container element" element)

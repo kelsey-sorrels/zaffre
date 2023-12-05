@@ -45,24 +45,13 @@
 
 (defmethod measure-text :bi-restricted
   [width width-mode height height-mode text]
-    (log/info "measure-text :bi-restricted" width height text)
+    (log/trace "measure-text :bi-restricted" width height text)
     (let [words (clojure.string/split (clojure.string/trim text) #"\s+")
           measure [(reduce max width (map count words))
                    (count (ztext/word-wrap width text))]]
-      (log/info "measure-text :bit-restricted " measure)
+      (log/trace "measure-text :bi-restricted " measure)
       ;; Split by number of words and then find max line length
       measure))
-
-(defn img-measure-func [{:keys [width height]}]
-  (let [img-width width
-        img-height height]
-    (YGMeasureFunc/create (reify YGMeasureFuncI
-      (invoke [_ node width width-mode height height-mode]
-        (with-open[stack (MemoryStack/stackPush)]
-            (-> (YGSize/mallocStack stack)
-                (.width img-width)
-                (.height img-height)
-                YGMeasureFunc/toLong)))))))
 
 (defn text-measure-func [text]
   (YGMeasureFunc/create (reify YGMeasureFuncI
@@ -309,7 +298,10 @@
         (Yoga/YGNodeSetMeasureFunc node (text-measure-func (ztext/text element)))))
 
     (when (= type :img)
-      (Yoga/YGNodeSetMeasureFunc node (img-measure-func props)))
+      (let [{:keys [width height]} props]
+        (log/trace "img style width x height: " width "x" height)
+        (Yoga/YGNodeStyleSetWidth node width)
+        (Yoga/YGNodeStyleSetHeight node height)))
 
     (log/trace "node" node)
     ;; don't recurse into :text and :img

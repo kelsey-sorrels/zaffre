@@ -18,7 +18,7 @@
 
 (def font ztiles/pastiche-16x16) 
 
-(def width 40)
+(def width 55)
 (def height 40)
 
 (def text "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.; Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.")
@@ -64,7 +64,13 @@
                 [:text {:style {:text-align :right}} [text]]]]]]
             [:layer {:id :popup} 
                 [[zcui/Popup {} [#_[:text {} ["popup"]]
-                                 [zcui/Image {:src "/home/santos/src/zaffre/ad.xp"}]]]]
+                                 [:view {:style {:width 20
+                                                 :height 20
+                                                 :max-width 20
+                                                 :max-height 20
+                                                 :overflow :hidden}} [
+                                   [zcui/Image {:style {:top -10 :left -40 :position :fixed}
+                                                :src "/home/santos/src/zaffre/earthmap.jpg"}]]]]]]
 ]]]]]]]))))
 (defn -main [& _]
   (zgl/create-terminal
