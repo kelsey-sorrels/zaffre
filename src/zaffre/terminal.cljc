@@ -31,14 +31,18 @@
     `(let [terminal# ~t
            sleep-time# ~d]
        (future
-         (loop []
-           (when-not (destroyed? terminal#)
-             (dosync
-               (clear! terminal#)
-               ~@body
-               (refresh! terminal#))
-             (Thread/sleep sleep-time#)
-             (recur)))))))
+         (-> (Thread/currentThread) (.setName (str "render-thread-" sleep-time#)))
+         (try
+           (loop []
+             (when-not (destroyed? terminal#)
+               (dosync
+                 (clear! terminal#)
+                 ~@body
+                 (refresh! terminal#))
+               (Thread/sleep sleep-time#)
+               (recur)))
+           (catch Throwable th#
+             (log/error th# "Error rendering")))))))
 
 ;; namespace with only a protocol gets optimized out, causing missing dependencies.
 ;; add a dummp def to prevent this ns from being optimized away.

@@ -465,7 +465,7 @@
                 i         (+ (* 4 (+ (* texture-columns row) col)) (* layer-size layer))
                 [x y]     (get character->col-row chr)
                 transparent (get character->transparent chr)]
-            ;(log/info "Drawing " layer-id "at col row" col row "character from atlas col row" x y c "(index=" i ") transparent" transparent )
+            #_(log/info "Drawing " layer-id "at col row" col row "character from atlas col row" x y c "(index=" i ") transparent" transparent )
             (when (zero? col)
               ;(log/info "glyph texture" glyph-texture-width glyph-texture-height)
               ;(log/info "resetting position to start of line" layer row col i)
@@ -474,13 +474,20 @@
               (.position bg-image-data i))
             (if (not= chr (char 0))
               (do
-                (assert (or (not (nil? x)) (not (nil? y)))
-                        (format "X/Y nil - glyph not found for character %s %s"
-                          (or (str chr) "nil")
-                          (or (cond
-                                (nil? chr) "nil"
-                                (char? chr) (format "%x" (int chr))
-                                :else (str chr)))))
+                (when (or (nil? x) (nil? y))
+                  (log/error (format "X/Y nil - glyph not found for character %s %s"
+                               (or (str chr) "nil")
+                               (or (cond
+                                     (nil? chr) "nil"
+                                     (char? chr) (format "%x" (int chr))
+                                     :else (str chr)))))
+                  (assert
+                    (format "X/Y nil - glyph not found for character %s %s"
+                      (or (str chr) "nil")
+                      (or (cond
+                            (nil? chr) "nil"
+                            (char? chr) (format "%x" (int chr))
+                            :else (str chr))))))
                 (.put glyph-image-data (unchecked-byte x))
                 (.put glyph-image-data (unchecked-byte y))
                 ;; TODO fill with appropriate type
@@ -698,7 +705,6 @@
             (assert (not (nil? font-texture-width)) "font-texture-width nil")
             (assert (not (nil? font-texture-height)) "font-texture-height")
             (assert (not (nil? font-texture)) "font-texture nil")
-            ;(log/info "rendering layers")
             ;(log/info character->transparent)
             (fill-glyph-fg-bg-buffers
               (select-keys layer-character-map layers)
