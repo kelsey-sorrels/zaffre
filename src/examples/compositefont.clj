@@ -1,9 +1,9 @@
 (ns examples.compositefont
   (:require [zaffre.terminal :as zat]
             [zaffre.glterminal :as zgl]
+            [zaffre.events :as zevents]
             [zaffre.font :as zfont]
             [zaffre.util :as zutil]
-            [clojure.core.async :as async :refer [go-loop]]
             [taoensso.timbre :as log])
   (:import (zaffre.terminal Terminal)
            (zaffre.font CompositeFont CP437Font TileSet TTFFont)))
@@ -65,39 +65,24 @@
                    "images/icon-32x32.png"
                    "images/icon-128x128.png"]}
      (fn [terminal]
-       (let [term-pub    (zat/pub terminal)
-             key-chan    (async/chan)
-             close-chan  (async/chan)
-             last-key    (atom nil)
+       (let [last-key    (atom nil)
              ;; Every 33ms, draw a full frame
-             render-chan (go-loop []
-                           (dosync
-                             (let [key-in (or @last-key \?)]
-                               (zat/clear! terminal)
-                               (zutil/put-string terminal :text 0 0 "Hello world")
-                               (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
-                                 (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
-                               (zutil/put-string terminal :text 12 0 (str key-in))
-                               (zutil/put-string terminal :overlay 2 7 "Overlay")
-                               (zat/put-chars! terminal :text
-                                 (for [x (range 1 11)
-                                       y (range 5 10)]
-                                   {:c :metal       :fg [4 4 5] :bg [0 128 0] :x x :y y}))
-                               (zat/refresh! terminal)))
-                               ;; ~30fps
-                             (Thread/sleep 33)
-                             (recur))]
-         (async/sub term-pub :keypress key-chan)
-         (async/sub term-pub :close close-chan)
-         (go-loop []
-           (let [new-key (async/<! key-chan)]
+             render-chan (zat/do-frame terminal 33
+                           (let [key-in (or @last-key \?)]
+                             (zutil/put-string terminal :text 0 0 "Hello world")
+                             (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
+                               (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
+                             (zutil/put-string terminal :text 12 0 (str key-in))
+                             (zutil/put-string terminal :overlay 2 7 "Overlay")
+                             (zat/put-chars! terminal :text
+                               (for [x (range 1 11)
+                                     y (range 5 10)]
+                                 {:c :metal       :fg [4 4 5] :bg [0 128 0] :x x :y y}))))]
+         (zevents/add-event-listener terminal :keypress
+           (fn [new-key]
              (reset! last-key new-key)
              (log/info "got key" (or (str @last-key) "nil"))
              (case new-key
                \q (zat/destroy! terminal)
-               nil)
-               ;; change font size on s/m/l keypress
-             (recur)))
-         (let [_ (async/<! close-chan)]
-           (async/close! render-chan)
-           (System/exit 0))))))
+               nil)))
+         (zevents/wait-for-close terminal [render-chan])))))

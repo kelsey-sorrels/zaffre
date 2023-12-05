@@ -872,7 +872,9 @@
                      cm)))))
   (destroy! [_]
     (reset! destroyed true)
-    (async/put! term-chan :close)))
+    (async/put! term-chan :close))
+  (destroyed? [_]
+    @destroyed))
 
 (defn group-locations
   ([_ _]

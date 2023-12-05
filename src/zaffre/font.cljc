@@ -1,33 +1,43 @@
 (ns zaffre.font
   (:require [zaffre.util :as zutil]
+            [zaffre.imageutil :as zimg]
             [clojure.java.io :as jio]
             [taoensso.timbre :as log])
-  (:import (java.io File)
-           (java.awt Canvas
+  (:import (zaffre.imageutil Image)
+           (java.io File)
+           (java.nio ByteBuffer)
+           (org.lwjgl BufferUtils)
+           (org.lwjgl.stb STBTruetype STBTTFontinfo)
+           (org.apache.commons.io IOUtils)
+           #_(java.awt Canvas
                      Color
                      Font
                      FontMetrics
                      Graphics
                      Graphics2D
                      RenderingHints)
-           (java.awt.image BufferedImage DataBufferByte ImageObserver)
-           (javax.imageio ImageIO)))
+           #_(java.awt.image BufferedImage DataBufferByte ImageObserver)
+           #_(javax.imageio ImageIO)))
 
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* true)
 
 (defn- make-font
-  [name-or-path style size]
-  (let [font-file ^File (clojure.java.io/as-file name-or-path)]
+  [path]
+  (let [font-file ^File (clojure.java.io/as-file path)]
     (if (.exists font-file)
       ;; Load font from file
       (do
-        (log/info "Loading font from file" name-or-path)
-        (.deriveFont (Font/createFont Font/TRUETYPE_FONT font-file) (int style) (float size)))
-      ;; Load font from font registry
-      (do
-        (log/info "Loading font by name")
-        (Font. name-or-path style size)))))
+        (log/info "Loading font from file" path)
+        (let [info (STBTTFontinfo/calloc)]
+          (when (zero?
+                  (STBTruetype/stbtt_InitFont info (-> font-file
+                                                     jio/input-stream
+                                                     IOUtils/toByteArray
+                                                     ByteBuffer/wrap)))
+            (throw (RuntimeException. "Error loading font")))
+          info))
+      (throw (RuntimeException. "Font does not exit")))))
 
 (def cjk-blocks
   (set
@@ -38,9 +48,11 @@
 
 
 ;; A sequence of [character underline?]
-(defn- displayable-characters [^Font font]
-  (let [chars (map char (filter (fn [c] (and (.canDisplay font (char c))
-                                             (not (contains? cjk-blocks c))))
+(defn- displayable-characters [^STBTTFontinfo font]
+  (let [chars (map char
+                   (filter (fn [c]
+                             (and (pos? (STBTruetype/stbtt_FindGlyphIndex font (int c)))
+                                  (not (contains? cjk-blocks c))))
                                 (range 0x0000 0xFFFF)))]
     chars))
 
@@ -85,21 +97,11 @@
       [0x2261 0x00B1 0x2265 0x2264 0x2320 0x2321 0x00F7 0x2248 0x00B0 0x2219 0x00B7 0x221A 0x207F 0x00B2 0x25A0 0x00A0])))
 
 
-(defn- ^BufferedImage convert-type [^BufferedImage buffered-image image-type]
-  (let [converted-image    (BufferedImage. (.getWidth buffered-image) (.getHeight buffered-image) image-type)
-        converted-graphics (.createGraphics converted-image)]
-    (doto converted-graphics
-      (.drawImage buffered-image 0 0 nil)
-      (.dispose))
-    converted-image))
-
-(defn compact [^BufferedImage buffered-image tile-width tile-height margin]
+(defn compact [^Image image tile-width tile-height margin]
   (if (pos? margin)
-    (let [cols                   (quot (.getWidth buffered-image) (+ tile-width margin))
-          rows                   (quot (.getHeight buffered-image) (+ tile-height margin))
-          compact-buffered-image (BufferedImage. (* cols tile-width) (* rows tile-height) (.getType buffered-image))
-          graphics               (.createGraphics compact-buffered-image)
-          ^ImageObserver observer nil]
+    (let [cols                   (quot (get image :width) (+ tile-width margin))
+          rows                   (quot (get image :height) (+ tile-height margin))
+          compact-image (zimg/image (* cols tile-width) (* rows tile-height))]
       (log/info tile-width tile-height)
       (log/info "Copying cols" cols "rows" rows)
       (doseq [row (range rows)
@@ -115,46 +117,21 @@
                     sy2 (+ sy1 tile-height)]]
         (log/info "Copying from" sx1 sy1 sx2 sy2 "to" dx1 dy1 dx2 dy2)
         (log/info "row" row "tile-height" tile-height)
-        (assert (.drawImage graphics
-                    buffered-image
-                    ;; destination
-                    dx1 dy1 dx2 dy2
-                    ;; source
-                    sx1 sy1 sx2 sy2
-                    observer)))
-      (.dispose graphics)
-      (ImageIO/write compact-buffered-image "png", (File. "compact-texture.png"))
-      compact-buffered-image)
-    buffered-image))
+        (zimg/copy-sub-image compact-image
+            image
+            ;; destination
+            dx1 dy1
+            ;; source
+            sx1 sy1 sx2 sy2))
+      ;(ImageIO/write compact-buffered-image "png", (File. "compact-texture.png"))
+      compact-image)
+    image))
 
-(defn- copy-channel [v channel]
-  (let [channel-shift (case channel
-                       :alpha 24
-                       :blue  16
-                       :green  8
-                       :red    0)
-        c (->
-            (bit-shift-left 0xFF channel-shift)
-            (bit-and v)
-            (unsigned-bit-shift-right channel-shift))]
-    (reduce (fn [a n] (bit-or a (bit-shift-left c n))) 0 [24 16 8 0])))
-
-(defn- ^BufferedImage copy-channels! [^BufferedImage buffered-image channel]
-  (doseq [x (range (.getWidth buffered-image))
-          y (range (.getHeight buffered-image))]
-      (.setRGB buffered-image  x y (copy-channel (.getRGB buffered-image x y) channel)))
-  buffered-image)
-
-(defn- ^BufferedImage scale-image [^BufferedImage buffered-image scale]
-  (let [scaled-image    (BufferedImage. (* scale (.getWidth buffered-image))
-                                        (* scale (.getHeight buffered-image))
-                                        (.getType buffered-image))
-        scaled-graphics (.createGraphics scaled-image)]
-    (doto scaled-graphics
-      (.scale scale scale)
-      (.drawImage buffered-image 0 0 nil)
-      (.dispose))
-    scaled-image))
+(defn- advance-width [^STBTTFontinfo font-info codepoint]
+  (let [advance-width (BufferUtils/createIntBuffer 1)
+        left-side-bearing (BufferUtils/createIntBuffer 1)]
+    (STBTruetype/stbtt_GetCodepointHMetrics font-info codepoint advance-width left-side-bearing)
+    (.get advance-width)))
 
 (defrecord CP437Font [path-or-url alpha scale transparent])
 
@@ -179,37 +156,25 @@
 
 (defmethod glyph-graphics CP437Font [font]
   {:post [(glyph-graphics? %)]}
-  (with-open [image-stream (jio/input-stream (get font :path-or-url))]
+  (with-open [image-stream (zimg/load-image (get font :path-or-url))]
     (let [characters    (map char cp437-unicode)
-          font-image    (->
-                          (ImageIO/read image-stream)
-                          (convert-type BufferedImage/TYPE_4BYTE_ABGR)
-                          (scale-image (get font :scale))
-                          (as-> font-image
-                            (let [alpha (get font :alpha)]
-                              (if-not (= alpha :alpha)
-                                (copy-channels! font-image (get font :alpha))
-                                font-image))))
+          font-image    (cond->
+                          (zimg/scale (get font :scale))
+                          (= (get font :alpha) :alpha)
+                            (zimg/copy-channels (get font :alpha)))
           width         (zutil/next-pow-2 (.getWidth font-image))
           height        (zutil/next-pow-2 (.getHeight font-image))
-          cwidth        (/ (.getWidth font-image) 16)
-          cheight       (/ (.getHeight font-image) 16)
-          texture-image (BufferedImage. width height BufferedImage/TYPE_4BYTE_ABGR)
-          texture-graphics (.createGraphics texture-image)
+          cwidth        (/ (get font-image :width) 16)
+          cheight       (/ (get font-image :height) 16)
+          texture-image (zimg/resize font-image width height)
           character->col-row (zipmap
                              characters
                              (for [row (range 16)
                                    col (range 16)]
                                [col row]))]
 
-      (log/info "Using cp437 font image" (.getType font-image))
-      (doto texture-graphics
-        (.setColor (Color. 0 0 0 0))
-        (.fillRect 0 0 width height))
-      (while (not (.drawImage texture-graphics font-image 0 0 nil))
-        (Thread/sleep(100)))
-      (.dispose texture-graphics)
-      (ImageIO/write font-image "png", (File. "font-texture.png"))
+      (log/info "Using cp437 font image")
+      ;(ImageIO/write font-image "png", (File. "font-texture.png"))
       {:font-texture-width width
        :font-texture-height height
        :font-texture-image texture-image
@@ -218,14 +183,34 @@
        :character->col-row character->col-row
        :character->transparent (zipmap characters (repeat (get font :transparent)))})))
 
+
+(defn- char-image [font-info size c]
+  (let [scale       (STBTruetype/stbtt_ScaleForPixelHeight
+                      font-info
+                      size)
+        char-width  (* (advance-width font-info (int \M)) scale)
+        char-height size
+        img         (zimg/image char-width char-height)]
+    (STBTruetype/stbtt_MakeCodepointBitmap
+      font-info
+      (get img :byte-buffer)
+      char-width
+      char-height
+      0
+      scale
+      scale
+      (int c))))
+  
 (defmethod glyph-graphics TTFFont [font]
   {:post [(glyph-graphics? %)]}
   ;; Adjust canvas to fit character atlas size
-  (let [j-font                     (make-font (get font :name-or-path) Font/PLAIN (get font :size))
-        characters                 (displayable-characters j-font)
-        font-metrics  ^FontMetrics (.getFontMetrics (Canvas.) j-font)
-        char-width                 (.charWidth font-metrics \M)
-        char-height                (.getHeight font-metrics)
+  (let [font-info                  (make-font (get font :name-or-path))
+        scale                      (STBTruetype/stbtt_ScaleForPixelHeight
+                                     font-info
+                                     (get font :size))
+        characters                 (displayable-characters font-info)
+        char-width                 (* (advance-width font-info (int \M)) scale)
+        char-height                (get font :size)
         _ (log/info "characters per line" (characters-per-line char-width (count characters)))
         ;screen-width               (* columns char-width)
         ;screen-height              (* rows char-height)
@@ -240,34 +225,22 @@
     (log/info "glyph image width" width "height" height)
     ;(log/info "characters" (vec characters))
     ;(log/info "character-idxs" (vec (character-idxs characters)))
-    (let [texture-image    (BufferedImage. width height BufferedImage/TYPE_4BYTE_ABGR)
-          texture-graphics (.createGraphics texture-image)
-          white            (Color. 255 255 255 255)]
-      ;; Create and clear graphics
-      (doto texture-graphics
-        (.setFont j-font)
-        (.setRenderingHint RenderingHints/KEY_TEXT_ANTIALIASING (if antialias
-                                                                  RenderingHints/VALUE_TEXT_ANTIALIAS_GASP
-                                                                  RenderingHints/VALUE_TEXT_ANTIALIAS_OFF))
-         ;; set background to black
-        (.setColor (Color. 0 0 0 0))
-        (.fillRect 0 0 width height))
+    (let [texture-image    (zimg/image width height)]
       ;; Loop through each character, drawing it
       (doseq [[c col row]  char-idxs]
         (let [x ^int (* col char-width)
               y ^int (* (inc row) char-height)
               cx (+ 0 x)
-              cy (- y (.getDescent font-metrics))]
+              cy (- y 0 #_(.getDescent font-metrics))]
           ;(log/info s x y)
         (when (not= c \space)
           ;(println "drawing" s "@" x y "underline?" underline?)
-          (doto texture-graphics
-            (.setColor white)
-            (.setClip cx (+ (- cy char-height) (.getDescent font-metrics)) char-width char-height)
-            (.drawString (str c) cx cy)))))
+          (zimg/draw-img texture-image
+                         (char-image font-info size c)
+                         x
+                         y))))
       ;; cleanup texture resource
-      (ImageIO/write texture-image "png", (File. "glyph-texture.png"))
-      (.dispose texture-graphics)
+      (zimg/write-png texture-image "glyph-texture.png")
       {:font-texture-width width
        :font-texture-height height
        :font-texture-image texture-image
