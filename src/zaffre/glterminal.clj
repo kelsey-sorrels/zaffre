@@ -585,7 +585,7 @@
             ;;(log/info "row" row "col" col "c" c)
         (loop-with-index row [line (reverse @character-map)]
           (loop-with-index col [c line]
-            (let [chr        (char (or (get c :fx-character) (get c :character)))
+            (let [chr        (or (get c :fx-character) (get c :character))
                   chr        (if (and (= layer-id base-layer-id)
                                       (= chr (char 0)))
                                  \space
@@ -851,9 +851,11 @@
                                              character-height
                                              character->col-row]
                                       :as font-parameters} (zfont/glyph-graphics new-font)
+                                     _ (log/info "cw" character-width "cols" columns)
                                      screen-width (* character-width columns)
                                      screen-height (* character-height rows)]
-                                 (log/info "Created font texture " (dissoc font-parameters :character->col-row) " screen-width" screen-width "screen-height" screen-height)
+                                 ;(log/info "Created font texture " (dissoc font-parameters :character->col-row) " screen-width" screen-width "screen-height" screen-height)
+                                 (log/info "Created font texture " font-parameters " screen-width" screen-width "screen-height" screen-height)
                                  (swap! font-textures assoc
                                                      (font-key new-font)
                                                      {:screen-width screen-width
