@@ -499,9 +499,15 @@
             ^ByteBuffer bbnil nil]
         (log/info "framebuffer size" frame-buffer-width "x" frame-buffer-height)
         (try
-          ;; TODO: fix fullscreen
+          ; TODO: uncomment when LWJGL version is newer
           #_(when-not @fullscreen
-            (Display/setDisplayMode (DisplayMode. screen-width screen-height)))
+            (GLFW/glfwSetWindowMonitor window
+                                       (GLFW/glfwGetWindowMonitor window)
+                                       0
+                                       0
+                                       (* columns character-width)
+                                       (* rows character-height)
+                                       60))
           ;; resize FBO
           (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
           (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB (int frame-buffer-width) (int frame-buffer-height) 0 GL11/GL_RGB GL11/GL_UNSIGNED_BYTE bbnil)
@@ -743,11 +749,24 @@
       (if (false? v)
         (let [{:keys [frame-buffer-width frame-buffer-height]} (get @font-textures (font-key @normal-font))]
           (reset! fullscreen false)
-          #_(Display/setDisplayMode (DisplayMode. screen-width screen-height)))
+          ; TODO: Uncomment when LGJWL version is upgraded
+          #_(GLFW/glfwSetWindowMonitor window
+                                     (GLFW/glfwGetWindowMonitor window)
+                                     0
+                                     0
+                                     (* columns character-width)
+                                     (* rows character-height)
+                                     60)
         (let [[width height mode] v]
           (reset! fullscreen true)
-          #_(Display/setDisplayMode mode)
-          #_(Display/setFullscreen true)))))
+          ; TODO: Uncomment when LGJWL version is upgraded
+          #_(GLFW/glfwSetWindowMonitor window
+                                     (GLFW/glfwGetWindowMonitor window)
+                                     0
+                                     0
+                                     (.width mode)
+                                     (.height mode)
+                                     60))))))
   (fullscreen-sizes [_]
     (with-gl-context gl-lock window capabilities
       (let [desktop-mode     (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor))
