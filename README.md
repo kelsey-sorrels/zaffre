@@ -34,9 +34,7 @@ Add the dependency to your project:
 
 ## Quickstart
 
-Add zaffre as a dependency to your project. `[zaffre "0.4.0-SNAPSHOT]`
-
-Run a little hello world terminal
+Runs a little hello world terminal
 
 ```clojure
 (ns examples.basic
