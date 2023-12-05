@@ -14,16 +14,17 @@
 (defn -main [& _]
   ;; render in background thread
    (zgl/create-terminal
-     [:text]
+     {:app {
+        :layers [:text]
+        :columns 16
+        :rows 16
+        :pos [0 0]
+        :font (constantly font)}}
      {:title "Zaffre demo"
-      :columns 16 :rows 16
+      :screen-width (* 16 16)
+      :screen-height (* 16 16)
       :default-fg-color [250 250 250]
-      :default-bg-color [5 5 8]
-      :windows-font font
-      :else-font font
-      :icon-paths ["images/icon-16x16.png"
-                   "images/icon-32x32.png"
-                   "images/icon-128x128.png"]}
+      :default-bg-color [5 5 8]}
      (fn [terminal]
        (let [term-pub    (zat/pub terminal)
              key-chan    (async/chan)
@@ -60,7 +61,7 @@
                nil)))
          (go-loop []
            (let [{:keys [col row]} (async/<! mouse-leave-chan)]
-             (log/info "got mouse-leave" [col row])
+             ;(log/info "got mouse-leave" [col row])
              (swap! last-mouse-pos (fn [coll] (take trail-length (cons [col row] coll)))))
              (recur))
          (let [_ (async/<! close-chan)]

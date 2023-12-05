@@ -858,6 +858,24 @@
     (reset! destroyed true)
     (async/put! term-chan :close)))
 
+(defn group-locations
+  ([_ _]
+   [])
+  ([group-map group->font-texture xpos ypos]
+   (set
+     (remove (fn [[group-id col row]] (and (nil? col) (nil? row)))
+             (map (fn [[group-id group]]
+                    (let [{:keys [pos columns rows]
+                           [pos-x pos-y] :pos} @group
+                          {:keys [character-width character-height]} (-> group->font-texture group-id deref)]
+                      ;; determine if the mouse is in the bounds of the layer group
+                      (when (and (<= pos-x xpos (+ (* columns character-width) pos-x))
+                               (<= pos-y ypos (+ (* rows character-height) pos-y)))
+                        ;; determine which col/row the mouse is in the group
+                        (let [col (int (quot (- xpos pos-x) character-width))
+                              row (int (quot (- ypos pos-y) character-height))]
+                          [group-id col row]))))
+                   group-map)))))
 
 (defn create-terminal
   [group-map {:keys [title
@@ -877,326 +895,340 @@
          icon-paths       nil
          fx-shader        {:name "passthrough.fs"}} :as opts}
    f]
-    (let [term-args           [group-map opts]
-          group-map           (into {}
-                                (map (fn [[k v]]
-                                       [k (ref v)])
-                                     group-map))
-          layer-id->group     (->> group-map
-                                 (mapcat (fn [[id layer-group]]
-                                           (map (fn [layer-id]
-                                                  [layer-id layer-group])
-                                                (get @layer-group :layers))))
-                                 (into {}))
-          _                        (log/info "group-map" group-map)
-          _                        (log/info "layer-id->group" layer-id->group)
-          font-textures       (atom {})
-          fullscreen          (atom fullscreen)
-          ;; Last [col row] o f mouse movement
-          mouse-col-row       (atom nil)
-          mousedown-col-row   (atom nil)
-          ;; false if Display  is destoyed
-          destroyed           (atom false)
-          gl-lock             (atom true)
-          latch               (java.util.concurrent.CountDownLatch. 1)
-          [window
-           capabilities
-           framebuffer-width
-           framebuffer-height ]
-                              (init-display title screen-width screen-height icon-paths gl-lock destroyed)
-          _                   (log/info "window" window "capabilities" capabilities)
-          _                   (log/info "framebuffer size" framebuffer-width "x" framebuffer-height)
+  (let [term-args           [group-map opts]
+        group-map           (into {}
+                              (map (fn [[k v]]
+                                     [k (ref v)])
+                                   group-map))
+        layer-id->group     (->> group-map
+                               (mapcat (fn [[id layer-group]]
+                                         (map (fn [layer-id]
+                                                [layer-id layer-group])
+                                              (get @layer-group :layers))))
+                               (into {}))
+        _                        (log/info "group-map" group-map)
+        _                        (log/info "layer-id->group" layer-id->group)
+        font-textures       (atom {})
+        fullscreen          (atom fullscreen)
+        ;; Last [col row] o f mouse movement
+        mouse-xy            (atom nil)
+        mousedown-xy        (atom nil)
+        ;; false if Display  is destoyed
+        destroyed           (atom false)
+        gl-lock             (atom true)
+        latch               (java.util.concurrent.CountDownLatch. 1)
+        [window
+         capabilities
+         framebuffer-width
+         framebuffer-height ]
+                            (init-display title screen-width screen-height icon-paths gl-lock destroyed)
+        _                   (log/info "window" window "capabilities" capabilities)
+        _                   (log/info "framebuffer size" framebuffer-width "x" framebuffer-height)
 
-          group->font-texture (with-gl-context gl-lock window capabilities
-                                (into {}
-                                  (mapv (fn [[k v]]
-                                          [k (ref (let [font ((get @v :font) (platform))
-                                                        gg   (if (zfont/glyph-graphics? font)
-                                                                 font
-                                                                 (zfont/glyph-graphics font))
-                                                        font-texture (texture-id-2d (get gg :font-texture-image))]
-                                                    (log/info "loaded font-texture for" k font-texture (select-keys gg [:font-texture-width :font-texture-height :character-width :character-height]))
-                                                 (assoc gg :font-texture font-texture)))])
-                                     group-map)))
-          ;; create empty character maps
-          layer-character-map-cleared (into {}
-                                        (for [[id group-ref] layer-id->group
-                                              :let [{:keys [columns rows]} @group-ref]]
-                                          [id (vec (repeat rows (vec (repeat columns (make-terminal-character
-                                                                                       (char 0)
-                                                                                       default-fg-color
-                                                                                       default-bg-color
-                                                                                       #{})))))]))
-          layer-character-map (into {}
-                                    (for [id (keys layer-id->group)]
-                                      [id (ref (get layer-character-map-cleared id))]))
-          cursor-xy           (atom nil)
+        group->font-texture (with-gl-context gl-lock window capabilities
+                              (into {}
+                                (mapv (fn [[k v]]
+                                        [k (ref (let [font ((get @v :font) (platform))
+                                                      gg   (if (zfont/glyph-graphics? font)
+                                                               font
+                                                               (zfont/glyph-graphics font))
+                                                      font-texture (texture-id-2d (get gg :font-texture-image))]
+                                                  (log/info "loaded font-texture for" k font-texture (select-keys gg [:font-texture-width :font-texture-height :character-width :character-height]))
+                                               (assoc gg :font-texture font-texture)))])
+                                   group-map)))
+        ;; create empty character maps
+        layer-character-map-cleared (into {}
+                                      (for [[id group-ref] layer-id->group
+                                            :let [{:keys [columns rows]} @group-ref]]
+                                        [id (vec (repeat rows (vec (repeat columns (make-terminal-character
+                                                                                     (char 0)
+                                                                                     default-fg-color
+                                                                                     default-bg-color
+                                                                                     #{})))))]))
+        layer-character-map (into {}
+                                  (for [id (keys layer-id->group)]
+                                    [id (ref (get layer-character-map-cleared id))]))
+        cursor-xy           (atom nil)
 
-          term-chan           (async/chan (async/buffer 100))
-          ;; Turn term-chan into a pub(lishable) channel
-          term-pub            (async/pub term-chan (fn [v]
-                                            (cond
-                                              (char? v)    :keypress
-                                              (keyword? v) v
-                                              :else        (get v :type))))
-                                            
-          on-key-fn           (or on-key-fn
-                                  (fn alt-on-key-fn [k]
-                                    (async/put! term-chan k)))
+        term-chan           (async/chan (async/buffer 100))
+        ;; Turn term-chan into a pub(lishable) channel
+        term-pub            (async/pub term-chan (fn [v]
+                                          (cond
+                                            (char? v)    :keypress
+                                            (keyword? v) v
+                                            :else        (get v :type))))
+                                          
+        on-key-fn           (or on-key-fn
+                                (fn alt-on-key-fn [k]
+                                  (async/put! term-chan k)))
 
-          ;; create width*height texture that gets updated each frame that determines which character to draw in each cell
-          _ (log/info "Creating glyph array")
-          glyph-image-data    (for [[_ layer-group] group-map]
-                                (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                      np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
-                                  (log/info "creating buffers for glyph/fg/bg textures" np2-columns "x" np2-rows)
-                                  (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 (count (get @layer-group :layers))))))
-          fg-image-data       (for [[_ layer-group] group-map]
-                                (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                      np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
-                                  (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 (count (get @layer-group :layers))))))
-          bg-image-data       (for [[_ layer-group] group-map]
-                                (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                      np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
-                                  (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 (count (get @layer-group :layers))))))
-          glyph-textures      (with-gl-context gl-lock window capabilities
-                                (mapv (fn [layer-group glyph-image-data]
-                                        (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                              np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
-                                          (xy-texture-id np2-columns np2-rows (count (get @layer-group :layers)) glyph-image-data)))
-                                      (vals group-map)
-                                      glyph-image-data))
-          fg-textures         (with-gl-context gl-lock window capabilities
-                                (mapv (fn [layer-group fg-image-data]
-                                        (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                              np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
-                                          (texture-id np2-columns np2-rows (count (get @layer-group :layers)) fg-image-data)))
-                                      (vals group-map)
-                                      fg-image-data))
-          bg-textures         (with-gl-context gl-lock window capabilities
-                                (mapv (fn [layer-group bg-image-data]
-                                        (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
-                                              np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
-                                          (texture-id np2-columns np2-rows (count (get @layer-group :layers)) bg-image-data)))
-                                      (vals group-map)
-                                      bg-image-data))
-          [fbo-id fbo-texture]
-                              (with-gl-context gl-lock window capabilities (fbo-texture framebuffer-width framebuffer-height))
-          ; init shaders
-          [^int pgm-id
-           ^int fb-pgm-id]                   (with-gl-context gl-lock window capabilities (init-shaders (get fx-shader :name)))
-          pos-vertex-attribute               (with-gl-context gl-lock window capabilities (GL20/glGetAttribLocation pgm-id "aVertexPosition"))
-          texture-coords-vertex-attribute    (with-gl-context gl-lock window capabilities (GL20/glGetAttribLocation pgm-id "aTextureCoord"))
-          fb-pos-vertex-attribute            (with-gl-context gl-lock window capabilities (GL20/glGetAttribLocation fb-pgm-id "aVertexPosition"))
-          fb-texture-coords-vertex-attribute (with-gl-context gl-lock window capabilities (GL20/glGetAttribLocation fb-pgm-id "aTextureCoord"))
+        ;; create width*height texture that gets updated each frame that determines which character to draw in each cell
+        _ (log/info "Creating glyph array")
+        glyph-image-data    (for [[_ layer-group] group-map]
+                              (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                    np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
+                                (log/info "creating buffers for glyph/fg/bg textures" np2-columns "x" np2-rows)
+                                (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 (count (get @layer-group :layers))))))
+        fg-image-data       (for [[_ layer-group] group-map]
+                              (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                    np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
+                                (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 (count (get @layer-group :layers))))))
+        bg-image-data       (for [[_ layer-group] group-map]
+                              (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                    np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
+                                (BufferUtils/createByteBuffer (* np2-columns np2-rows 4 (count (get @layer-group :layers))))))
+        glyph-textures      (with-gl-context gl-lock window capabilities
+                              (mapv (fn [layer-group glyph-image-data]
+                                      (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                            np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
+                                        (xy-texture-id np2-columns np2-rows (count (get @layer-group :layers)) glyph-image-data)))
+                                    (vals group-map)
+                                    glyph-image-data))
+        fg-textures         (with-gl-context gl-lock window capabilities
+                              (mapv (fn [layer-group fg-image-data]
+                                      (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                            np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
+                                        (texture-id np2-columns np2-rows (count (get @layer-group :layers)) fg-image-data)))
+                                    (vals group-map)
+                                    fg-image-data))
+        bg-textures         (with-gl-context gl-lock window capabilities
+                              (mapv (fn [layer-group bg-image-data]
+                                      (let [np2-columns (zutil/next-pow-2 (get @layer-group :columns))
+                                            np2-rows    (zutil/next-pow-2 (get @layer-group :rows))]
+                                        (texture-id np2-columns np2-rows (count (get @layer-group :layers)) bg-image-data)))
+                                    (vals group-map)
+                                    bg-image-data))
+        [fbo-id fbo-texture]
+                            (with-gl-context gl-lock window capabilities (fbo-texture framebuffer-width framebuffer-height))
+        ; init shaders
+        [^int pgm-id
+         ^int fb-pgm-id]                   (with-gl-context gl-lock window capabilities (init-shaders (get fx-shader :name)))
+        pos-vertex-attribute               (with-gl-context gl-lock window capabilities (GL20/glGetAttribLocation pgm-id "aVertexPosition"))
+        texture-coords-vertex-attribute    (with-gl-context gl-lock window capabilities (GL20/glGetAttribLocation pgm-id "aTextureCoord"))
+        fb-pos-vertex-attribute            (with-gl-context gl-lock window capabilities (GL20/glGetAttribLocation fb-pgm-id "aVertexPosition"))
+        fb-texture-coords-vertex-attribute (with-gl-context gl-lock window capabilities (GL20/glGetAttribLocation fb-pgm-id "aTextureCoord"))
 
-          ;; We just need one vertex buffer, a texture-mapped quad will suffice for drawing the terminal.
-          {:keys [vertices-vbo-id
-                  vertices-count
-                  texture-coords-vbo-id
-                  vao-id]}   (with-gl-context gl-lock window capabilities (init-buffers))
-          [glyph-tex-dim
-           u-MVMatrix
-           u-PMatrix
-           u-font
-           u-glyphs
-           u-fg
-           u-bg
-           u-num-layers
-           font-size
-           term-dim
-           font-tex-dim]     (with-gl-context gl-lock window capabilities
-                               (mapv #(GL20/glGetUniformLocation pgm-id (str %))
-                                     ["glyphTextureDimensions"
-                                      "uMVMatrix"
-                                      "uPMatrix"
-                                      "uFont"
-                                      "uGlyphs"
-                                      "uFg"
-                                      "uBg"
-                                      "numLayers"
-                                      "fontSize"
-                                      "termDimensions"
-                                      "fontTextureDimensions"]))
-          [u-fb
-           u-fb-MVMatrix
-           u-fb-PMatrix]     (with-gl-context gl-lock window capabilities
-                               (mapv #(GL20/glGetUniformLocation fb-pgm-id (str %))
-                                     ["uFb"
-                                      "uMVMatrix"
-                                      "uPMatrix"]))
-          ;; map from uniform name (string) to [value atom, uniform location]
-          fx-uniforms        (reduce (fn [uniforms [uniform-name value]]
-                                       (assoc uniforms
-                                              uniform-name
-                                              [(atom value)
-                                               (with-gl-context gl-lock window capabilities
-                                                 (log/info "getting location of uniform" uniform-name)
-                                                 (let [location (GL20/glGetUniformLocation fb-pgm-id (str uniform-name))]
-                                                   (assert (not (neg? location)) (str "Could not find location for uniform " uniform-name location))
-                                                   (log/info "got location of uniform" uniform-name location)
-                                                   location))]))
-                                     {}
-                                     (get fx-shader :uniforms))
-          _                  (with-gl-context gl-lock window capabilities
-                               (doseq [idx (range (GL20/glGetProgrami fb-pgm-id GL20/GL_ACTIVE_UNIFORMS))]
-                                 (let [length-buffer (BufferUtils/createIntBuffer 1)
-                                       size-buffer (BufferUtils/createIntBuffer 1)
-                                       type-buffer (BufferUtils/createIntBuffer 1)
-                                       name-buffer (BufferUtils/createByteBuffer 100)
-                                       uniform-name (GL20/glGetActiveUniform fb-pgm-id idx 256 size-buffer type-buffer)]
-                                 (log/info "Found uniform" uniform-name))))
-          key-callback          (proxy [GLFWKeyCallback] []
-                                  (invoke [window key scancode action mods]
-                                    (when-let [key (zkeyboard/convert-key-code key scancode action mods)]
-                                      (log/info "key" key)
-                                      (on-key-fn key))))
-          char-callback         (proxy [GLFWCharCallback] []
-                                  (invoke [window codepoint]
-                                    (log/info "char" key)
-                                    (on-key-fn (first (Character/toChars codepoint)))))
-          mouse-button-callback (proxy [GLFWMouseButtonCallback] []
-                                  (invoke [window button action mods]
-                                    (let [state  (condp = (int action)
-                                                   GLFW/GLFW_PRESS :mouse-down
-                                                   GLFW/GLFW_RELEASE :mouse-up)
-                                          [col
-                                           row]   @mouse-col-row]
-                                      (async/put! term-chan (case (int button)
-                                        0 {:button :left :type state :col col :row row}
-                                        1 {:button :right :type state :col col :row row}
-                                        2 {:button :middle :type state :col col :row row}))
-                                      (when (and (= state :mouse-up)
-                                                 (= [col row] @mousedown-col-row))
-                                        (async/put! term-chan {:type :click :col col :row row}))
-                                      (reset! mousedown-col-row [col row]))))
-          cursor-pos-callback   (proxy [GLFWCursorPosCallback] []
-                                  (invoke [window xpos ypos]
-                                    #_(let [col (int (quot xpos (int character-width)))
-                                          row (int (quot ypos (int character-height)))
-                                          [last-col
-                                           last-row] @mouse-col-row]
-                                      (when (not= [col row] @mouse-col-row)
-                                        (when (and (not (nil? last-col))
-                                                   (not (nil? last-row)))
-                                          (async/put! term-chan {:type :mouse-leave :col last-col :row last-row}))
-                                        (reset! mouse-col-row [col row])
-                                        (async/put! term-chan {:type :mouse-enter :col col :row row})))))
-          gl                 {:p-matrix-buffer (ortho-matrix-buffer framebuffer-width framebuffer-height)
-                              :mv-matrix-buffer (position-matrix-buffer [(- (/ framebuffer-width 2)) (- (/ framebuffer-height 2)) -1.0 0.0]
-                                                                        [framebuffer-width framebuffer-height 1.0])
-                              :buffers {:vertices-vbo-id vertices-vbo-id
-                                        :vertices-count vertices-count
-                                        :texture-coords-vbo-id texture-coords-vbo-id
-                                        :vao-id vao-id
-                                        :fbo-id fbo-id}
-                              :textures {:glyph-textures glyph-textures
-                                         ;:font-texture font-texture
-                                         :fg-textures fg-textures
-                                         :bg-textures bg-textures
-                                         :fbo-texture fbo-texture}
-                              :attributes {:pos-vertex-attribute pos-vertex-attribute
-                                           :texture-coords-vertex-attribute texture-coords-vertex-attribute
-                                           :fb-pos-vertex-attribute fb-pos-vertex-attribute
-                                           :fb-texture-coords-vertex-attribute fb-texture-coords-vertex-attribute
+        ;; We just need one vertex buffer, a texture-mapped quad will suffice for drawing the terminal.
+        {:keys [vertices-vbo-id
+                vertices-count
+                texture-coords-vbo-id
+                vao-id]}   (with-gl-context gl-lock window capabilities (init-buffers))
+        [glyph-tex-dim
+         u-MVMatrix
+         u-PMatrix
+         u-font
+         u-glyphs
+         u-fg
+         u-bg
+         u-num-layers
+         font-size
+         term-dim
+         font-tex-dim]     (with-gl-context gl-lock window capabilities
+                             (mapv #(GL20/glGetUniformLocation pgm-id (str %))
+                                   ["glyphTextureDimensions"
+                                    "uMVMatrix"
+                                    "uPMatrix"
+                                    "uFont"
+                                    "uGlyphs"
+                                    "uFg"
+                                    "uBg"
+                                    "numLayers"
+                                    "fontSize"
+                                    "termDimensions"
+                                    "fontTextureDimensions"]))
+        [u-fb
+         u-fb-MVMatrix
+         u-fb-PMatrix]     (with-gl-context gl-lock window capabilities
+                             (mapv #(GL20/glGetUniformLocation fb-pgm-id (str %))
+                                   ["uFb"
+                                    "uMVMatrix"
+                                    "uPMatrix"]))
+        ;; map from uniform name (string) to [value atom, uniform location]
+        fx-uniforms        (reduce (fn [uniforms [uniform-name value]]
+                                     (assoc uniforms
+                                            uniform-name
+                                            [(atom value)
+                                             (with-gl-context gl-lock window capabilities
+                                               (log/info "getting location of uniform" uniform-name)
+                                               (let [location (GL20/glGetUniformLocation fb-pgm-id (str uniform-name))]
+                                                 (assert (not (neg? location)) (str "Could not find location for uniform " uniform-name location))
+                                                 (log/info "got location of uniform" uniform-name location)
+                                                 location))]))
+                                   {}
+                                   (get fx-shader :uniforms))
+        _                  (with-gl-context gl-lock window capabilities
+                             (doseq [idx (range (GL20/glGetProgrami fb-pgm-id GL20/GL_ACTIVE_UNIFORMS))]
+                               (let [length-buffer (BufferUtils/createIntBuffer 1)
+                                     size-buffer (BufferUtils/createIntBuffer 1)
+                                     type-buffer (BufferUtils/createIntBuffer 1)
+                                     name-buffer (BufferUtils/createByteBuffer 100)
+                                     uniform-name (GL20/glGetActiveUniform fb-pgm-id idx 256 size-buffer type-buffer)]
+                               (log/info "Found uniform" uniform-name))))
+        key-callback          (proxy [GLFWKeyCallback] []
+                                (invoke [window key scancode action mods]
+                                  (when-let [key (zkeyboard/convert-key-code key scancode action mods)]
+                                    (on-key-fn key))))
+        char-callback         (proxy [GLFWCharCallback] []
+                                (invoke [window codepoint]
+                                  (on-key-fn (first (Character/toChars codepoint)))))
+        mouse-button-callback (proxy [GLFWMouseButtonCallback] []
+                                (invoke [window button action mods]
+                                  (let [state  (condp = (int action)
+                                                 GLFW/GLFW_PRESS :mouse-down
+                                                 GLFW/GLFW_RELEASE :mouse-up)
+                                        new-group-locations (apply group-locations group-map group->font-texture @mouse-xy)
+                                        button (get [:left :right :middle] (int button))]
+                                    (async/onto-chan
+                                      term-chan
+                                      (map (fn [[group-id col row]]
+                                             {:type state :button button :col col :row row :group-id group-id})
+                                           new-group-locations)
+                                      false)
+                                    (when (= state :mouse-down)
+                                      (reset! mousedown-xy @mouse-xy))
+                                    (when (= state :mouse-up)
+                                      (async/onto-chan
+                                        term-chan
+                                        (map (fn [[group-id col row]]
+                                               {:type :click :button button :col col :row row :group-id group-id})
+                                             (clojure.set/intersection
+                                               new-group-locations
+                                               (apply group-locations group-map group->font-texture @mousedown-xy)))
+                                        false)))))
+        cursor-pos-callback   (proxy [GLFWCursorPosCallback] []
+                                (invoke [window xpos ypos]
+                                  (let [new-group-locations (group-locations group-map group->font-texture xpos ypos)
+                                        old-group-locations (apply group-locations group-map group->font-texture @mouse-xy)
+                                        entered-locations   (clojure.set/difference new-group-locations old-group-locations)
+                                        left-locations      (clojure.set/difference old-group-locations new-group-locations)]
+                                    (reset! mouse-xy [xpos ypos])
+                                    (async/onto-chan
+                                      term-chan
+                                      (map (fn [[group-id col row]]
+                                             {:type :mouse-leave :col col :row row :group-id group-id})
+                                           left-locations)
+                                      false)
+                                    (async/onto-chan
+                                      term-chan
+                                      (map (fn [[group-id col row]]
+                                             {:type :mouse-enter :col col :row row :group-id group-id})
+                                           entered-locations)
+                                      false))))
+        gl                 {:p-matrix-buffer (ortho-matrix-buffer framebuffer-width framebuffer-height)
+                            :mv-matrix-buffer (position-matrix-buffer [(- (/ framebuffer-width 2)) (- (/ framebuffer-height 2)) -1.0 0.0]
+                                                                      [framebuffer-width framebuffer-height 1.0])
+                            :buffers {:vertices-vbo-id vertices-vbo-id
+                                      :vertices-count vertices-count
+                                      :texture-coords-vbo-id texture-coords-vbo-id
+                                      :vao-id vao-id
+                                      :fbo-id fbo-id}
+                            :textures {:glyph-textures glyph-textures
+                                       ;:font-texture font-texture
+                                       :fg-textures fg-textures
+                                       :bg-textures bg-textures
+                                       :fbo-texture fbo-texture}
+                            :attributes {:pos-vertex-attribute pos-vertex-attribute
+                                         :texture-coords-vertex-attribute texture-coords-vertex-attribute
+                                         :fb-pos-vertex-attribute fb-pos-vertex-attribute
+                                         :fb-texture-coords-vertex-attribute fb-texture-coords-vertex-attribute
 }
-                              :program-id pgm-id
-                              :fb-program-id fb-pgm-id
-                              :uniforms {:u-MVMatrix u-MVMatrix
-                                         :u-PMatrix u-PMatrix
-                                         :u-fb-MVMatrix u-fb-MVMatrix
-                                         :u-fb-PMatrix u-fb-PMatrix
-                                         :u-font u-font
-                                         :u-glyphs u-glyphs
-                                         :u-fg u-fg
-                                         :u-bg u-bg
-                                         :u-num-layers u-num-layers
-                                         :font-size font-size
-                                         :term-dim term-dim
-                                         :font-tex-dim font-tex-dim
-                                         ;:font-texture-width font-texture-width
-                                         ;:font-texture-height font-texture-height
-                                         :glyph-tex-dim glyph-tex-dim
-                                         ;:glyph-texture-width glyph-texture-width
-                                         ;:glyph-texture-height glyph-texture-height
-                                         :u-fb u-fb
-                                         :framebuffer-width framebuffer-width
-                                         :framebuffer-height framebuffer-height}
-                              :data {:glyph-image-data glyph-image-data
-                                     :fg-image-data fg-image-data
-                                     :bg-image-data bg-image-data}}
-          terminal           ;; Create and return terminal
-                             (OpenGlTerminal. term-args
-                                              fbo-texture
-                                              fullscreen
-                                              layer-character-map-cleared
-                                              layer-character-map
-                                              group-map
-                                              group->font-texture
-                                              layer-id->group
-                                              cursor-xy
-                                              fx-uniforms
-                                              gl
-                                              term-chan
-                                              term-pub
-                                              gl-lock
-                                              destroyed
-                                              window
-                                              capabilities)]
-      ;; Access to terminal will be multi threaded. Release context so that other threads can access it)))
-      (when @fullscreen
-        (zat/fullscreen! terminal (first (zat/fullscreen-sizes terminal))))
-      ;; Start font file change listener thread
-      ; TODO: fix resource reloader
-      #_(cwc/start-watch [{:path "./fonts"
-                         :event-types [:modify]
-                         :bootstrap (fn [path] (println "Starting to watch " path))
-                         :callback (fn [_ filename]
-                                     (println "Reloading font" filename)
-                                     (reset! normal-font
-                                             (make-font filename Font/PLAIN font-size)))
-                         :options {:recursive true}}])
-      ;; Poll keyboard in background thread and offer input to key-chan
-      ;; If gl-lock is false ie: the window has been closed, put :exit on the term-chan
-      (reset! key-callback-atom key-callback)
-      (reset! char-callback-atom char-callback)
-      (reset! mouse-button-callback-atom mouse-button-callback)
-      (reset! cursor-pos-callback-atom cursor-pos-callback)
-      (GLFW/glfwSetKeyCallback window key-callback)
-      (GLFW/glfwSetCharCallback window char-callback)
-      (GLFW/glfwSetMouseButtonCallback window mouse-button-callback)
-      (GLFW/glfwSetCursorPosCallback window cursor-pos-callback)
-      (future
-        ;; Wait for Display to be created
-        (.await latch)
-        (f terminal))
-      (loop []
-        (.countDown latch)
-        (if (with-gl-context gl-lock window capabilities
-              (except-gl-errors "Start of loop")
-              ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
-              ; input on the thread that created the window
-              (GLFW/glfwPollEvents)
-              ;; Close the display if the close window button has been clicked
-              ;; or the gl-lock has been released programmatically (e.g. by destroy!)
-              (or (= (GLFW/glfwWindowShouldClose window) GLFW/GLFW_TRUE) @destroyed))
-          (do
-            (log/info "Destroying display")
-            (with-gl-context gl-lock window capabilities
-              (reset! gl-lock false)
-              ;; TODO: Clean up textures and programs
-              ;;(let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id vao-id fbo-id]} :buffers
-              ;;       {:keys [font-texture glyph-texture fg-texture bg-texture fbo-texture]} :textures
-              ;;       program-id :program-id
-              ;;       fb-program-id :fb-program-id} gl]
-                (doseq [id [pgm-id fb-pgm-id]]
-                  (GL20/glDeleteProgram (int id)))
-                (doseq [id (flatten [[fbo-texture] glyph-textures fg-textures bg-textures])]
-                  (GL11/glDeleteTextures (int id))))
-              (GLFW/glfwDestroyWindow window)
-            (log/info "Exiting")
-            (on-key-fn :exit))
-          (do
-            (Thread/sleep 5)
-            (recur))))))
+                            :program-id pgm-id
+                            :fb-program-id fb-pgm-id
+                            :uniforms {:u-MVMatrix u-MVMatrix
+                                       :u-PMatrix u-PMatrix
+                                       :u-fb-MVMatrix u-fb-MVMatrix
+                                       :u-fb-PMatrix u-fb-PMatrix
+                                       :u-font u-font
+                                       :u-glyphs u-glyphs
+                                       :u-fg u-fg
+                                       :u-bg u-bg
+                                       :u-num-layers u-num-layers
+                                       :font-size font-size
+                                       :term-dim term-dim
+                                       :font-tex-dim font-tex-dim
+                                       ;:font-texture-width font-texture-width
+                                       ;:font-texture-height font-texture-height
+                                       :glyph-tex-dim glyph-tex-dim
+                                       ;:glyph-texture-width glyph-texture-width
+                                       ;:glyph-texture-height glyph-texture-height
+                                       :u-fb u-fb
+                                       :framebuffer-width framebuffer-width
+                                       :framebuffer-height framebuffer-height}
+                            :data {:glyph-image-data glyph-image-data
+                                   :fg-image-data fg-image-data
+                                   :bg-image-data bg-image-data}}
+        terminal           ;; Create and return terminal
+                           (OpenGlTerminal. term-args
+                                            fbo-texture
+                                            fullscreen
+                                            layer-character-map-cleared
+                                            layer-character-map
+                                            group-map
+                                            group->font-texture
+                                            layer-id->group
+                                            cursor-xy
+                                            fx-uniforms
+                                            gl
+                                            term-chan
+                                            term-pub
+                                            gl-lock
+                                            destroyed
+                                            window
+                                            capabilities)]
+    ;; Access to terminal will be multi threaded. Release context so that other threads can access it)))
+    (when @fullscreen
+      (zat/fullscreen! terminal (first (zat/fullscreen-sizes terminal))))
+    ;; Start font file change listener thread
+    ; TODO: fix resource reloader
+    #_(cwc/start-watch [{:path "./fonts"
+                       :event-types [:modify]
+                       :bootstrap (fn [path] (println "Starting to watch " path))
+                       :callback (fn [_ filename]
+                                   (println "Reloading font" filename)
+                                   (reset! normal-font
+                                           (make-font filename Font/PLAIN font-size)))
+                       :options {:recursive true}}])
+    ;; Poll keyboard in background thread and offer input to key-chan
+    ;; If gl-lock is false ie: the window has been closed, put :exit on the term-chan
+    (reset! key-callback-atom key-callback)
+    (reset! char-callback-atom char-callback)
+    (reset! mouse-button-callback-atom mouse-button-callback)
+    (reset! cursor-pos-callback-atom cursor-pos-callback)
+    (GLFW/glfwSetKeyCallback window key-callback)
+    (GLFW/glfwSetCharCallback window char-callback)
+    (GLFW/glfwSetMouseButtonCallback window mouse-button-callback)
+    (GLFW/glfwSetCursorPosCallback window cursor-pos-callback)
+    (future
+      ;; Wait for Display to be created
+      (.await latch)
+      (f terminal))
+    (loop []
+      (.countDown latch)
+      (if (with-gl-context gl-lock window capabilities
+            (except-gl-errors "Start of loop")
+            ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
+            ; input on the thread that created the window
+            (GLFW/glfwPollEvents)
+            ;; Close the display if the close window button has been clicked
+            ;; or the gl-lock has been released programmatically (e.g. by destroy!)
+            (or (= (GLFW/glfwWindowShouldClose window) GLFW/GLFW_TRUE) @destroyed))
+        (do
+          (log/info "Destroying display")
+          (with-gl-context gl-lock window capabilities
+            (reset! gl-lock false)
+            ;; TODO: Clean up textures and programs
+            ;;(let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id vao-id fbo-id]} :buffers
+            ;;       {:keys [font-texture glyph-texture fg-texture bg-texture fbo-texture]} :textures
+            ;;       program-id :program-id
+            ;;       fb-program-id :fb-program-id} gl]
+              (doseq [id [pgm-id fb-pgm-id]]
+                (GL20/glDeleteProgram (int id)))
+              (doseq [id (flatten [[fbo-texture] glyph-textures fg-textures bg-textures])]
+                (GL11/glDeleteTextures (int id))))
+            (GLFW/glfwDestroyWindow window)
+          (log/info "Exiting")
+          (on-key-fn :exit))
+        (do
+          (Thread/sleep 5)
+          (recur))))))
       
