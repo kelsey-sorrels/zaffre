@@ -61,8 +61,12 @@
     (doto direct-buffer
       (.put buffer)
       (.flip))
-    (let [byte-buffer (STBImage/stbi_load_from_memory direct-buffer w h c 0)]
-      (->Image (.get w) (.get h) (.get c) byte-buffer))))
+    (let [byte-buffer (STBImage/stbi_load_from_memory direct-buffer w h c 0)
+          width       (.get w)
+          height      (.get h)
+          channels    (.get c)]
+      (log/info "loaded image" location width "x" height channels) 
+      (->Image width height channels byte-buffer))))
 
 (defn write-png [{:keys [width height channels byte-buffer] :as img} path]
   (STBImageWrite/stbi_write_png path width height channels byte-buffer 0)
@@ -78,21 +82,23 @@
               scaled-bytes (* s width) (* s height) 0
               channels))
       (throw (RuntimeException. "Error scaling image")))
+    (log/info "scaled-bytes" scaled-bytes)
     (->Image (* s width) (* s height) channels scaled-bytes)))
 
-(defn copy-sub-image [{dwidth :width dheight :height dchannels :channels dbytes :byte-buffer}
+(defn copy-sub-image [{dwidth :width dheight :height dchannels :channels dbytes :byte-buffer :as dimg}
                       {swidth :width sheight :height schannels :channels sbytes :byte-buffer}
                       dx1 dy1 sx1 sy1 sx2 sy2]
   {:pre [(= dchannels schannels)]}
   (doseq [x (range (- sx2 sx1))
           y (range (- sy2 sy1))
-          :let [sidx (+ sx1 (* (+ y sy1) swidth schannels))
-                didx (+ dx1 (* (+ x dy1) dwidth dchannels))]]
+          :let [sidx (* (+ sx1 (* (+ y sy1) swidth)) schannels)
+                didx (* (+ dx1 (* (+ x dy1) dwidth)) dchannels)]]
       (.position dbytes didx)
       (.position sbytes sidx)
       (doseq [_ (range dchannels)]
         (.put dbytes (.get sbytes))))
-  (.flip sbytes))
+  (.flip dbytes)
+  dimg)
 
 (defn draw-image [dest-img
                   {:keys [width height] :as src-img}
@@ -118,10 +124,99 @@
                   0 0
                   0 0
                   swidth sheight))
-                  
+(defn- num-channels [k]
+  (case k
+    :grayscale 1
+    :rgb       3
+    :rgba      4
+    (assert (str "Unknown image type" k))))
+
+(defmulti mode (fn [{:keys [channels]} m]
+                 (case [channels m]
+                   [1 :grayscale]
+                     :nop
+                   [1 :rgb]
+                     :grayscale->rgb
+                   [1 :rgba]
+                     :grayscale->rgba
+                   [3 :grayscale]
+                     :rgb->grayscale
+                   [3 :rgb]
+                     :nop
+                   [3 :rgba]
+                     :rgb->rgba
+                   [4 :rgb]
+                     :rgba->rgb
+                   [4 :rgba]
+                     :nop)))
+
+(defmethod mode :nop [img _] img)
+
+(defmethod mode :rgb->grayscale
+  [{:keys [width height channels byte-buffer]} image-type]
+  (let [dest-buffer (BufferUtils/createByteBuffer (* width height (num-channels image-type)))]
+    (doseq [i (range (quot (.limit byte-buffer) channels))]
+      (let [r (.get byte-buffer)
+            g (.get byte-buffer)
+            b (.get byte-buffer)]
+        (.put dest-buffer (byte (quot (+ r g b) 3)))))
+    (.flip dest-buffer)
+    (->Image width height 1 dest-buffer)))
+
+(defmethod mode :grayscale->rgb
+  [{:keys [width height channels byte-buffer]} image-type]
+  (let [dest-buffer (BufferUtils/createByteBuffer (* width height (num-channels image-type)))]
+    (doseq [i (range (.limit byte-buffer))]
+      (let [v (.get byte-buffer)]
+        (.put dest-buffer v)
+        (.put dest-buffer v)
+        (.put dest-buffer v)))
+    (.flip dest-buffer)
+    (->Image width height 1 dest-buffer)))
+
+(defmethod mode :grayscale->rgba
+  [{:keys [width height channels byte-buffer]} image-type]
+  (let [dest-buffer (BufferUtils/createByteBuffer (* width height (num-channels image-type)))]
+    (doseq [i (range (.limit byte-buffer))]
+      (let [v (.get byte-buffer)]
+        (.put dest-buffer v)
+        (.put dest-buffer v)
+        (.put dest-buffer v)
+        (.put dest-buffer v)))
+    (.flip dest-buffer)
+    (->Image width height 1 dest-buffer)))
+
+(defmethod mode :rgb->rgba
+  [{:keys [width height channels byte-buffer]} image-type]
+  (let [dest-buffer (BufferUtils/createByteBuffer (* width height (num-channels image-type)))]
+    (doseq [i (range (quot (.limit byte-buffer) channels))]
+      (let [r (.get byte-buffer)
+            g (.get byte-buffer)
+            b (.get byte-buffer)]
+        (.put dest-buffer r)
+        (.put dest-buffer g)
+        (.put dest-buffer b)
+        (.put dest-buffer (byte 0))))
+    (.flip dest-buffer)
+    (->Image width height 4 dest-buffer)))
+
+(defmethod mode :rgba->rgb
+  [{:keys [width height channels byte-buffer]} image-type]
+  (let [dest-buffer (BufferUtils/createByteBuffer (* width height (num-channels image-type)))]
+    (doseq [i (range (quot (.limit byte-buffer) channels))]
+      (let [r (.get byte-buffer)
+            g (.get byte-buffer)
+            b (.get byte-buffer)
+            a (.get byte-buffer)]
+        (.put dest-buffer r)
+        (.put dest-buffer g)
+        (.put dest-buffer b)))
+    (.flip dest-buffer)
+    (->Image width height 3 dest-buffer)))
+
 (defn copy-channels [{:keys [width height channels byte-buffer]} channel]
   (let [img           (image width height)
-        result-buffer (BufferUtils/createByteBuffer (* width height))]
+        result-buffer (BufferUtils/createByteBuffer (* width height channels))]
     (doseq [x (range width)
             y (range height)]
       (.putLong result-buffer
@@ -129,5 +224,6 @@
                   (.getLong byte-buffer)
                   channel)))
     (.flip result-buffer)
+    (log/info "copy-channels" result-buffer)
     (->Image width height channels result-buffer)))
 
