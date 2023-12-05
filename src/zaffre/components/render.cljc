@@ -29,65 +29,6 @@
   (apply str (interpose " > " (reverse (env-path env)))))
 
 ;; Primitive elements
-(defprotocol PrimitiveElement
-  (element-type [this]))
-(defrecord Text [text]
-  PrimitiveElement
-  (element-type [_] :text))
-(defrecord View [x y fg bg children]
-  PrimitiveElement
-  (element-type [_] :view))
-(defrecord Layer [layer-id children]
-  PrimitiveElement
-  (element-type [_] :layer))
-(defrecord Group [group-id x y children]
-  PrimitiveElement
-  (element-type [_] :group))
-(defrecord Groups [children]
-  PrimitiveElement
-  (element-type [_] :groups))
-;; Compositing functions
-;; {:x x :y y :width w :height h :cells [...]}
-(defrecord Cell [c fg bg])
-(defn cell [c fg bg]
-  {:pre [(is (char? c) "c is not a char")
-         (is (seq? fg) "fg is not a seq")
-         (is (= (count fg) 3) "fg does not have 3 elements")
-         (is (every? int? fg) "not every element in fg is an int")
-         (is (seq? bg) "bg is not a seq")
-         (is (= (count bg) 3) "bg does not have 3 elements")
-         (is (every? int? bg) "not every element in bg is an int")]}
-  (->Cell c fg bg))
-
-(defprotocol BoxModel
-  (width [this])
-  (height [this]))
-  
-(defrecord Tiles [x y cells]
-  BoxModel
-  (width [_] (count (first cells)))
-  (height [_] (count cells)))
-
-(defn tiles [x y cells]
-  {:pre [(is (number? x) "x not number")
-         (is (pos? x) "x not positive")
-         (is (number? y) "y not number")
-         (is (pos? y) "y not positive")
-         (is (seq? cells) "cells not a sequence")
-         (is (every? seq? cells) "cells is not composed of sequences")
-         (is (every? (partial every? (partial instance? Cell)) cells) "element in cells not a Cell")]}
-  (->Tiles x y cells))
-
-(defn- blit! [dest tiles]
-  "Blits the cells in tiles into dest array"
-  #_{:pre [(is (instanceof? java.lang.Array dest) "dest not array")]}
-  (let [tx (.x tiles)
-        ty (.y tiles)]
-    (doseq [[y lines] (map-indexed vector (.cells tiles))
-            [x cell]  (map-indexed vector lines)
-            :let [i (+ x tx (* (+ y ty) (width tiles)))]]
-      (aset dest i cell))))
-
 (def primitive-elements #{:terminal :group :layer :view :string})
 (defn primitive? [component]
   (or (string? component)
@@ -99,11 +40,7 @@
 (defmacro caching-render [component render-state & body]
   `(let [component# ~component
          render-state# ~render-state
-         k# (if (string? component#)
-              component#
-              (let [type# (first component#)
-                    props# (second component#)]
-                [type# props#]))]
+         k# component#]
      (log/trace "render-state val" render-state# (contains? (deref render-state#) k#))
      ;; either get the cached value, or generate, cache and return it
      ;; use or instead of default value for get because get's default value
@@ -123,7 +60,7 @@
   (log/trace "render-primitive" (env-path->str env) component)
   (caching-render component render-state
     (if (string? component)
-      component
+      [:string {:children [component]}]
       (let [[type props & children] component
             wrapped-env (wrap-env env component type)]
         [type
@@ -141,7 +78,7 @@
                        children)))]))))
     
 (defn render-composite [env render-state component]
-  (log/trace "render-composite" (env-path->str env) component)
+  (log/trace "render-composite" (env-path->str env) (vec component))
   (caching-render component render-state
     (if (string? component)
       (zc/render-comp component {})
@@ -166,18 +103,22 @@
           (render-composite env render-state component))))))
 
 (defn merge-envs [env other]
-  {:fg (get env :fg (get other :fg))
-   :bg (get env :bg (get other :bg))
+  {:fg (or (get other :fg) (get env :fg))
+   :bg (or (get other :bg) (get env :bg))
    :x  (+ (get env :x 0) (get other :x 0))
    :y  (+ (get env :y 0) (get other :y 0))})
 
 (defn render-string-into-container [target env s]
-  (let [{:keys [x y fg bg]} env
-        target-line (aget target y)]
-    (loop [index 0 s s]
-      (when (seq s)
-        (aset target-line (+ x index) {:c (first s) :fg fg :bg bg})
-        (recur (inc index) (rest s))))))
+  (let [{:keys [x y fg bg]} env]
+    (when (< y (count target))
+      (let [target-line (aget target y)
+            max-x (count target-line)]
+      (log/trace "render-string-into-container" env s)
+      (loop [index 0 s s]
+        (let [target-index (+ x index)]
+          (when (and (seq s) (< target-index max-x))
+            (aset target-line target-index {:c (first s) :fg fg :bg bg})
+            (recur (inc index) (rest s)))))))))
 
 (defn render-layer-into-container
   ([target layer]
@@ -187,17 +128,14 @@
         (render-layer-into-container target default-style child))))
   ([target env component]
       (cond
-        ;; render raw strings
-        (string? component)
-          (render-string-into-container target env component)
-        ;; render wrapped strings
+        ;; render strings
         (= :string (first component))
           (let [[type {:keys [children]} :as props] component]
             (doseq [child children]
               (render-string-into-container target env child)))
         ;; render views
         (= :view (first component))
-          (let [[type {:keys [children]} :as props] component
+          (let [[type {:keys [children] :as props}] component
                 merged-env (merge-envs env props)]
             (doseq [child children]
               (render-layer-into-container target merged-env child)))
@@ -212,6 +150,7 @@
   (let [[type {:keys [children]} :as terminal-element] (render render-state component)
         groups children
         group-info (zt/groups container)]
+    (log/trace "render-into-container" terminal-element)
     (assert (= type :terminal)
             (format "Root component not :terminal found %s instead" type))
     ;; for each group in terminal

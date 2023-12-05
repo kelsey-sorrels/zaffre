@@ -19,7 +19,7 @@
 
 (def font ztiles/pastiche-16x16)
 
-(def width 12)
+(def width 20)
 (def height 2)
 (defn -main [& _]
   (zgl/create-terminal
@@ -43,7 +43,11 @@
             ;; Draw components
             (zcr/render-into-container terminal render-state
               [:ui {}
-                [:label {:x 5 :y 2}  "hello world"]])))
+                [:label {:x 5 :y 1}
+                  "he"
+                  [:label {:fg [255 0 0 255]} "llo"]
+                  [:label {:fg [255 128 0 255]} "wor"]
+                  [:label {:fg [255 255 0 255]} "ld"]]])))
         ;; Wire up terminal events to channels we read from
         (zevents/add-event-listener terminal :keypress
            (fn [new-key]
