@@ -55,7 +55,7 @@
   ;; render in background thread
    (let [terminal   (zgl/make-terminal [:text :rainbow]
                                        {:title "Zaffre demo"
-                                        :columns 80 :rows 24
+                                        :columns 16 :rows 16
                                         :default-fg-color [250 250 250]
                                         :default-bg-color [5 5 8]
                                         :windows-font font
@@ -83,6 +83,7 @@
                             (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
                           (zutil/put-string terminal :text 12 0 (str key-in))
                           (zutil/put-string terminal :rainbow 1 1 "Rainbow")
+                          (zutil/put-string terminal :rainbow 1 7 "Overlay")
                           (zat/put-chars! terminal :text [
                             {:c :metal       :fg [128 0 0] :bg [4 4 5] :x 12 :y 12}
                             {:c :panels      :fg [128 0 0] :bg [4 4 5] :x 13 :y 12}
@@ -91,9 +92,16 @@
                             {:c :dark-metal  :fg [128 128 0] :bg [4 4 5] :x 16 :y 12}
                             {:c :dark-panels :fg [128 128 0] :bg [4 4 5] :x 17 :y 12}
                             {:c :grass       :fg [4 4 5]   :bg [0 128 0] :x 18 :y 12}
-                            {:c :tree        :fg [4 4 5] :bg [0 128 0] :x 19 :y 12}
-                            {:c :palm        :fg [4 4 5] :bg [0 128 0] :x 20 :y 12}
-                            {:c :palm        :fg [4 4 5] :bg [0 128 0] :x 21 :y 12}])
+                            {:c :metal       :fg [4 4 5] :bg [0 128 0] :x 1 :y 7}
+                            {:c :metal       :fg [4 4 5] :bg [0 128 0] :x 2 :y 7}
+                            {:c :metal       :fg [4 4 5] :bg [0 128 0] :x 3 :y 7}
+                            {:c :metal       :fg [4 4 5] :bg [0 128 0] :x 4 :y 7}
+                            {:c :metal       :fg [4 4 5] :bg [0 128 0] :x 5 :y 7}
+                            {:c :metal       :fg [4 4 5] :bg [0 128 0] :x 6 :y 7}
+                            {:c :metal       :fg [4 4 5] :bg [0 128 0] :x 7 :y 7}
+                            {:c :metal       :fg [4 4 5] :bg [0 128 0] :x 8 :y 7}
+                            {:c :metal       :fg [4 4 5] :bg [0 128 0] :x 9 :y 7}
+                            {:c :metal       :fg [4 4 5] :bg [0 128 0] :x 10 :y 7}])
                           (zat/refresh! terminal)))
                           ;; ~30fps
                         (Thread/sleep 33)

@@ -272,6 +272,7 @@
         (if-let [glyph (first glyphs)]
           (let [image ^BufferedImage (get glyph :font-texture-image)]
             (.drawImage composite-graphics image 0 y nil)
+            (log/info "merging" (get glyph :character->transparent))
             (recur
               (+ y (int (get glyph :font-texture-height)))
               (reduce-kv (fn [m k [col row]]
@@ -279,7 +280,7 @@
                          character->col-row
                          (get glyph :character->col-row))
               (merge character->transparent
-                     (get glyph :characters->transparent))
+                     (get glyph :character->transparent))
               (rest glyphs)))
           (do
             (.dispose composite-graphics)

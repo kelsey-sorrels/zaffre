@@ -20,9 +20,9 @@ void main(void) {
   // look up in uGlphs the index in the font texture to use for the fragment
 
   vec4 result = vec4(0);
-  int numLayers = 1;
+  //int numLayers = 1;
   for (uint i = 0u; i < uint(numLayers); i++) {
-    ivec3 termXYZ = ivec3(termXY.x, termXY.y, i);
+    ivec3 termXYZ = ivec3(termXY.x, termXY.y, (i + 0u));
     uvec3 glyphXYT = texelFetch(uGlyphs, termXYZ, 0).xyz;
     uint glyphType = glyphXYT.z;
     ivec2 fontIndex = ivec2(glyphXYT.xy);
@@ -44,7 +44,7 @@ void main(void) {
         //result.r = 0.5;
         break;
       case 2u:
-        result += fnt * fnt.a + (result * (1.0 - fnt.a));
+        result += fnt * fg * fnt.a + (result * (1.0 - fnt.a));
         //result.r = 0.8;
         break;
     }
