@@ -15,7 +15,7 @@
   (:import
     (java.lang.reflect Field)
     (org.lwjgl BufferUtils)
-    (java.nio FloatBuffer ByteBuffer)
+    (java.nio Buffer FloatBuffer ByteBuffer)
     (java.nio.charset Charset)
     (org.lwjgl.opengl GL GLUtil GL11 GL12 GL13 GL14 GL15 GL20 GL30 GL32)
     (org.lwjgl.glfw GLFW GLFWVidMode GLFWVidMode$Buffer GLFWImage GLFWImage$Buffer
@@ -36,6 +36,16 @@
 (def char-callback-atom (atom nil))
 (def mouse-button-callback-atom (atom nil))
 (def cursor-pos-callback-atom (atom nil))
+
+(defn flip-byte-buffer [^ByteBuffer byte-buffer]
+  (let [buffer ^Buffer byte-buffer]
+    (.flip buffer)
+    byte-buffer))
+
+(defn flip-float-buffer [^FloatBuffer float-buffer]
+  (let [buffer ^Buffer float-buffer]
+    (.flip buffer)
+    float-buffer))
 
 (defmacro with-gl-context
   "Executes exprs in an implicit do, while holding the monitor of x and aquiring/releasing the OpenGL context.
@@ -424,10 +434,10 @@
                                             0.0 0.0])
         vertices-buffer       (-> (BufferUtils/createFloatBuffer (count vertices))
                                   (.put vertices)
-                                  (.flip))
+                                  flip-float-buffer)
         texture-coords-buffer (-> (BufferUtils/createFloatBuffer (count texture-coords))
                                   (.put texture-coords)
-                                  (.flip))
+                                  flip-float-buffer)
         vertices-count        (count vertices)
         texture-coords-count  (count texture-coords)
         vao-id                (GL30/glGenVertexArrays)
@@ -765,9 +775,9 @@
             (assert (not (nil? font-texture-width)) "font-texture-width nil")
             (assert (not (nil? font-texture-height)) "font-texture-height")
             (assert (not (nil? font-texture)) "font-texture nil")
-            (.flip glyph-image-data)
-            (.flip fg-image-data)
-            (.flip bg-image-data)
+            (flip-byte-buffer glyph-image-data)
+            (flip-byte-buffer fg-image-data)
+            (flip-byte-buffer bg-image-data)
             ;(log/info character->transparent)
             (GL14/glBlendEquation (gl-enum-value gl-blend-equation))
             (GL11/glBlendFunc (gl-enum-value (first gl-blend-func))
