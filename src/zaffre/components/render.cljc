@@ -6,8 +6,7 @@
             [zaffre.components :as zc]
             [zaffre.components.layout :as zl]
             [zaffre.text :as ztext]
-            [zaffre.terminal :as zt])
-  (:import [java.text.AttributedString]))
+            [zaffre.terminal :as zt]))
 
 (def default-style
   {:color (unchecked-int 0xffffffff) #_[255 255 255 255]
