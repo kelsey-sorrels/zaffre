@@ -426,31 +426,41 @@
       (println (GL20/glGetShaderInfoLog shader-id 10000)))
     [gl-compile-status shader-id]))
 
+(defn- program-id [vs-id fs-id & attribute-names]
+  (let [pgm-id                (GL20/glCreateProgram)
+        _ (except-gl-errors "@ let init-shaders glCreateProgram")
+        _                     (GL20/glAttachShader pgm-id vs-id)
+        _ (except-gl-errors "@ let init-shaders glAttachShader VS")
+        _                     (GL20/glAttachShader pgm-id fs-id)
+        _ (except-gl-errors "@ let init-shaders glAttachShader FS")
+        _                     (GL20/glLinkProgram pgm-id)
+        _ (except-gl-errors "@ let init-shaders glLinkProgram")
+        gl-link-status        (GL20/glGetProgrami pgm-id GL20/GL_LINK_STATUS)
+        _ (except-gl-errors "@ let init-shaders glGetProgram link status")
+        _                     (when (== gl-link-status GL11/GL_FALSE)
+                                (println "ERROR: Linking Shaders:")
+                                (println (GL20/glGetProgramInfoLog pgm-id 10000)))
+        _ (except-gl-errors "@ let before GetUniformLocation")
+        ]
+    (doseq [[i attribute-name] (map-indexed vector attribute-names)]
+      (GL20/glBindAttribLocation pgm-id i attribute-name))
+    pgm-id))
 
 (defn- init-shaders
   []
-  (let [[ok? vs-id] (load-shader (-> "shader.vs" clojure.java.io/resource slurp)  GL20/GL_VERTEX_SHADER)
-        _           (assert (== ok? GL11/GL_TRUE)) ;; something is really wrong if our vs is bad
-        [ok? fs-id] (load-shader (-> "shader.fs" clojure.java.io/resource slurp) GL20/GL_FRAGMENT_SHADER)]
+  (let [[ok? vs-id]    (load-shader (-> "shader.vs" clojure.java.io/resource slurp)  GL20/GL_VERTEX_SHADER)
+        _              (assert (== ok? GL11/GL_TRUE)) ;; something is really wrong if our vs is bad
+        [ok? fs-id]    (load-shader (-> "shader.fs" clojure.java.io/resource slurp) GL20/GL_FRAGMENT_SHADER)
+        _              (assert (== ok? GL11/GL_TRUE)) ;; something is really wrong if our fs is bad
+        [ok? fx-vs-id] (load-shader (-> "shader.vs" clojure.java.io/resource slurp) GL20/GL_VERTEX_SHADER)
+        _              (assert (== ok? GL11/GL_TRUE)) ;; something is really wrong if our fs is bad
+        [ok? fx-fs-id] (load-shader (-> "fx.fs" clojure.java.io/resource slurp) GL20/GL_FRAGMENT_SHADER)
+        _              (assert (== ok? GL11/GL_TRUE)) ;; something is really wrong if our fs is bad
+       ]
     (if (== ok? GL11/GL_TRUE)
-      (let [pgm-id                (GL20/glCreateProgram)
-            _ (except-gl-errors "@ let init-shaders glCreateProgram")
-            _                     (GL20/glAttachShader pgm-id vs-id)
-            _ (except-gl-errors "@ let init-shaders glAttachShader VS")
-            _                     (GL20/glAttachShader pgm-id fs-id)
-            _ (except-gl-errors "@ let init-shaders glAttachShader FS")
-            _                     (GL20/glLinkProgram pgm-id)
-            _ (except-gl-errors "@ let init-shaders glLinkProgram")
-            gl-link-status        (GL20/glGetProgrami pgm-id GL20/GL_LINK_STATUS)
-            _ (except-gl-errors "@ let init-shaders glGetProgram link status")
-            _                     (when (== gl-link-status GL11/GL_FALSE)
-                                    (println "ERROR: Linking Shaders:")
-                                    (println (GL20/glGetProgramInfoLog pgm-id 10000)))
-            _ (except-gl-errors "@ let before GetUniformLocation")
-            ]
-        (GL20/glBindAttribLocation pgm-id 0 "aVertexPosition")
-        (GL20/glBindAttribLocation pgm-id 1 "aTextureCoord")
-        pgm-id)
+      (let [pgm-id    (program-id vs-id fs-id "aVertexPosition" "aTextureCoord")
+            fb-pgm-id (program-id fx-vs-id fx-fs-id "aVertexPosition" "aTextureCoord")]
+        [pgm-id fb-pgm-id])
       (log/error "Error loading shaders"))))
 
 (defn ortho-matrix-buffer
@@ -625,11 +635,13 @@
     (reset! cursor-xy [x y]))
   (refresh! [_]
     (with-gl-context gl-lock
-      (let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id vao-id]} :buffers
-             {:keys [font-texture glyph-texture fg-texture bg-texture]} :textures
+      (let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id vao-id fbo-id]} :buffers
+             {:keys [font-texture glyph-texture fg-texture bg-texture fbo-texture]} :textures
              program-id :program-id
-             {:keys [u-MVMatrix u-PMatrix u-font u-glyphs u-fg u-bg font-size term-dim font-tex-dim
-                     font-texture-width font-texture-height glyph-tex-dim glyph-texture-width glyph-texture-height]} :uniforms
+             fb-program-id :fb-program-id
+             {:keys [u-MVMatrix u-PMatrix u-fb-MVMatrix u-fb-PMatrix u-font u-glyphs u-fg u-bg font-size term-dim font-tex-dim
+                     font-texture-width font-texture-height glyph-tex-dim glyph-texture-width glyph-texture-height
+                     u-fb]} :uniforms
              {:keys [^ByteBuffer glyph-image-data
                      ^ByteBuffer fg-image-data
                      ^ByteBuffer bg-image-data]} :data
@@ -691,6 +703,7 @@
         (.flip fg-image-data)
         (.flip bg-image-data)
         (try
+          (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER, fbo-id)
           (GL11/glViewport 0 0 screen-width screen-height)
           (except-gl-errors (str "glViewport " screen-width screen-height))
           (GL11/glClearColor 0.0 0.0 1.0 1.0)
@@ -721,9 +734,11 @@
           (except-gl-errors "texture coords bind")
           ; Setup font texture
           (GL13/glActiveTexture GL13/GL_TEXTURE0)
+          (except-gl-errors "font texture glActiveTexture")
           (GL11/glBindTexture GL11/GL_TEXTURE_2D font-texture)
-          (GL20/glUniform1i u-font, 0)
-          (except-gl-errors "font texture bind")
+          (except-gl-errors "font texture glBindTexture")
+          (GL20/glUniform1i u-font 0)
+          (except-gl-errors "font texture glUniform1i")
           ; Setup uniforms for glyph, fg, bg, textures
           (GL20/glUniform1i u-glyphs 1)
           (GL20/glUniform1i u-fg 2)
@@ -754,6 +769,33 @@
           (except-gl-errors "bg color glTexImage2D")
           (GL11/glDrawArrays GL11/GL_TRIANGLE_STRIP 0 vertices-count)
           (except-gl-errors "bg color glDrawArrays")
+          (GL20/glDisableVertexAttribArray 0)
+          (GL20/glDisableVertexAttribArray 1)
+
+
+          ;; Draw fbo to screen
+          (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
+          (GL11/glViewport 0 0 screen-width screen-height)
+          (GL11/glClearColor 1.0 0.0 0.0 1.0)
+          (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
+          (GL20/glUseProgram fb-program-id)
+          (GL20/glUniformMatrix4 u-fb-PMatrix false (ortho-matrix-buffer screen-width screen-height p-matrix-buffer))
+          (except-gl-errors (str "u-fb-PMatrix - glUniformMatrix4  " u-fb-PMatrix))
+          (GL20/glUniformMatrix4 u-fb-MVMatrix false (position-matrix-buffer [(- (/ screen-width 2)) (- (/ screen-height 2)) -1.0 0.0]
+                                                                          [screen-width screen-height 1.0]
+                                                                          mv-matrix-buffer))
+          (except-gl-errors (str "u-fb-MVMatrix - glUniformMatrix4  " u-fb-MVMatrix))
+          (GL20/glEnableVertexAttribArray 0);pos-vertex-attribute)
+          (except-gl-errors "vbo bind - glEnableVertexAttribArray")
+          ;;; Setup uv buffer
+          (GL20/glEnableVertexAttribArray 1);texture-coords-vertex-attribute)
+          (except-gl-errors "texture coords bind")
+          ;;; Setup font texture
+          (GL13/glActiveTexture GL13/GL_TEXTURE0)
+          (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
+          (GL20/glUniform1i u-fb 0)
+          (GL11/glDrawArrays GL11/GL_TRIANGLE_STRIP 0 vertices-count)
+          ;;;; clean up
           (GL20/glDisableVertexAttribArray 0)
           (GL20/glDisableVertexAttribArray 1)
           (GL30/glBindVertexArray 0)
@@ -875,28 +917,47 @@
           glyph-texture    (with-gl-context gl-lock (xy-texture-id next-pow-2-columns next-pow-2-rows glyph-image-data))
           fg-texture       (with-gl-context gl-lock (texture-id next-pow-2-columns next-pow-2-rows fg-image-data))
           bg-texture       (with-gl-context gl-lock (texture-id next-pow-2-columns next-pow-2-rows bg-image-data))
-          [fbo-id fbo-texture-id]
-                           (with-gl-context gl-lock (fbo-texture next-pow-2-columns next-pow-2-rows))
+          [fbo-id fbo-texture]
+                           (with-gl-context gl-lock (fbo-texture screen-width screen-height))
           ; init shaders
-          pgm-id ^long                    (with-gl-context gl-lock (init-shaders))
+          [pgm-id
+           fb-pgm-id]      (with-gl-context gl-lock (init-shaders))
           pos-vertex-attribute            (with-gl-context gl-lock (GL20/glGetAttribLocation pgm-id "aVertexPosition"))
           texture-coords-vertex-attribute (with-gl-context gl-lock (GL20/glGetAttribLocation pgm-id "aTextureCoord"))
+          fb-pos-vertex-attribute            (with-gl-context gl-lock (GL20/glGetAttribLocation fb-pgm-id "aVertexPosition"))
+          fb-texture-coords-vertex-attribute (with-gl-context gl-lock (GL20/glGetAttribLocation fb-pgm-id "aTextureCoord"))
 
           ;; We just need one vertex buffer, a texture-mapped quad will suffice for drawing the terminal.
           {:keys [vertices-vbo-id
                   vertices-count
                   texture-coords-vbo-id
                   vao-id]}          (with-gl-context gl-lock (init-buffers))
-          u-MVMatrix                (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "uMVMatrix"))
-          u-PMatrix                 (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "uPMatrix"))
-          u-font                    (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "uFont"))
-          u-glyphs                  (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "uGlyphs"))
-          u-fg                      (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "uFg"))
-          u-bg                      (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "uBg"))
-          font-size                 (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "fontSize"))
-          term-dim                  (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "termDimensions"))
-          font-tex-dim              (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "fontTextureDimensions"))
-          glyph-tex-dim             (with-gl-context gl-lock (GL20/glGetUniformLocation pgm-id "glyphTextureDimensions"))
+          [glyph-tex-dim
+           u-MVMatrix
+           u-PMatrix
+           u-font
+           u-glyphs
+           u-fg
+           u-bg
+           font-size
+           term-dim
+           font-tex-dim]  (with-gl-context gl-lock (mapv #(GL20/glGetUniformLocation pgm-id %)
+                                                         ["glyphTextureDimensions"
+                                                          "uMVMatrix"
+                                                          "uPMatrix"
+                                                          "uFont"
+                                                          "uGlyphs"
+                                                          "uFg"
+                                                          "uBg"
+                                                          "fontSize"
+                                                          "termDimensions"
+                                                          "fontTextureDimensions"]))
+           [u-fb
+            u-fb-MVMatrix
+            u-fb-PMatrix] (with-gl-context gl-lock (mapv #(GL20/glGetUniformLocation fb-pgm-id %)
+                                                         ["uFb"
+                                                          "uMVMatrix"
+                                                          "uPMatrix"]))
           terminal
           ;; Create and return terminal
           (OpenGlTerminal. columns
@@ -918,16 +979,24 @@
                             :buffers {:vertices-vbo-id vertices-vbo-id
                                       :vertices-count vertices-count
                                       :texture-coords-vbo-id texture-coords-vbo-id
-                                      :vao-id vao-id}
+                                      :vao-id vao-id
+                                      :fbo-id fbo-id}
                             :textures {:glyph-texture glyph-texture
                                        :font-texture font-texture
                                        :fg-texture fg-texture
-                                       :bg-texture bg-texture}
+                                       :bg-texture bg-texture
+                                       :fbo-texture fbo-texture}
                             :attributes {:pos-vertex-attribute pos-vertex-attribute
-                                         :texture-coords-vertex-attribute texture-coords-vertex-attribute}
+                                         :texture-coords-vertex-attribute texture-coords-vertex-attribute
+                                         :fb-pos-vertex-attribute fb-pos-vertex-attribute
+                                         :fb-texture-coords-vertex-attribute fb-texture-coords-vertex-attribute
+}
                             :program-id pgm-id
+                            :fb-program-id fb-pgm-id
                             :uniforms {:u-MVMatrix u-MVMatrix
                                        :u-PMatrix u-PMatrix
+                                       :u-fb-MVMatrix u-fb-MVMatrix
+                                       :u-fb-PMatrix u-fb-PMatrix
                                        :u-font u-font
                                        :u-glyphs u-glyphs
                                        :u-fg u-fg
@@ -939,7 +1008,8 @@
                                        :font-texture-height font-texture-height
                                        :glyph-tex-dim glyph-tex-dim
                                        :glyph-texture-width glyph-texture-width
-                                       :glyph-texture-height glyph-texture-height}
+                                       :glyph-texture-height glyph-texture-height
+                                       :u-fb u-fb}
                             :data {:glyph-image-data glyph-image-data
                                    :fg-image-data fg-image-data
                                    :bg-image-data bg-image-data}}
