@@ -21,25 +21,35 @@ void main(void) {
 
   vec4 result = vec4(0);
   int numLayers = 1;
-  for (int i = 0; i < numLayers; i++) {
-      ivec3 termXYZ = ivec3(termXY.x, termXY.y, i);
-      uvec3 glyphXYT = texelFetch(uGlyphs, termXYZ, 0).xyz;
-      int glyphType = int(glyphXYT.z);
-      uvec2 fontIndex = glyphXYT.xy;
-      ivec2 fontXY = ivec2(int(fontIndex.x) * charSize.x, int(fontIndex.y) * charSize.y);
-      // calc the position of the fragment relative to the terminal cell
-      ivec2 charXY = ivec2(fract(vTextureCoord.x * termDimensions.x) * charSize.x,
-                           (-fract(vTextureCoord.y * termDimensions.y) + 1) * charSize.y);
-      vec4 fnt = texelFetch(uFont, fontXY + charXY, 0);
+  for (uint i = 0u; i < uint(numLayers); i++) {
+    ivec3 termXYZ = ivec3(termXY.x, termXY.y, i);
+    uvec3 glyphXYT = texelFetch(uGlyphs, termXYZ, 0).xyz;
+    uint glyphType = glyphXYT.z;
+    ivec2 fontIndex = ivec2(glyphXYT.xy);
+    ivec2 fontXY = ivec2(int(fontIndex.x) * charSize.x, int(fontIndex.y) * charSize.y);
+    // calc the position of the fragment relative to the terminal cell
+    ivec2 charXY = ivec2(fract(vTextureCoord.x * termDimensions.x) * charSize.x,
+                         (-fract(vTextureCoord.y * termDimensions.y) + 1) * charSize.y);
+    vec4 fnt = texelFetch(uFont, fontXY + charXY, 0);
 
-      vec4 fg  = texelFetch(uFg, termXYZ, 0);
-      vec4 bg  = texelFetch(uBg, termXYZ, 0);
-
-    if (glyphType == 1) {
+    vec4 fg  = texelFetch(uFg, termXYZ, 0);
+    vec4 bg  = texelFetch(uBg, termXYZ, 0);
+    uint r = uint(256u * result.r);
+    switch (glyphType) {
+      case 0u:
+        //result.r = 0.2;
+        break;
+      case 1u:
         result = mix(bg, fg, fnt.r);
-    } else if (glyphType == 2) {
+        //result.r = 0.5;
+        break;
+      case 2u:
         result += fnt * fnt.a + (result * (1.0 - fnt.a));
+        //result.r = 0.8;
+        break;
     }
+    //result.r = ((r | (glyphType * 10u)  << (2u * i))/ 256u);
+    //result.r = (r + i)/ 256;
   }
   outcolor = result;
 }
