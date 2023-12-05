@@ -7,6 +7,7 @@
     [clojure.pprint :as pprint]
     [taoensso.timbre :as log]
     rockpick.core
+    [zaffre.color :as zcolor]
     [zaffre.components :as zc]
     [zaffre.font :as zfont]
     [zaffre.imageutil :as ziu]))
@@ -97,8 +98,8 @@
               :height 1
               :cursor-char-on \u2592
               :cursor-char-off \space
-              :cursor-fg [255 255 255]
-              :cursor-bg [0 0 0]}
+              :cursor-fg (zcolor/color 255 255 255 255)
+              :cursor-bg (zcolor/color 0 0 0 255)}
       :on-focus (fn [this e]
                   (zc/set-state! this (fn [s] (merge s {:focused true}))))
       :on-blur (fn [this e]
@@ -254,16 +255,19 @@
                                         ; TODO: close?
                                         ;(.close img)
                                         ;(.close clipped-img)
-                                        (log/info "NativeImage render" (get style :clip) width "x" height)
+                                        (log/debug "NativeImage render" (get style :clip) width "x" height)
+                                        (log/debug "NativeImage render" (count lines))
                                         #_(doseq [line lines]
                                           (log/info (vec line)))
                                         (let [img-characters (mapv (fn [[line1 line2]]
-                                                        (mapv (fn [px1 px2]
-                                                               {:c \u2580
-                                                                :fg (conj (mapv (partial bit-and 0xFF) px1) 255)
-                                                                :bg (conj (mapv (partial bit-and 0xFF) px2) 255)}) ; ▀
-                                                             line1 line2))
-                                                      (partition 2 lines))]
+                                                                     (mapv (fn [px1 px2]
+                                                                            {:c \u2580 ; ▀
+                                                                             :fg (zcolor/color
+                                                                                   (conj (mapv (comp (partial bit-and 0xFF) byte) px1) 255))
+                                                                             :bg (zcolor/color
+                                                                                   (conj (mapv (comp (partial bit-and 0xFF) byte) px2) 255))})
+                                                                           line1 line2))
+                                                                   (partition 2 lines))]
                                           (log/trace "img-characters" img-characters)
                                           (zc/csx [:img {:width width :height (/ height 2)}
                                                    img-characters])))))
@@ -304,8 +308,8 @@
                                 bg-b (get bg :b)
                                 bg-a 255]
                           {:c (get zfont/cp437-unicode (int ch))
-                           :fg [fg-r fg-g fg-b fg-a]
-                           :bg [bg-r bg-g bg-b bg-a]}))
+                           :fg (zcolor/color [fg-r fg-g fg-b fg-a])
+                           :bg (zcolor/color [bg-r bg-g bg-b bg-a])}))
                          line))
                layer)]
       (log/trace "pixels" pixels)
@@ -315,8 +319,8 @@
   (mapv (fn [[line1 line2]]
           (mapv (fn [px1 px2]
                  {:c \u2580
-                  :fg (conj (mapv (partial bit-and 0xFF) px1) 255)
-                  :bg (conj (mapv (partial bit-and 0xFF) px2) 255)}) ; ▀
+                  :fg (zcolor/color (conj (mapv (partial bit-and 0xFF) px1) 255))
+                  :bg (zcolor/color (conj (mapv (partial bit-and 0xFF) px2) 255))}) ; ▀
                line1 line2))
         (partition 2 data)))
 
@@ -363,11 +367,11 @@
                               :justify-content :center
                               :position :fixed
                               :top 0 :left 0
-                              :color [0 0 0 128]
-                              :background-color [0 0 0 128]}} [
+                              :color (zcolor/color 0 0 0 128)
+                              :background-color (zcolor/color 0 0 0 128)}} [
                 [:view {:style (merge
-                                 {:color [255 255 255 255]
-                                  :background-color [0 0 0 255]
+                                 {:color (zcolor/color 255 255 255 255)
+                                  :background-color (zcolor/color 0 0 0 255)
                                   :margin-top 10
                                   ;:margin-bottom 10
                                   :padding 0

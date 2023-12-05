@@ -1,5 +1,6 @@
 (ns zaffre.components.render
   (:require clojure.data
+            [clojure.string]
             [clojure.test :refer [is]]
             [taoensso.timbre :as log]
             [zaffre.components :as zc]
@@ -9,8 +10,8 @@
   (:import [java.text.AttributedString]))
 
 (def default-style
-  {:color [255 255 255 255]
-   :background-color [0 0 0 255]
+  {:color (unchecked-int 0xffffffff) #_[255 255 255 255]
+   :background-color (unchecked-int 0x000000ff) #_[0 0 0 255]
    :border-style :single
    :border 0
    :border-left 0
@@ -103,21 +104,25 @@
 (defn layout->bounds [{:keys [x y width height]}]
   [x y (+ x width) (+ y height)])
 
-(defn render-string-into-container [^"[[Ljava.lang.Object;" target x y color background-color s blend-mode]
+(defmacro between [lower-bound value upper-bound]
+  `(and (< ~lower-bound ~value) (< ~value ~upper-bound)))
+
+(defn render-string-into-container [target x y color background-color s blend-mode]
   {:pre [(number? x)
          (number? y)
-         (vector? color)
-         (vector? background-color)
+         (or (integer? color) (vector? color))
+         (or (integer? background-color) (vector? background-color))
          (string? s)]}
-  (when (< -1 y (count target))
-    (let [^"[Ljava.lang.Object;" target-line (aget target y)
-          max-x (count target-line)
-          style #{}]
-    (loop [index 0 s s]
-      (let [target-index (+ x index)]
-        (when (and (seq s) (< -1 target-index max-x))
-          (aset target-line target-index {:c (first s) :fg color :bg background-color :blend-mode blend-mode})
-          (recur (inc index) (rest s))))))))
+  (when (between -1 y (zt/num-rows target))
+    (let [max-x (zt/num-cols target)
+          row y]
+      (loop [index 0 s s]
+        (let [col (+ x index)
+              c   (first s)]
+          (when (and (seq s) 
+                     (between -1 col max-x))
+            (zt/set! target (first s) blend-mode color background-color col row)
+            (recur (inc index) (rest s))))))))
 
 (defn render-text-into-container [target text-element]
   {:pre [(= (first text-element) :text)
@@ -131,7 +136,9 @@
                                                           [:text props (map (fn [child] [:text {} [child]]) children)]
                                                           text-element))]
     (log/trace "render-text-into-container lines" (vec lines))
-    (doseq [[dy line] (map-indexed vector lines)]
+    (doseq [[dy line] (map-indexed vector lines)
+            :let [default-color (get default-style :color)
+                  default-background-color (get default-style :background-color)]]
       (when (and (< dy height) (not (empty? line)))
         (log/trace "rendering line" (vec line))
         ;; remove inc? for spaces
@@ -155,16 +162,16 @@
             (render-string-into-container
               target
               (+ x dx) (+ y dy)
-              (or color (get default-style :color))
-              (or background-color (get default-style :background-color))
+              (or color default-color)
+              (or background-color default-background-color)
               (clojure.string/trim s)
               mix-blend-mode)))))))
 
-(defn render-img-into-container [^"[[Ljava.lang.Object;" target img-element]
+(defn render-img-into-container [target img-element]
   {:pre [(= (first img-element) :img)
          (map? (second img-element))
          #_(not (empty? (last img-element)))]}
-  (log/debug "render-img-into-container" img-element)
+  #_(log/debug "render-img-into-container" img-element)
   (let [[type {:keys [style zaffre/layout] :or {style {}} :as props} children] img-element
         {:keys [mix-blend-mode] :or {mix-blend-mode (get default-style :mix-blend-mode)}} style
         {:keys [x y width height overflow-bounds]} layout
@@ -173,24 +180,23 @@
         ;; bounds for overflow/target container (whichever is smaller)
         min-x (dec (max 0 overflow-min-x))
         min-y (dec (max 0 overflow-min-y))
-        max-y (min overflow-max-y (count target))
+        max-y (min overflow-max-y (zt/num-rows target))
         lines (last img-element)]
-    (log/debug "render-img-into-container layout " layout)
-    (log/trace "render-img-into-container lines" (vec lines))
+    #_(log/debug "render-img-into-container layout " layout)
+    #_(log/trace "render-img-into-container lines" (vec lines))
     (doseq [[dy line] (map-indexed vector lines)
-            :let [target-y (+ y dy)]]
-      (when (and (< dy height) (not (empty? line)) (< min-y target-y max-y))
-        (log/trace "rendering line" (vec line))
+            :let [row (+ y dy)]]
+      (when (and (< dy height) (not (empty? line)) (< min-y row max-y))
+        #_(log/trace "rendering line" (vec line))
         (doseq [[dx {:keys [c fg bg] :as pixel}] (map-indexed vector line)]
           (assert (char? c))
-          (assert (vector? fg))
-          (assert (vector? bg))
-          (let [^"[Ljava.lang.Object;" target-line (aget target target-y)
-                max-x (min overflow-max-x (count target-line))
-                target-x (int (+ x dx))]
-            (when (< min-x target-x max-x)
-              (log/trace "rendering pixel x:" target-x " y:" target-y " " pixel " max-x:" max-x " max-y:" (count target))
-              (aset target-line target-x (merge pixel {:blend-mode mix-blend-mode})))))))))
+          (assert (or (integer? fg) (vector? fg)))
+          (assert (or (integer? bg) (vector? bg)))
+          (let [max-x (min overflow-max-x (zt/num-cols target))
+                col (int (+ x dx))]
+            (when (< min-x col max-x)
+              #_(log/trace "rendering pixel x:" col " y:" row " " pixel " max-x:" max-x " max-y:" (zt/num-rows target))
+              (zt/set! target (get pixel :c) mix-blend-mode (get pixel :fg) (get pixel :bg) col row))))))))
 
 (defn element-seq [element]
   "Returns :view and top-level :text elements."
@@ -240,7 +246,7 @@
       (when background-color
         (doseq [dy (range height)
                 :let [color (or color (get default-style :color))]]
-          (render-string-into-container target x (+ y dy) color background-color (apply str (repeat width " ")) mix-blend-mode)))
+          (render-string-into-container target x (+ y dy) color background-color (clojure.string/join (repeat width " ")) mix-blend-mode)))
       ; render border when set
       (when border-style
         (let [border-map (case border-style
@@ -251,8 +257,8 @@
             (render-string-into-container target x y color background-color
               (str (when (or (< 0 border) (< 0 border-left))
                      (get border-map :top-left))
-                   (apply str (repeat (- width (+ (or border border-left) (or border border-right)))
-                                      (get border-map :horizontal)))
+                   (clojure.string/join (repeat (- width (+ (or border border-left) (or border border-right)))
+                                                (get border-map :horizontal)))
                    (when (or (< 0 border) (< 0 border-right))
                      (get border-map :top-right)))
                mix-blend-mode))
@@ -267,8 +273,8 @@
             (render-string-into-container target x (+ y height -1) color background-color
               (str (when (or (< 0 border) (< 0 border-left))
                      (get border-map :bottom-left))
-                   (apply str (repeat (- width (+ (or border border-left) (or border border-right)))
-                                (get border-map :horizontal)))
+                   (clojure.string/join (repeat (- width (+ (or border border-left) (or border border-right)))
+                                                (get border-map :horizontal)))
                    (when (or (< 0 border) (< 0 border-right))
                      (get border-map :bottom-right)))
               mix-blend-mode)))))
@@ -563,6 +569,8 @@
     :default
       (vec (mapcat extract-native-elements (zc/element-children element)))))
 
+(def terminal-layer-buffers (atom {}))
+
 ;; Renders component into container. Does not call refresh! on container
 (defn render-into-container
   ([target component]
@@ -595,21 +603,25 @@
           (assert (= type :layer)
                   (format "Expected :layer found %s instead. %s" type (str layer)))
           ;; create a container to hold cells
-          (let [layer-container (object-array rows)
+          ;; TODO reuse buffers
+          (let [layer-container (zt/array-buffers columns rows)#_(or (get @terminal-layer-buffers id)
+                                    (let [buffers (zt/array-buffers columns rows)]
+                                      (swap! terminal-layer-buffers assoc id buffers)
+                                      buffers))
                 ;; merge layer width height into layer's style
-                {:keys [columns rows]} (get layer-info id)
-                style (merge style {:width columns :height rows})]
-            (doseq [i (range rows)]
-              (aset layer-container i (object-array columns)))
+                {:keys [columns rows]} (get layer-info id)]
             (log/trace "render-into-container - layer" id)
+            ;; reusing layer-container so zero out before rendering
+            ;(zt/zero! layer-container)
             ;; render layer into layer-container
             (render-layer-into-container
                layer-container
                (-> layer
+                 ;; assign width and height to layer style
                  (assoc-in [1 :style :width] columns)
                  (assoc-in [1 :style :height] rows)))
             #_(log-layer layer-container)
-            ;; replace chars in layer
+            ;; send layer changes to terminal
             (zt/replace-chars! target id layer-container))))
       root-element)))
 

@@ -63,6 +63,8 @@
                 (.height result-height)
                 YGMeasureFunc/toLong)))))))
 
+(def text-measure-func-memo (memoize text-measure-func))
+
 (defn yoga-align [value]
   (case value
     :auto Yoga/YGAlignAuto
@@ -301,8 +303,8 @@
  
     (when (= type :text)
       (if (every? string? children)
-        (Yoga/YGNodeSetMeasureFunc node (text-measure-func (first children)))
-        (Yoga/YGNodeSetMeasureFunc node (text-measure-func (ztext/text element)))))
+        (Yoga/YGNodeSetMeasureFunc node (text-measure-func-memo (first children)))
+        (Yoga/YGNodeSetMeasureFunc node (text-measure-func-memo (ztext/text element)))))
 
     (when (= type :img)
       (let [{:keys [width height]} props]

@@ -1,5 +1,6 @@
 (ns zaffre.util
   (:require [zaffre.terminal :as zat]
+            [zaffre.color :as zcolor]
             [clojure.core.async :as async :refer [>! <! chan to-chan timeout go go-loop thread]]
             clojure.set)
   (:import (zaffre.terminal Terminal)))
@@ -9,24 +10,26 @@
 
 (defn mk-string
   ([x y string]
-   (mk-string (int (Math/ceil x)) (int (Math/ceil y)) string [255 255 255] [0 0 0] #{}))
+   (mk-string (int (Math/ceil x)) (int (Math/ceil y)) string
+              (zcolor/color 255 255 255) (zcolor/color 0 0 0) :normal))
   ([x y string fg bg]
-   (mk-string (int (Math/ceil x)) (int (Math/ceil y)) string fg bg #{}))
-  ([x y string fg bg styles]
-   {:pre [(clojure.set/superset? #{:underline :bold} styles)]}
+   (mk-string (int (Math/ceil x)) (int (Math/ceil y)) string fg bg :normal))
+  ([x y string fg bg blend-mode]
    (map-indexed (fn [i c] {:c  c
                            :fg fg
                            :bg bg
                            :x  (+ x i)
-                           :y  y})
+                           :y  y
+                           :blend-mode blend-mode})
                 string)))
 (defn put-string
   ([^Terminal screen layer-id x y string]
-   (put-string screen layer-id (int (Math/ceil x)) (int (Math/ceil y)) string [255 255 255] [0 0 0] #{}))
+   (put-string screen layer-id (int (Math/ceil x)) (int (Math/ceil y))
+               string (zcolor/color 255 255 255) (zcolor/color 0 0 0) :normal))
   ([^Terminal screen layer-id x y string fg bg]
-   (put-string screen layer-id (int (Math/ceil x)) (int (Math/ceil y)) string fg bg #{}))
-  ([^Terminal screen layer-id x y string fg bg styles]
-   (zat/put-chars! screen layer-id (mk-string x y string fg bg styles))))
+   (put-string screen layer-id (int (Math/ceil x)) (int (Math/ceil y)) string fg bg :normal))
+  ([^Terminal screen layer-id x y string fg bg blend-mode]
+   (zat/put-chars! screen layer-id (mk-string x y string fg bg blend-mode))))
 
 
 ;; Memoized function that returns the points between
