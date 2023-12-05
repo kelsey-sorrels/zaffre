@@ -710,7 +710,7 @@
       (when-let [on-mouse-leave (-> hit second :on-mouse-leave)]
         (on-mouse-leave {:target hit})))))
 
-(defonce tab-index (atom -1))
+(defonce focus-index (atom -1))
 
 (defn zipper-elements
   [root-element]
@@ -726,8 +726,8 @@
     (lazy-seq
       (cons z (zipper-descendants (zip/next z))))))
 
-(defn tabable-elements
-  "Returns a sequence of all zippers pointing to tabable elements."
+(defn focusable-element-locs
+  "Returns a sequence of all zippers pointing to focusable elements."
   [root-element]
   (->> root-element
     zipper-elements
@@ -737,43 +737,63 @@
         (and (vector? element)
              (< 2 (count element))
              (let [[_ props _] element
-                   class-name (get props :class)
-                   class-name (cond
-                                (set? class-name)
-                                  class-name
-                                (nil? class-name)
-                                  #{}
-                                :else
-                                  #{class-name})]
-                #_(log/info "class-name" class-name (contains? class-name :tabable))
-                (contains? class-name :tabable))))))))
+                   focusable (get props :gossamer.components/focusable)]
+                focusable)))))))
 
-(defn advance-tab-index!
-  [container]
-  (swap! tab-index (fn [index]
-    (if (= -1 index)
-      0
-      (mod (inc index) (count (tabable-elements container)))))))
+(defn radio-group
+  [radio]
+  (-> radio second (get :name)))
 
-(defn decrease-tab-index!
+(defn same-group?
+  [radio1 radio2]
+  (= (radio-group radio1)
+     (radio-group radio2)))
+
+(defn broadcast-radio-checked
+  [broadcaster root-element]
+  (log/info "broadcast-radio-checked")
+  (doseq [groupmate (->> root-element
+                      focusable-element-locs
+                      (map zip/node)
+                      (filter (partial same-group? broadcaster))
+                      (filter (partial not= broadcaster)))
+          :let [set-value (-> groupmate second :gossamer.components/set-value)]
+          :when set-value]
+    (log/info "setting value for" groupmate)
+    (set-value false)))
+
+(defn advance-focus-index!
   [container]
-  (swap! tab-index (fn [index]
-    (mod (dec index) (count (tabable-elements container))))))
+  (swap! focus-index (fn [index]
+    (let [num-focusable-elements (count (focusable-element-locs container))]
+      (log/info "advance-focus-index!" index num-focusable-elements)
+      (if (pos? num-focusable-elements)
+        (if (= -1 index)
+          0
+          (mod (inc index) (count (focusable-element-locs container))))
+        index)))))
+
+(defn decrease-focus-index!
+  [container]
+  (swap! focus-index (fn [index]
+    (mod (dec index) (count (focusable-element-locs container))))))
 
 (defn active-element
   [container]
-  (if-not (neg? @tab-index)
-    (-> container
-      tabable-elements
-      (nth @tab-index)
-      zip/node)
-    container))
+  (when-not (neg? @focus-index)
+    (let [element-locs (focusable-element-locs container)]
+      (when (< @focus-index (count element-locs))
+        (-> element-locs
+          (nth @focus-index)
+          zip/node)))))
 
 (defn handle-keypress
-  [target-element k action]
+  [target-element root-element k action]
   (log/info "handle-keypress" (vec (take 2 target-element)))
   (when-let [on-keypress (-> target-element second :on-keypress)]
-    (on-keypress {:key k :target target-element})))
+    (on-keypress {:key k :target target-element}))
+  (when (= (-> target-element second :gossamer.components/type) :radio)
+    (broadcast-radio-checked target-element root-element)))
 
 (defn handle-focus
   [target-element]
@@ -797,7 +817,8 @@
         exec-in-context (chan (buffer 100))
         render-chan (g/render-with-context component props exec-in-context)
         last-render (atom nil)
-        last-layout (atom nil)]
+        last-layout (atom nil)
+        input-values (atom {})]
 
     ; Subscribe to events and send them to chans
     (a/sub term-pub :keypress keypress-chan)
@@ -824,13 +845,13 @@
                     ; capture element layout
                     {:keys [layout-elements]} (meta dom)]
                 #_(log/info "layout-elements" (vec layout-elements))
-                ; On first render set tabable index to first element claiming focus. -1 otherwise.
+                ; On first render set focusable index to first element claiming focus. -1 otherwise.
                 (when (nil? @last-render)
                   #_(log/info "finding autofocus in" (mapv zip/node (zipper-descendants (zipper-elements root-element))))
                   ;; set initial focused element
-                  (when-let [[initial-tab-index initial-element-loc]
+                  (when-let [[initial-focus-index initial-element-loc]
                           (->> root-element
-                            tabable-elements
+                            focusable-element-locs
                             (map-indexed vector)
                             (filter (fn [[_ element-loc]]
                               #_(log/info "element-loc" element-loc)
@@ -839,14 +860,14 @@
                                 #_(log/info "props" props)
                                 (get props :autofocus))))
                             first)]
-                    (log/info "setting tab-index" initial-tab-index)
-                  (reset! tab-index initial-tab-index)
+                    (log/info "setting focus-index" initial-focus-index)
+                  (reset! focus-index initial-focus-index)
                   (>! exec-in-context (partial handle-focus (zip/node initial-element-loc)))))
                 ; Store last render for event handlers
                 (reset! last-render root-element)
                 ; Store last layout for event handlers
-                (log/info "layout-elements")
-                (doseq [elem layout-elements]
+                #_(log/info "layout-elements")
+                #_(doseq [elem layout-elements]
                   (log/info "layout-element" elem))
                 (reset! last-layout layout-elements))))
           ; Draw terminal frame
@@ -865,10 +886,10 @@
                    :tab
                      (do
                        (>! exec-in-context (partial handle-blur (active-element @last-render)))
-                       (advance-tab-index! @last-render)
+                       (advance-focus-index! @last-render)
                        (>! exec-in-context (partial handle-focus (active-element @last-render))))
                    ; else, send to active element
-                   (>! exec-in-context (partial handle-keypress (active-element @last-render) k action))))
+                   (>! exec-in-context (partial handle-keypress (active-element @last-render) @last-render k action))))
              click-chan
                (>! exec-in-context (partial handle-click layout event))
              mouse-enter-chan

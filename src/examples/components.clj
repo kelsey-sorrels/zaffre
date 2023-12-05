@@ -89,8 +89,8 @@
       [:group {:id :ui}
         [:layer {:id :main}
           [:view {:key "inputs"}
-            #_[Clock {:key "clock"}]
-            #_[FPSMeter {:key "fpsmeter"}]
+            [Clock {:key "clock"}]
+            [FPSMeter {:key "fpsmeter"}]
             [zcui/Panel {:key "input-panel" :title "Inputs"}
               [zcui/Input {:key "input1"
                            :autofocus true
@@ -101,8 +101,12 @@
                            :on-change text-value-on-change} []]
               [zcui/Input {:key "input3"
                            :style {:cursor-fg (zcolor/color 208 65 244)}
-                           :on-change text-value-on-change} []]]]
-          #_[:view {:key "images"
+                           :on-change text-value-on-change} []]]
+            [zcui/Panel {:key "radio-panel" :title "Radio Group"}
+              [zcui/Radio {:key "option1" :name "group1" :value "option1"} [:text {} "Option 1"]]
+              [zcui/Radio {:key "option2" :name "group1" :value "option2"} [:text {} "Option 2"]]
+              [zcui/Radio {:key "option3" :name "group1" :value "option3"} [:text {} "Option 3"]]]]
+          [:view {:key "images"
                   :style {:border 1
                           :border-style :single
                           :text-align :right}}
