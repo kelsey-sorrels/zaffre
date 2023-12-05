@@ -84,7 +84,7 @@
                           (Thread/sleep 33)
                           (recur))]
         (async/sub term-pub :keypress key-chan)
-        (async/sub term-pub :mousedown mouse-chan)
+        (async/sub term-pub :click mouse-chan)
         (async/sub term-pub :close close-chan)
         ;; get key presses in fg thread
         (go-loop []
@@ -104,7 +104,8 @@
                                           :1 :0
                                           :2 :1
                                           :3 :2)))
-              \q (zat/destroy! terminal))
+              \q (zat/destroy! terminal)
+              nil)
             (recur)))
          (go-loop []
            (let [click (async/<! mouse-chan)

@@ -850,6 +850,7 @@
                                                    else-font))
           ;; Last [col row] of mouse movement
           mouse-col-row      (atom nil)
+          mousedown-col-row (atom nil)
           ;; false if Display is destoyed
           destroyed          (atom false)
           gl-lock            (atom true)
@@ -976,14 +977,18 @@
           mouse-button-callback (proxy [GLFWMouseButtonCallback] []
                                   (invoke [window button action mods]
                                     (let [state  (condp = (int action)
-                                                   GLFW/GLFW_PRESS :mousedown
-                                                   GLFW/GLFW_RELEASE :mouseup)
+                                                   GLFW/GLFW_PRESS :mouse-down
+                                                   GLFW/GLFW_RELEASE :mouse-up)
                                           [col
                                            row]   @mouse-col-row]
                                       (async/put! term-chan (case (int button)
                                         0 {:button :left :type state :col col :row row}
                                         1 {:button :right :type state :col col :row row}
-                                        2 {:button :middle :type state :col col :row row})))))
+                                        2 {:button :middle :type state :col col :row row}))
+                                      (when (and (= state :mouse-up)
+                                                 (= [col row] @mousedown-col-row))
+                                        (async/put! term-chan {:type :click :col col :row row}))
+                                      (reset! mousedown-col-row [col row]))))
           cursor-pos-callback   (proxy [GLFWCursorPosCallback] []
                                   (invoke [window xpos ypos]
                                     (let [col (int (quot xpos (int character-width)))
