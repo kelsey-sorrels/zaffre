@@ -175,7 +175,7 @@ maps))
                 cursor-char-off
                 cursor-fg
                 cursor-bg]} (get props :style)
-        cursor (if (and focused show-cursor) cursor-char-on (if selected "x" " "))]
+        cursor (if (and focused show-cursor) cursor-char-on (if selected "*" " "))]
      (g/use-effect (fn []
        (go-loop []
          (<! (timeout 400))
@@ -183,7 +183,7 @@ maps))
          (recur))) [])
 
     [:view props
-      (cons [:text {:key "radio-text"} (str "[" cursor "]")]
+      (cons [:text {:key "radio-text"} (str "(" cursor ")")]
         children)]))
 
 (g/defcomponent ProgressBar
