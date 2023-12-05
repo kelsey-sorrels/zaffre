@@ -30,11 +30,6 @@
 ;  (fn [_ _ _ calls]
 ;    (spit "calls.log" calls)))
     
-(defn log-call [method-name & args]
-  (spit "calls.log" {:method-name method-name :args args} :append true)
-  (spit "calls.log" "\n" :append true)
-  (swap! calls (fn [calls] (conj calls {:method-name method-name :args args}))))
-
 (defn- byte-buffer->str [^ByteBuffer buffer]
   (if buffer
     (loop [s ""]
@@ -92,6 +87,7 @@
             (.toPath file)))))))
 
 (declare make-font)
+(declare font-data)
 
 (def system-fonts-map
   (delay
@@ -101,7 +97,7 @@
               (try
                 #_(log/info "type path" (type path))
                 (let [file        (.toFile path)
-                      font-info   (make-font file)
+                      font-info   (make-font (font-data file))
                       font-name   (font-name font-info)
                       font-family (font-family font-info)]
                   [[font-name file]
@@ -124,7 +120,8 @@
               file
               (get (system-fonts) x)))))))
   
-(defn make-font
+
+(defn font-data
   [x]
   (if-let [font-path (as-font-path x)]
     ;; Load font from file
@@ -136,11 +133,15 @@
          direct-buffer (BufferUtils/createByteBuffer (.limit buffer))]
       (doto direct-buffer
         (.put buffer)
-        (.flip))
-      (if (zero? (STBTruetype/stbtt_InitFont info direct-buffer))
-        (throw (RuntimeException. (str "Error loading font " x)))
-        info))
+        (.flip)))
     (throw (RuntimeException. (str "Font " x " does not exist")))))
+  
+(defn make-font
+  [font-data]
+  (let [info (STBTTFontinfo/calloc)]
+    (if (zero? (STBTruetype/stbtt_InitFont info font-data))
+      (throw (RuntimeException. "Error loading font"))
+      info)))
 
 (def cjk-blocks
   (set
@@ -155,7 +156,6 @@
   "Returns a map from codepoint to glyph index"
   (into {}
     (reduce (fn [m codepoint]
-             (log-call "STBTruetype/stbtt_FindGlyphIndex" font (int codepoint))
              (let [glyph-index (STBTruetype/stbtt_FindGlyphIndex font (int codepoint))]
                (if  (and (pos? glyph-index)
                          (not (contains? cjk-blocks codepoint)))
@@ -239,7 +239,6 @@
 (defn-ms hmetrics [^MemoryStack ms ^STBTTFontinfo font-info glyph-index]
   (let [advance-width     (.mallocInt ms 1)
         left-side-bearing (.mallocInt ms 1)]
-    (log-call "STBTruetype/stbtt_GetGlyphHMetrics" font-info (int glyph-index) advance-width left-side-bearing)
     (STBTruetype/stbtt_GetGlyphHMetrics font-info (int glyph-index) advance-width left-side-bearing)
     [(.get advance-width) (.get left-side-bearing)]))
 
@@ -247,7 +246,6 @@
   (let [ascent   (.mallocInt ms 1)
         descent  (.mallocInt ms 1)
         line-gap (.mallocInt ms 1)]
-    (log-call "STBTruetype/stbtt_GetFontVMetrics" font-info ascent descent line-gap)
     (STBTruetype/stbtt_GetFontVMetrics font-info ascent descent line-gap)
     [(.get ascent) (.get descent) (.get line-gap)]))
 
@@ -256,15 +254,6 @@
         iy0 (.mallocInt ms 1)
         ix1 (.mallocInt ms 1)
         iy1 (.mallocInt ms 1)]
-    (log-call "STBTruetype/stbtt_GetGlyphBitmapBox"
-      font-info
-      (int glyph-index)
-      (float scale)
-      (float scale)
-      ix0
-      iy0
-      ix1
-      iy1)
     (STBTruetype/stbtt_GetGlyphBitmapBox
       font-info
       (int glyph-index)
@@ -290,17 +279,6 @@
     ;        "left-side-bearing" left-side-bearing "y" y)
     ;(log/info "x0" x0 "y0" y0 "x1" x1 "y1" y1)
     ;; draw greyscale font
-    (log-call "STBTruetype/stbtt_MakeGlyphBitmapSubpixel"
-      font-info
-      (get img :byte-buffer)
-      char-width 
-      char-height
-      char-width
-      scale
-      scale
-      0.0
-      0.0
-      (int glyph-index))
     (STBTruetype/stbtt_MakeGlyphBitmapSubpixel
       font-info
       (get img :byte-buffer)
@@ -316,7 +294,8 @@
     ;(zimg/write-png chr-img (str "char-image/" (int codepoint) ".png"))
     ;(zimg/write-png img (str "char-image/" (int codepoint) "-raw.png"))
     ;; convert to rgba
-    (zimg/mode chr-img :rgba)))
+    (zimg/mode chr-img :rgba)
+    #_(zimg/image char-width char-height 4)))
   
 (defn glyph-graphics? [m]
   (every?
@@ -373,7 +352,8 @@
   (glyph-graphics [this]
     ;; Adjust canvas to fit character atlas size
     (let [ms (MemoryStack/create)
-          ^STBTTFontinfo font-info   (make-font name-or-path)
+          font-data                  (font-data name-or-path)
+          ^STBTTFontinfo font-info   (make-font font-data)
           scale                      (STBTruetype/stbtt_ScaleForPixelHeight
                                        font-info
                                        size)
