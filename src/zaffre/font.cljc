@@ -10,19 +10,29 @@
            (java.nio ByteBuffer)
            (java.nio.file Files Path)
            (org.lwjgl BufferUtils)
+           (org.lwjgl.system MemoryStack)
            (org.lwjgl.stb STBTruetype STBTTFontinfo)
            (org.apache.commons.io IOUtils)))
 
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* true)
 
+(defmacro defn-ms [name [memory-stack & args] & body]
+  `(defn ~name [~memory-stack ~@args]
+     (.push ~memory-stack)
+     (try
+       ~@body
+       (finally
+         (.pop ~memory-stack)))))
+
 (def calls (atom []))
 ;(add-watch calls :persist
 ;  (fn [_ _ _ calls]
 ;    (spit "calls.log" calls)))
     
-
 (defn log-call [method-name & args]
+  (spit "calls.log" {:method-name method-name :args args} :append true)
+  (spit "calls.log" "\n" :append true)
   (swap! calls (fn [calls] (conj calls {:method-name method-name :args args}))))
 
 (defn- byte-buffer->str [^ByteBuffer buffer]
@@ -226,26 +236,26 @@
       compact-image)
     image))
 
-(defn- hmetrics [^STBTTFontinfo font-info glyph-index]
-  (let [advance-width     (BufferUtils/createIntBuffer 1)
-        left-side-bearing (BufferUtils/createIntBuffer 1)]
+(defn-ms hmetrics [^MemoryStack ms ^STBTTFontinfo font-info glyph-index]
+  (let [advance-width     (.mallocInt ms 1)
+        left-side-bearing (.mallocInt ms 1)]
     (log-call "STBTruetype/stbtt_GetGlyphHMetrics" font-info (int glyph-index) advance-width left-side-bearing)
     (STBTruetype/stbtt_GetGlyphHMetrics font-info (int glyph-index) advance-width left-side-bearing)
     [(.get advance-width) (.get left-side-bearing)]))
 
-(defn- vmetrics [^STBTTFontinfo font-info]
-  (let [ascent   (BufferUtils/createIntBuffer 1)
-        descent  (BufferUtils/createIntBuffer 1)
-        line-gap (BufferUtils/createIntBuffer 1)]
+(defn-ms vmetrics [^MemoryStack ms ^STBTTFontinfo font-info]
+  (let [ascent   (.mallocInt ms 1)
+        descent  (.mallocInt ms 1)
+        line-gap (.mallocInt ms 1)]
     (log-call "STBTruetype/stbtt_GetFontVMetrics" font-info ascent descent line-gap)
     (STBTruetype/stbtt_GetFontVMetrics font-info ascent descent line-gap)
     [(.get ascent) (.get descent) (.get line-gap)]))
 
-(defn- glyph-bitmap-box [^STBTTFontinfo font-info scale glyph-index]
-  (let [ix0 (BufferUtils/createIntBuffer 1)
-        iy0 (BufferUtils/createIntBuffer 1)
-        ix1 (BufferUtils/createIntBuffer 1)
-        iy1 (BufferUtils/createIntBuffer 1)]
+(defn-ms glyph-bitmap-box [^MemoryStack ms ^STBTTFontinfo font-info scale glyph-index]
+  (let [ix0 (.mallocInt ms 1)
+        iy0 (.mallocInt ms 1)
+        ix1 (.mallocInt ms 1)
+        iy1 (.mallocInt ms 1)]
     (log-call "STBTruetype/stbtt_GetGlyphBitmapBox"
       font-info
       (int glyph-index)
@@ -267,11 +277,11 @@
     [(.get ix0) (.get iy0) (.get ix1) (.get iy1)]))
 
 
-(defn- char-image [font-info char-width char-height ascent scale codepoint glyph-index]
+(defn- char-image [ms font-info char-width char-height ascent scale codepoint glyph-index]
   (let [;scale 0.015625
-        [x0 y0 x1 y1]         (glyph-bitmap-box font-info scale glyph-index)
+        [x0 y0 x1 y1]         (glyph-bitmap-box ms font-info scale glyph-index)
         baseline              (int (* ascent scale))
-        [_ left-side-bearing] (map (partial * scale) (hmetrics font-info glyph-index))
+        [_ left-side-bearing] (map (partial * scale) (hmetrics ms font-info glyph-index))
         y                     (+ baseline y0)
         img                   (zimg/image char-width char-height 1)
         chr-img               (zimg/image char-width char-height 1)]
@@ -362,13 +372,15 @@
   GlyphGraphics
   (glyph-graphics [this]
     ;; Adjust canvas to fit character atlas size
-    (let [^STBTTFontinfo font-info   (make-font name-or-path)
+    (let [ms (MemoryStack/create)
+          ^STBTTFontinfo font-info   (make-font name-or-path)
           scale                      (STBTruetype/stbtt_ScaleForPixelHeight
                                        font-info
                                        size)
           [advance
            left-side-bearing]        (map (partial * scale)
-                                       (hmetrics font-info
+                                       (hmetrics ms
+                                                 font-info
                                                  (STBTruetype/stbtt_FindGlyphIndex
                                                    font-info
                                                    (int \M))))
@@ -377,7 +389,7 @@
           char-height                size
           [ascent
            descent
-           line-gap]                 (vmetrics font-info)
+           line-gap]                 (vmetrics ms font-info)
           _ (log/info "characters per line" (characters-per-line char-width (count characters)))
           cwidth     2048
           cheight    (zutil/next-pow-2 (* char-height (int (Math/ceil (/ (count characters)
@@ -394,11 +406,11 @@
       ;(log/info "character-idxs" (vec (character-idxs characters)))
       (let [texture-image (zimg/image width height)]
         ;; Loop through each character, drawing it
-        (doseq [[[codepoint glyph-index] col row]  (reverse char-idxs)]
+        (doseq [[[codepoint glyph-index] col row] char-idxs]
           (try
             (let [x  (* col char-width)
                   y  (* row char-height)
-                  chr-img (char-image font-info char-width char-height ascent scale codepoint glyph-index)]
+                  chr-img (char-image ms font-info char-width char-height ascent scale codepoint glyph-index)]
               #_(log/info "drawing" codepoint "@" x y)
               (zimg/draw-image texture-image
                              chr-img
@@ -415,7 +427,6 @@
          :character-height char-height
          :character->col-row (character->col-row char-idxs)
          :character->transparent (zipmap characters (repeat transparent))}))))
-
 
 (defrecord CompositeFont [fonts]
   GlyphGraphics
