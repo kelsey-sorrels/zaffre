@@ -43,37 +43,32 @@
                              (zat/refresh! terminal)
                            (Thread/sleep 10)
                            (recur))
-             input-chan (go-loop []
-               (let [new-key (async/<!! (zat/get-key-chan terminal))]
-                 (reset! last-key new-key)
-                 ;; quit on \q keypress
-                 (case new-key
-                   \q (zat/destroy! terminal)
-                   nil)
-                 (if (= new-key :exit)
-                   (do
-                     (async/close! fx-chan)
-                     (System/exit 0))
-                   (recur))))]
+             ;; Every 33ms, draw a full frame
+             render-chan (go-loop []
+                           (dosync
+                             (let [key-in (or @last-key \?)]
+                               (zat/clear! terminal)
+                               (zutil/put-string terminal :text 0 0 "Hello world")
+                               (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
+                                 (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
+                               (zutil/put-string terminal :text 12 0 (str key-in))
+                               (zutil/put-string terminal :rainbow 1 1 "Rainbow")
+                               (zat/refresh! terminal)))
+                               ;; ~30fps
+                             (Thread/sleep 33)
+                             (recur))]
        ;; get key presses in fg thread
        (loop []
-         (let [key-in (or @last-key \?)]
-           (dosync
-             (let [key-in (or @last-key \?)]
-               (log/info "rendering terminal")
-               (zat/clear! terminal)
-               (zutil/put-string terminal :text 0 0 "Hello world")
-               (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
-                 (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
-               (zutil/put-string terminal :text 12 0 (str key-in))
-               (zutil/put-string terminal :rainbow 1 1 "Rainbow")
-               (zat/refresh! terminal)))
-               ;; ~30fps
-           (Thread/sleep 33)
-           (if (= key-in :exit)
+         (let [new-key (async/<!! (zat/get-key-chan terminal))]
+           (reset! last-key new-key)
+           ;; quit on \q keypress
+           (case new-key
+             \q (zat/destroy! terminal)
+             nil)
+           (if (= new-key :exit)
              (do
                (async/close! fx-chan)
-               (async/close! input-chan)
+               (async/close! render-chan)
                (System/exit 0))
              (recur))))))))
 

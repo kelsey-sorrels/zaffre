@@ -37,7 +37,6 @@
      (try
        (monitor-enter lockee#)
        (when @lockee#
-         (log/info "Aquired gl-lock")
          (GLFW/glfwMakeContextCurrent window#)
          (GL/setCapabilities capabilities#)
          ~@body)
@@ -170,17 +169,17 @@
         ;; type nil as ByteBuffer to avoid reflection on glTexImage2D
         ^ByteBuffer bbnil nil]
     (log/info "Creating framebuffer" width "x" height)
+    (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER fbo-id)
     (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
     (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MIN_FILTER GL11/GL_LINEAR)
     (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MAG_FILTER GL11/GL_LINEAR)
     (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_WRAP_S GL12/GL_CLAMP_TO_EDGE)
     (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_WRAP_T GL12/GL_CLAMP_TO_EDGE)
-    (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGBA8 width height 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bbnil)
+    (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB width height 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bbnil)
     (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
     (except-gl-errors "end of fbo-texture")
 
-    (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER fbo-id)
-    (GL32/glFramebufferTexture GL30/GL_FRAMEBUFFER GL30/GL_COLOR_ATTACHMENT0 1 #_texture-id 0)
+    (GL32/glFramebufferTexture GL30/GL_FRAMEBUFFER GL30/GL_COLOR_ATTACHMENT0 texture-id 0)
     (GL11/glDrawBuffer GL30/GL_COLOR_ATTACHMENT0)
     (except-framebuffer-status fbo-id)
     (except-gl-errors "end of fbo")
@@ -345,7 +344,7 @@
       (set! (.m33 ortho-matrix) m33)
       (.clear matrix-buffer)
       (.get ortho-matrix matrix-buffer)
-      (.flip matrix-buffer)
+      ;(.flip matrix-buffer)
       matrix-buffer)))
 
 (defn position-matrix-buffer
@@ -358,7 +357,7 @@
       (.scale matrix (Vector3f. (get s 0) (get s 1) (get s 2)))
       (.clear matrix-buffer)
       (.get matrix matrix-buffer)
-      (.flip matrix-buffer)
+      ;(.flip matrix-buffer)
       matrix-buffer)))
 
 (defn- init-buffers []
@@ -516,7 +515,6 @@
   (set-cursor! [_ x y]
     (reset! cursor-xy [x y]))
   (refresh! [_]
-    (log/info "refresh!" gl-lock window capabilities)
     (with-gl-context gl-lock window capabilities
       (let [{{:keys [vertices-vbo-id vertices-count texture-coords-vbo-id vao-id fbo-id]} :buffers
              {:keys [font-texture glyph-texture fg-texture bg-texture fbo-texture]} :textures
@@ -707,9 +705,7 @@
 
           ;; Draw fbo to screen
           (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
-          (GL11/glViewport (- (/ display-width 2) (/ screen-width 2))
-                           (- (/ display-height 2) (/ screen-height 2))
-                           screen-width screen-height)
+          (GL11/glViewport 0 0 screen-width screen-height)
           (GL11/glClearColor 0.0 1.0 0.0 1.0)
           (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
           (GL20/glUseProgram fb-program-id)
@@ -741,7 +737,6 @@
           (GL20/glUseProgram 0)
           (GL30/glBindVertexArray 0)
           (except-gl-errors "end of refresh")
-          (log/info "glfwSwapBuffers" window)
           (GLFW/glfwSwapBuffers window)
           (except-gl-errors "end of update")
           (catch Error e
@@ -1123,7 +1118,6 @@
               ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
               ; input on the thread that created the window
               ;(Display/processMessages)
-              (log/info "glfwPollEvents")
               (GLFW/glfwPollEvents)
               ;; Close the display if the close window button has been clicked
               ;; or the gl-lock has been released programmatically (e.g. by destroy!)
