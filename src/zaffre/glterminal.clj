@@ -621,11 +621,12 @@
         ;; Setup render to FBO
         (try
           (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER, fbo-id)
+          (GL11/glEnable GL11/GL_BLEND)
           (GL30/glEnablei GL11/GL_BLEND fbo-id)
           (GL14/glBlendFuncSeparate GL11/GL_SRC_ALPHA GL11/GL_ONE_MINUS_SRC_ALPHA GL11/GL_ONE GL11/GL_ONE_MINUS_SRC_ALPHA)
           (GL11/glViewport 0 0 framebuffer-width framebuffer-height)
           (except-gl-errors (str "glViewport " framebuffer-width framebuffer-height))
-          (GL11/glClearColor 0.0 0.0 1.0 1.0)
+          (GL11/glClearColor 0.0 0.0 0.0 0.0)
           (except-gl-errors (str "glClearColor  " 0.0 0.0 1.0 1.0))
           (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
           (except-gl-errors (str "glClear  " (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT)))
@@ -732,7 +733,7 @@
           ;; Draw fbo to screen
           (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
           (GL11/glViewport 0 0 framebuffer-width framebuffer-height)
-          (GL11/glClearColor 0.0 1.0 0.0 1.0)
+          (GL11/glClearColor 0.0 0.0 0.0 0.0)
           (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
           (GL11/glBlendFunc GL11/GL_ONE GL11/GL_ONE_MINUS_SRC_ALPHA)
           (GL20/glUseProgram fb-program-id)
