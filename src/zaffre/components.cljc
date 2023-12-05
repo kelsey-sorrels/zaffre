@@ -248,6 +248,7 @@
 (defn component-instance? [instance]
   (instance? ComponentInstance instance))
 
+;; From https://reactjs.org/docs/events.html
 (def valid-event-handler-keys #{
                                 ;; keyboard events
                                 :on-keydown
@@ -280,7 +281,9 @@
                                 ;; animation events
                                 :on-animation-start
                                 :on-animation-end
-                                :on-animation-iteration})
+                                :on-animation-iteration
+                                ;; form events
+                                :on-change})
 
 (defn is-valid-event-handler-key? [k]
   (contains? valid-event-handler-keys k))
