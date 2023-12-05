@@ -123,6 +123,8 @@
       (fn [this]
         (let [{:keys [value focused]} (zc/state this)
               {:keys [style] :as props} (zc/props this)
+              prop-value (get props :value)
+              value (or prop-value value)
               {:keys [cursor-char-on cursor-char-off
                       cursor-fg cursor-bg]}  style
               duty-on 400
@@ -135,7 +137,7 @@
                                   :border-bottom 1}} [
                     [:text {} [
                       [:text {} [value]]
-                      [:text {:style {:fg cursor-fg :bg cursor-bg}} [(str cursor)]]]]]])))}))
+                      [:text {:style {:color cursor-fg :background-color cursor-bg}} [(str cursor)]]]]]])))}))
 
 (def FileResource (zc/create-react-class {
   :display-name "FileResource"
@@ -346,10 +348,10 @@
                               :justify-content :center
                               :position :fixed
                               :top 0 :left 0
-                              :fg [0 0 0 128]
-                              :bg [0 0 0 128]}} [
-                [:view {:style {:bg [0 0 0 255]
-                                :fg [255 255 255 255]
+                              :color [0 0 0 128]
+                              :background-color [0 0 0 128]}} [
+                [:view {:style {:color [255 255 255 255]
+                                :background-color [0 0 0 255]
                                 :margin-top 10
                                 ;:margin-bottom 10
                                 :padding 0

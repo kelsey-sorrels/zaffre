@@ -43,9 +43,20 @@ void main(void) {
         break;
       case 2u:
         // from https://www.w3.org/TR/compositing-1/#csscompositingrules_CSS
+
+		// co: the premultiplied pixel value after compositing
+		// Cs: the color value of the source graphic element being composited
+		// αs: the alpha value of the source graphic element being composited
+		// Cb: the color value of the backdrop
+		// αb: the alpha value of the backdrop
+
+        // Cs as
         vec4 m = mix(bg, fg, fnt.a);
-        result = m  +  result * (1.0 - m.a);
-        result.a = 0.5;
+
+        // co = Cs * αs + Cb * αb * (1 - αs)
+        result.rgb = m.rgb  * m.aaa +  result.rgb * result.aaa * (1.0 - m.aaa);
+        // αo = αs + αb * (1 - αs)
+        result.a = m.a + result.a * (1 - m.a);
         break;
     }
     //result.r = ((r | (glyphType * 10u)  << (2u * i))/ 256u);

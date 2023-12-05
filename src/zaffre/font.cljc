@@ -137,9 +137,10 @@
     (throw (RuntimeException. (str "Font " x " does not exist")))))
   
 (defn make-font
-  [font-data]
-  (let [info (STBTTFontinfo/calloc)]
-    (if (zero? (STBTruetype/stbtt_InitFont info font-data))
+  [^ByteBuffer font-data]
+  (let [info (STBTTFontinfo/calloc)
+        result ^boolean (STBTruetype/stbtt_InitFont info font-data)]
+    (if-not result
       (throw (RuntimeException. "Error loading font"))
       info)))
 

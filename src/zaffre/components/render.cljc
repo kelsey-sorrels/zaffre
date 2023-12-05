@@ -9,8 +9,8 @@
   (:import [java.text.AttributedString]))
 
 (def default-style
-  {:fg [255 255 255 255]
-   :bg [0 0 0 255]
+  {:color [255 255 255 255]
+   :background-color [0 0 0 255]
    :border-style :single
    :border 0
    :border-left 0
@@ -44,6 +44,7 @@
 ; https://stackoverflow.com/questions/5612302/which-css-properties-are-inherited
 (def inheritable-styles #{
   :azimuth
+  :background-color
   :border-collapse
   :border-spacing
   :caption-side
@@ -89,8 +90,9 @@
   ([element] (cascade-style {} element))
   ([parent-style [type props children]]
     (if (or (= type :text) (= type :img))
-      [type (update-in props [:style] #(select-keys (merge parent-style %)
-                                                    inheritable-styles)) children]
+      [type
+       (update-in props [:style] #(merge (select-keys parent-style inheritable-styles) %))
+       children]
       (let [new-style (merge (select-keys parent-style inheritable-styles) (get props :style {}))]
         [type
          (assoc props :style new-style)
@@ -100,11 +102,11 @@
 (defn layout->bounds [{:keys [x y width height]}]
   [x y (+ x width) (+ y height)])
 
-(defn render-string-into-container [^"[[Ljava.lang.Object;" target x y fg bg s]
+(defn render-string-into-container [^"[[Ljava.lang.Object;" target x y color background-color s]
   {:pre [(number? x)
          (number? y)
-         (vector? fg)
-         (vector? bg)
+         (vector? color)
+         (vector? background-color)
          (string? s)]}
   (when (< -1 y (count target))
     (let [^"[Ljava.lang.Object;" target-line (aget target y)
@@ -113,7 +115,7 @@
     (loop [index 0 s s]
       (let [target-index (+ x index)]
         (when (and (seq s) (< -1 target-index max-x))
-          (aset target-line target-index {:c (first s) :fg fg :bg bg})
+          (aset target-line target-index {:c (first s) :fg color :bg background-color})
           (recur (inc index) (rest s))))))))
 
 (defn render-text-into-container [target text-element]
@@ -148,12 +150,12 @@
           (log/trace "line-length" line-length)
           (log/trace "lengths" (vec span-lengths))
           (log/trace "offsets" (vec offsets))
-          (doseq [[dx [s {:keys [fg bg]} _]] (map vector offsets line)]
+          (doseq [[dx [s {:keys [color background-color]} _]] (map vector offsets line)]
             (render-string-into-container
               target
               (+ x dx) (+ y dy)
-              (or fg (get default-style :fg))
-              (or bg (get default-style :bg))
+              (or color (get default-style :color))
+              (or background-color (get default-style :background-color))
               (clojure.string/trim s))))))))
 
 (defn render-img-into-container [^"[[Ljava.lang.Object;" target img-element]
@@ -226,15 +228,15 @@
 (defmethod render-component-into-container :view
   [target [type {:keys [style zaffre/layout]}]]
     (let [{:keys [x y width height]} layout
-          {:keys [fg bg
+          {:keys [color background-color
                   border border-style
                   border-top border-bottom
                   border-left border-right]} (merge default-style style)]
       ;; render background when set
-      (when bg
+      (when background-color
         (doseq [dy (range height)
-                :let [fg (or fg (get default-style :fg))]]
-          (render-string-into-container target x (+ y dy) fg bg (apply str (repeat width " ")))))
+                :let [color (or color (get default-style :color))]]
+          (render-string-into-container target x (+ y dy) color background-color (apply str (repeat width " ")))))
       ; render border when set
       (when border-style
         (let [border-map (case border-style
@@ -242,7 +244,7 @@
                            :double double-border)]
           ; render top
           (when (or (< 0 border) (< 0 border-top))
-            (render-string-into-container target x y fg bg
+            (render-string-into-container target x y color background-color
               (str (when (or (< 0 border) (< 0 border-left))
                      (get border-map :top-left))
                    (apply str (repeat (- width (+ (or border border-left) (or border border-right)))
@@ -252,12 +254,12 @@
           ; render middle
           (doseq [dy (range (- height 2))]
             (when (or (< 0 border) (< 0 border-left))
-              (render-string-into-container target x (+ y dy 1) fg bg (str (get border-map :vertical))))
+              (render-string-into-container target x (+ y dy 1) color background-color (str (get border-map :vertical))))
             (when (or (< 0 border) (< 0 border-right))
-            (render-string-into-container target (+ x width -1) (+ y dy 1) fg bg (str (get border-map :vertical)))))
+              (render-string-into-container target (+ x width -1) (+ y dy 1) color background-color (str (get border-map :vertical)))))
           ; render bottom
           (when (or (< 0 border) (< 0 border-bottom))
-            (render-string-into-container target x (+ y height -1) fg bg
+            (render-string-into-container target x (+ y height -1) color background-color
               (str (when (or (< 0 border) (< 0 border-left))
                      (get border-map :bottom-left))
                    (apply str (repeat (- width (+ (or border border-left) (or border border-right)))
@@ -313,6 +315,7 @@
                    element-seq
                    vec)]
     (log/trace "render-layer-into-container elements" elements)
+    #_(log/info "render-layer-into-container layer-en-place" (zc/tree->str layer-en-place))
     (doseq [element elements]
       (log/debug "render-layer-into-container element" element)
       (render-component-into-container target element))))

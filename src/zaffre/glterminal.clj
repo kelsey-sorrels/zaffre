@@ -382,20 +382,20 @@
           matrix-buffer matrix-buffer]
           (.clear matrix-buffer)
           (.get ortho-matrix matrix-buffer))
-    (let [ortho-matrix (doto (Matrix4f.) (.identity))
+    (let [ortho-matrix ^Matrix4f (doto (Matrix4f.) (.identity))
           matrix-buffer matrix-buffer
           zNear   10
           zFar   -10
-          m00     (/ 2 viewport-width)
-          m11     (/ 2 viewport-height)
-          m22     (/ -2 (- zFar zNear))
-          m23     (/ (- (+ zFar zNear)) (- zFar zNear))
-          m33     1]
-      (set! (.m00 ortho-matrix) m00)
-      (set! (.m11 ortho-matrix) m11)
-      (set! (.m22 ortho-matrix) m22)
-      (set! (.m23 ortho-matrix) m23)
-      (set! (.m33 ortho-matrix) m33)
+          m00val     (float (/ 2 viewport-width))
+          m11val     (float (/ 2 viewport-height))
+          m22val     (float (/ -2 (- zFar zNear)))
+          m23val     (float (/ (- (+ zFar zNear)) (- zFar zNear)))
+          m33val     (float 1)]
+      (.m00 ortho-matrix m00val)
+      (.m11 ortho-matrix m11val)
+      (.m22 ortho-matrix m22val)
+      (.m23 ortho-matrix m23val)
+      (.m33 ortho-matrix m33val)
       (.clear matrix-buffer)
       (.get ortho-matrix matrix-buffer)
       matrix-buffer)))

@@ -2,8 +2,7 @@
   (:require [clojure.test :refer [is]]
             [taoensso.timbre :as log]
             [zaffre.components :as zc]
-            [zaffre.components.ui :as zcui]
-            [zaffre.terminal :as zt]))
+            [zaffre.components.ui :as zcui]))
 
 (defn send-event-to-dom [event dom]
   (log/info "send-events-to-dom" event)

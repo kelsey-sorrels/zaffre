@@ -5,19 +5,18 @@
             :url "https://raw.githubusercontent.com/kelsey-sorrels/zaffre/master/LICENSE"}
   :dependencies [[org.clojure/clojure "1.9.0"]
                  [org.clojure/core.cache "0.7.1"]
-                 [org.clojure/core.async "0.3.465"]
-                 ^{:voom {:repo "https://github.com/rogerallen/hello_lwjgl" :branch "master"}}
+                 [org.clojure/core.async "0.4.474"]
                  [hello_lwjgl "0.4.0-20180105_044833-g683b3f6"]
-                 [commons-io/commons-io "2.5"]
+                 [commons-io/commons-io "2.6"]
                  [overtone/at-at "1.2.0"]
                  [kelsey-sorrels/tinter "0.1.1-SNAPSHOT"]
                  [rockpick "0.1.0-SNAPSHOT"]
-                 [nio "1.0.3"]
-                 [clj-http "3.9.0"]
-                 [org.joml/joml "1.7.1"]
+                 [nio "1.0.4"]
+                 [clj-http "3.9.1"]
+                 [org.joml/joml "1.9.11"]
                  [im.bci/pngdecoder "0.13"]
-                 [com.taoensso/timbre "4.2.1"]
-                 [clojure-watch "0.1.11"]]
+                 [com.taoensso/timbre "4.10.0"]
+                 [clojure-watch "0.1.14"]]
   :lein-release {:deploy-via :lein-deploy
                  :scm :git
                  :build-uberjar true}
