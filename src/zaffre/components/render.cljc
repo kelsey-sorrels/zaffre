@@ -2,16 +2,10 @@
   (:require [clojure.test :refer [is]]
             [taoensso.timbre :as log]
             [zaffre.components :as zc]
-            [zaffre.components.layout :as zcl]
             [zaffre.terminal :as zt]))
 
 
-;; Components -> Elements -> Rendered into terminal
 ;; Env functions
-(defn get-props-in-env [env k]
-  (if (nil? env)
-    nil
-    (get-in env [:props k] (get-props-in-env (get env :parent) k))))
 
 (defn wrap-env [parent child key]
   {
@@ -29,11 +23,6 @@
 
 (defn env-path->str [env]
   (apply str (interpose " > " (reverse (env-path env)))))
-
-(defn compute-style [env]
-  (if (nil? env)
-    {}
-    (merge (get env :style) (compute-style (get env :parent)))))
 
 ;; Primitive elements
 (def primitive-elements #{:terminal :group :layer :view :text})
@@ -73,7 +62,7 @@
             wrapped-env (wrap-env env component type)]
         [type
          (assoc props
-                :children
+                :zaffre/children
                 (vec (map-indexed
                        (fn [index child]
                          (render
@@ -93,7 +82,7 @@
       (let [type     (first component)
             props    (or (second component) {})
             children (drop 2 component)
-            element  (zc/render-comp type (assoc props :children children))]
+            element  (zc/render-comp type (assoc props :zaffre/children children))]
         (render env render-state element)))))
 
 (defn render
@@ -106,23 +95,16 @@
         (render-primitive env render-state component)
         (render-composite env render-state component)))))
 
-(def cascaded-styles
-  [:fg
-   :bg])
-
-(defn cascade-style [parent child]
-  (merge (juxt cascaded-styles parent) child))
-
 (defn flatten-text [parent-style element]
   "Splits text into words and flattens all child text element"
   (lazy-seq
     (if (string? element)
       (let [words (clojure.string/split (clojure.string/trim element) #"\s+")]
-        (interpose 
-          [:text (assoc parent-style :children [" "])]
-          (map (fn [word] [:text (assoc parent-style :children [word])])
+        (interpose
+          [:text (assoc parent-style :zaffre/children [" "])]
+          (map (fn [word] [:text (assoc parent-style :zaffre/children [word])])
             words)))
-      (let [[type {:keys [style children]}] element]
+      (let [[type {:keys [style zaffre/children]}] element]
         (if (= type :text)
           (mapcat (partial flatten-text (merge parent-style style)) children)
           (assert false (format "found non-text element %s" type)))))))
@@ -158,104 +140,73 @@
   (when (< y (count target))
     (let [target-line (aget target y)
           max-x (count target-line)]
-    (log/info "render-string-into-container" x y fg bg s)
+    (log/trace "render-string-into-container" x y fg bg s)
     (loop [index 0 s s]
       (let [target-index (+ x index)]
         (when (and (seq s) (< target-index max-x))
           (aset target-line target-index {:c (first s) :fg fg :bg bg})
           (recur (inc index) (rest s))))))))
 
-(defn render-text-into-container [target props text]
-  (log/info "render-text-into-container" props text)
-  (let [{:keys [top left width height fg bg]} props
-        [_ {:keys [style children] :as props}] text
-        lines (wrap-lines width
-                          props
-                          text)]
-    (log/info "render-text-into-container lines" lines)
-    (doseq [[index line] (map-indexed vector lines)]
-      (let [offsets (cons 0 (reductions + (map (fn [word] (text-length word)) line)))]
-        (doseq [[offset [_ {:keys [style children]}]] (map vector offsets line)]
-          (render-string-into-container target (+ left offset) (+ top index) fg bg (first children)))))))
-
-(defn render-view-into-container [target props]
-  (log/trace "render-view-into-container" props)
-  (let [{:keys [top left width height fg bg]} props]
-    ;; TODO draw non-bordered-view
-    ;; TODO draw bordered-view))
-    nil))
-
-;; Mirrors https://github.com/facebook/yoga/blob/master/yoga/Yoga-internal.h#L195
 (def default-style
-  {:left 0
-   :top 0
-   :fg [255 255 255 255]
+  {:fg [255 255 255 255]
    :bg [0 0 0 255]
-
-   :width 0
-   :height 0
-
-   :flex 0
-
-   ;:margin-left 0
-   ;:margin-top 0
-   ;:margin-Right 0
-   ;:margin-bottom 0
-   ;:padding-left 0
-   ;:padding-top 0
-   ;:padding-right 0
-   ;:padding-bottom 0
-   ;:border-left 0
-   ;:border-top 0
-   ;:border-right 0
-   ;:border-bottom 0
-   :flex-direction :column
 })
 
-(defn style-element-tree [parent-env element]
-  (zc/walk-elements
-    identity
-    (fn [[_ parent-props] [child-type child-props]]
-      [child-type
-       (merge child-props (cascade-style parent-props child-props))])
-    element))
+(defn render-text-into-container [target text]
+  (log/info "render-text-into-container" text)
+  (let [[type {:keys [zaffre/style zaffre/layout zaffre/children] :as props}] text
+        {:keys [x y width height]} layout
+        style (merge default-style style)
+        lines (wrap-lines width
+                          style
+                          text)]
+    (log/info "render-text-into-container lines" lines)
+    (doseq [[dy line] (map-indexed vector lines)]
+      ;; remove inc? for spaces
+      (let [offsets (cons 0 (reductions + (map (fn [word] (inc (count (last word)))) line)))]
+        (doseq [[dx {:keys [fg bg text]}] (map vector offsets line)]
+          (when (< dy height)
+            (render-string-into-container target (+ x dx) (+ y dy) fg bg text)))))))
 
-(defn element-seq [element]
-  (log/info "element-seq" element)
-  (tree-seq (fn [[_ {:keys [children]}]] (not (empty? children)))
-            (fn [[_ {:keys [children]}]] children)
-            element))
+
+(defn component-seq [component]
+  (tree-seq (fn [[_ {:keys [zaffre/children]}]] (every? (comp not string?) children))
+            (fn [[_ {:keys [zaffre/children]}]] children)
+            component))
+
+(defmulti render-component-into-container (fn [target [type]] type))
+
+;; render text
+(defmethod render-component-into-container :text
+  [target [type {:keys [zaffre/children zaffre/style zaffre/layout]}]]
+  (doseq [child children]
+    (render-text-into-container target child)))
+
+;; render views
+(defmethod render-component-into-container :view
+  [target [type {:keys [zaffre/style zaffre/layout]}]]
+    nil)
+
+;; Do nothing for :layer
+(defmethod render-component-into-container :layer
+  [_ component]
+  nil)
+
+;; die if not :layer nor :view nor :text
+(defmethod render-component-into-container :default
+  [_ component]
+  (assert false (format "Found unknown component %s" component)))
 
 (defn render-layer-into-container
-  [target layer-info layer]
-  (log/trace "render-layer-into-container" layer-info layer)
-  (let [{:keys [columns rows]} layer-info
-        env {:width columns
-             :height rows}
-        styled-tree (style-element-tree env layer)
-        laid-out-tree (zcl/layout-element styled-tree)]
-    (log/info "styled-tree" styled-tree)
-    (doseq [element (element-seq laid-out-tree)]
-      (cond
-        ;; render text
-        (= :text (first element))
-          (let [[type {:keys [children] :as props}] element]
-            (doseq [child children]
-              (render-text-into-container target props child)))
-        ;; render views
-        (= :view (first element))
-          (let [[type {:keys [children] :as props}] element]
-            (doseq [child children]
-              (render-view-into-container target props child)))
-        ;; no-op :layer
-        (= :layer (first element))
-          nil
-        ;; die on other elements
-        :default
-          (assert false (format "Found unknown element %s" element))))))
+  [target layer]
+  (log/info "render-layer-into-container" layer)
+  (let [descendants (vec (component-seq layer))]
+    (log/info "render-layer-into-container descendants" descendants))
+  (doseq [descendant (component-seq layer)]
+    (render-component-into-container target descendant)))
                     
 (defn layer-info [group-info]
-  "Given a terminal's group info, create a map layer-id->{:columns :rows}."
+  "Given a terminal's group info, create a map layer-id->{:columns rows}."
   (into {}
     (mapcat identity
       (map (fn [{:keys [layers columns rows]}]
@@ -266,8 +217,8 @@
 
 ;; Renders component into container. Does not call refresh! on container
 (defn render-into-container
-  [container render-state component]
-  (let [group-info (zt/groups container)
+  [target render-state component]
+  (let [group-info (zt/groups target)
         layer-info (layer-info group-info)
         [type {:keys [children]} :as terminal-element] (render {:style default-style}
                                                                render-state
@@ -284,17 +235,20 @@
               (format "Expected :group found %s instead" type))
       ;; update group pos
       (when pos
-        (zt/alter-group-pos! container group-id pos))
+        (zt/alter-group-pos! target group-id pos))
       ;; for each layer in group
-      (doseq [[type {:keys [layer-id]} :as layer] layers]
+      (doseq [[type {:keys [layer-id zaffre/style]} :as layer] layers]
         (assert (= type :layer)
                 (format "Expected :layer found %s instead" type))
         ;; create a container to hold cells
-        (let [layer-container (object-array rows)]
+        (let [layer-container (object-array rows)
+              ;; merge layer width height into layer's style
+              {:keys [columns rows]} (get layer-info layer-id)
+              style (merge style {:width columns :height rows})]
           (doseq [i (range rows)]
             (aset layer-container i (object-array columns)))
           ;; render layer into layer-container
-          (render-layer-into-container layer-container (get layer-info layer-id) layer)
+          (render-layer-into-container layer-container  (assoc-in layer [1 :zaffre/style] style))
           ;; replace chars in layer
-          (zt/replace-chars! container layer-id layer-container))))))
+          (zt/replace-chars! target layer-id layer-container))))))
 
