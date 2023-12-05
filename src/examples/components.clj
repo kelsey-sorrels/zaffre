@@ -11,14 +11,12 @@
             [zaffre.tilesets :as ztiles]
             [zaffre.util :as zutil]
             clojure.inspector
-            [clojure.core.async :refer [go-loop]]
             [gossamer.core-graal :as g]
             [taoensso.timbre :as log]
             [overtone.at-at :as atat])
   (:import (zaffre.font CompositeFont)
            (java.time LocalDateTime)
            (java.time.format DateTimeFormatter)))
-
 
 (def font @ztiles/pastiche-16x16) 
 
