@@ -25,25 +25,27 @@ Zaffre is fast console library for drawing characters to a screen.
 Add the dependency to your project:
 
 ```clojure
-[zaffre "0.4.0"]
+[zaffre "0.4.0-SNAPSHOT"]
 ```
 
 ## Examples
 
 Run with
 
-`lein run examples.handleinputinmain`
+`lein run examples.basic`
 
 or
 
-`lein run -m examples.drawinmain`
+`lein run -m examples.tileset`
 
 etc.
 
 
 ## Quickstart
 
-Setup your namespace imports:
+Add zaffre as a dependency to your project. `[zaffre "0.4.0-SNAPSHOT]`
+
+Run a little hello world terminal
 
 ```clojure
 (ns examples.basic
