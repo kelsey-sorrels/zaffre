@@ -160,29 +160,32 @@
                            0 "Got 0 for framebuffer status. An error occurred"))))))
   
 
-(defn- fbo-texture [^long width ^long height]
-  (let [fbo-id     (GL30/glGenFramebuffers)
-        texture-id (GL11/glGenTextures)
-        ;; type nil as ByteBuffer to avoid reflection on glTexImage2D
-        ^ByteBuffer bbnil nil]
-    (log/info "Creating framebuffer" width "x" height)
-    (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER fbo-id)
-    (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
-    (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MIN_FILTER GL11/GL_LINEAR)
-    (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MAG_FILTER GL11/GL_LINEAR)
-    (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_WRAP_S GL12/GL_CLAMP_TO_EDGE)
-    (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_WRAP_T GL12/GL_CLAMP_TO_EDGE)
-    (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB width height 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bbnil)
-    (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
-    (except-gl-errors "end of fbo-texture")
+(defn- fbo-texture 
+  ([^long width ^long height]
+   (let [fbo-id     (GL30/glGenFramebuffers)]
+     (fbo-texture fbo-id width height)))
+  ([fbo-id ^long width ^long height]
+   (let [texture-id (GL11/glGenTextures)
+         ;; type nil as ByteBuffer to avoid reflection on glTexImage2D
+         ^ByteBuffer bbnil nil]
+     (log/info "Creating framebuffer" width "x" height)
+     (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER fbo-id)
+     (GL11/glBindTexture GL11/GL_TEXTURE_2D texture-id)
+     (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MIN_FILTER GL11/GL_LINEAR)
+     (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_MAG_FILTER GL11/GL_LINEAR)
+     (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_WRAP_S GL12/GL_CLAMP_TO_EDGE)
+     (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL11/GL_TEXTURE_WRAP_T GL12/GL_CLAMP_TO_EDGE)
+     (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB width height 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bbnil)
+     (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
+     (except-gl-errors "end of fbo-texture")
 
-    (GL32/glFramebufferTexture GL30/GL_FRAMEBUFFER GL30/GL_COLOR_ATTACHMENT0 texture-id 0)
-    (GL11/glDrawBuffer GL30/GL_COLOR_ATTACHMENT0)
-    (except-framebuffer-status fbo-id)
-    (except-gl-errors "end of fbo")
-    (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
-    (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
-    [fbo-id texture-id]))
+     (GL32/glFramebufferTexture GL30/GL_FRAMEBUFFER GL30/GL_COLOR_ATTACHMENT0 texture-id 0)
+     (GL11/glDrawBuffer GL30/GL_COLOR_ATTACHMENT0)
+     (except-framebuffer-status fbo-id)
+     (except-gl-errors "end of fbo")
+     (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
+     (GL11/glBindTexture GL11/GL_TEXTURE_2D 0)
+     [fbo-id texture-id])))
         
 
 (defn platform []
@@ -234,7 +237,7 @@
          ; TODO: set window icons
          (when icons
            (log/info "Setting icons")
-           (GLFW/glfwSetWindowIcon window icons))
+           #_(GLFW/glfwSetWindowIcon window icons))
          (log/info "byte-buffer" icons)
          (let [vidmode      (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor))]
            (GLFW/glfwSetWindowPos
@@ -290,6 +293,15 @@
        :refresh-rate 0
        :monitor monitor}
       (pos? monitor) (assoc :name (GLFW/glfwGetMonitorName monitor)))))
+
+(defn- glfw-framebuffer-size [window]
+  (let [width-buffer (BufferUtils/createIntBuffer 1)
+        height-buffer (BufferUtils/createIntBuffer 1)]
+    (GLFW/glfwGetFramebufferSize window width-buffer height-buffer)
+    (let [framebuffer-width (.get width-buffer)
+          framebuffer-height (.get height-buffer)]
+      [framebuffer-width framebuffer-height])))
+
 
 (defn- load-shader
   [^String shader-str ^Integer shader-type]
@@ -524,8 +536,8 @@
    (GLCharacter. character fg-color bg-color style fx-character fx-fg-color fg-bg-color)))
 
 (defrecord OpenGlTerminal [term-args
-                           fbo-texture
-                           fullscreen
+                           window-size
+                           framebuffer-size
                            monitor-fullscreen-sizes
                            layer-character-map-cleared
                            layer-character-map
@@ -547,21 +559,27 @@
   (alter-group-pos! [_ group-id pos-fn]
     (alter (get group-map group-id) (fn [group] (update group :pos (fn [pos] (mapv int (pos-fn pos)))))))
   (alter-group-font! [_ group-id font-fn]
-    (with-gl-context gl-lock window capabilities
-      (let [old-texture  (-> group->font-texture group-id deref :font-texture)
-            font         (font-fn (platform))
-            gg           (if (zfont/glyph-graphics? font)
-                           font
-                           (zfont/glyph-graphics font))
-            font-texture (or (get gg :font-texture)
-                             (texture-id-2d (get gg :font-texture-image)))]
-        (log/info "loaded font-texture for" group-id font-texture)
-        (dosync 
-          (ref-set (get group->font-texture group-id)
-                 (assoc gg :font-texture font-texture)))
-        ; Free old texture
-        (log/info "Freeing texture" old-texture)
-        (GL11/glDeleteTextures old-texture))))
+    (let [gg (with-gl-context gl-lock window capabilities
+               (let [old-texture  (-> group->font-texture group-id deref :font-texture)
+                     font         (font-fn (platform))
+                     gg           (if (zfont/glyph-graphics? font)
+                                    font
+                                    (zfont/glyph-graphics font))
+                     font-texture (or (get gg :font-texture)
+                                      (texture-id-2d (get gg :font-texture-image)))]
+                 (log/info "loaded font-texture for" group-id font-texture)
+                 (dosync 
+                   (ref-set (get group->font-texture group-id)
+                          (assoc gg :font-texture font-texture)))
+                 ; Free old texture
+                 (log/info "Freeing texture" old-texture)
+                 (GL11/glDeleteTextures old-texture)
+                 gg))]
+       (async/put! term-chan (-> (select-keys gg [:font-texture-width
+                                                  :font-texture-height 
+                                                  :character-width
+                                                  :character-height])
+                                 (assoc :type :font-change)))))
   ;; characters is a list of {:c \character :x col :y row :fg [r g b] :bg [r g b]}
   (put-chars! [_ layer-id characters]
     {:pre [(is (not (nil? (get layer-id->group layer-id))) (format "Invalid layer-id %s" layer-id))
@@ -618,12 +636,12 @@
              program-id :program-id
              fb-program-id :fb-program-id
              {:keys [u-MVMatrix u-PMatrix u-fb-MVMatrix u-fb-PMatrix u-font u-glyphs u-fg u-bg u-num-layers font-size term-dim font-tex-dim
-                     font-texture-width font-texture-height glyph-tex-dim
-                     u-fb framebuffer-width framebuffer-height]} :uniforms
+                     font-texture-width font-texture-height glyph-tex-dim u-fb]} :uniforms
              {:keys [glyph-image-data
                      fg-image-data
                      bg-image-data]} :data
              :keys [p-matrix-buffer mv-matrix-buffer]} gl
+            [framebuffer-width framebuffer-height] @framebuffer-size
             [display-width display-height] (let [mode (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor))]
                                              [(.width mode) (.height mode)])]
         #_(log/info "drawing with" (mapv vec [glyph-textures fg-textures bg-textures glyph-image-data fg-image-data bg-image-data]))
@@ -698,6 +716,8 @@
               (doseq [line (partition (* 4 texture-columns) layer)]
                 (log/info (vec line))))
             (try
+              (log/info "y" (+ y-pos (- framebuffer-height (* rows character-height)) (- (/ framebuffer-height 2)))
+                y-pos framebuffer-height rows character-height)
               (GL20/glUniformMatrix4fv
                 u-MVMatrix
                 false
@@ -809,8 +829,8 @@
   (clear! [_ layer-id]
     {:pre [(is (not (nil? (get layer-character-map layer-id))) (format "Invalid layer-id %s" layer-id))]}
     (ref-set (get layer-character-map layer-id) (get layer-character-map-cleared layer-id)))
-  (fullscreen! [_ v]
-    (reset! fullscreen v))
+  (set-window-size! [_ v]
+    (reset! window-size v))
   (fullscreen-sizes [_]
     monitor-fullscreen-sizes)
   (set-fx-fg! [_ layer-id x y fg]
@@ -909,7 +929,7 @@
         _                        (log/info "group-map" group-map)
         _                        (log/info "layer-id->group" layer-id->group)
         font-textures       (atom {})
-        fullscreen          (atom fullscreen)
+        window-size         (atom nil)
         ;; Last [col row] o f mouse movement
         mouse-xy            (atom nil)
         mousedown-xy        (atom nil)
@@ -924,6 +944,7 @@
                             (init-display title screen-width screen-height icon-paths gl-lock destroyed)
         _                   (log/info "window" window "capabilities" capabilities)
         _                   (log/info "framebuffer size" framebuffer-width "x" framebuffer-height)
+        framebuffer-size    (atom [framebuffer-width framebuffer-height])
         monitor-fullscreen-sizes (with-gl-context gl-lock window capabilities
                                    (glfw-fullscreen-sizes))
         _                   (log/info "monitor-fullscreen-sizes" monitor-fullscreen-sizes)
@@ -1166,15 +1187,16 @@
                                        ;:glyph-texture-width glyph-texture-width
                                        ;:glyph-texture-height glyph-texture-height
                                        :u-fb u-fb
-                                       :framebuffer-width framebuffer-width
-                                       :framebuffer-height framebuffer-height}
+                                       ;:framebuffer-width framebuffer-width
+                                       ;:framebuffer-height framebuffer-height}
+                                       }
                             :data {:glyph-image-data glyph-image-data
                                    :fg-image-data fg-image-data
                                    :bg-image-data bg-image-data}}
         terminal           ;; Create and return terminal
                            (OpenGlTerminal. term-args
-                                            fbo-texture
-                                            fullscreen
+                                            window-size
+                                            framebuffer-size
                                             monitor-fullscreen-sizes
                                             layer-character-map-cleared
                                             layer-character-map
@@ -1191,8 +1213,8 @@
                                             window
                                             capabilities)]
     ;; Access to terminal will be multi threaded. Release context so that other threads can access it)))
-    #_(when @fullscreen
-      (zat/fullscreen! terminal (first (zat/fullscreen-sizes terminal))))
+    (when fullscreen
+      (zat/set-window-size! terminal (first (zat/fullscreen-sizes terminal))))
     ;; Start font file change listener thread
     ; TODO: fix resource reloader
     #_(cwc/start-watch [{:path "./fonts"
@@ -1222,7 +1244,7 @@
           current-video-mode (atom (with-gl-context gl-lock window capabilities
                                      (glfw-current-monitor window)))]
       (log/info "current-video-mode" @current-video-mode)
-      (reset! fullscreen @current-video-mode)
+      (reset! window-size @current-video-mode)
       (loop []
         (.countDown latch)
         (if (with-gl-context gl-lock window capabilities
@@ -1249,12 +1271,13 @@
               (GLFW/glfwDestroyWindow window)
             (log/info "Exiting"))
           (do
-            (when-not (= @current-video-mode @fullscreen)
+            (when-not (= @current-video-mode @window-size)
+              (log/info "window change. Old size" @current-video-mode "New size" @window-size)
               (with-gl-context gl-lock window capabilities
                 (cond
                   ;; fullscreen mode
-                  (pos? (get @fullscreen :monitor 0))
-                  (let [{:keys [width height refresh-rate monitor]} @fullscreen]
+                  (pos? (get @window-size :monitor 0))
+                  (let [{:keys [width height refresh-rate monitor]} @window-size]
                     (log/info "setting window monitor fullscreen" window monitor 0 0 width height refresh-rate)
                     (GLFW/glfwSetWindowMonitor window
                                                monitor
@@ -1265,7 +1288,7 @@
                                                refresh-rate))
                   ;; fullscren -> windowed mode
                   (pos? (get @current-video-mode :monitor 0))
-                  (let [{:keys [width height]} @fullscreen]
+                  (let [{:keys [width height]} @window-size]
                     (log/info "setting window monitor windowed from fullscreen" window 0 0 0 width height 0)
                     (GLFW/glfwSetWindowMonitor window
                                                (long 0)
@@ -1273,15 +1296,21 @@
                                                (int 0)
                                                (int width)
                                                (int height)
-                                               (int 0))
+                                               (int 0)))
                   :else
-                  (let [{:keys [width height]} @fullscreen]
+                  (let [{:keys [width height]} @window-size]
                     (log/info "setting window monitor windowed from windowed" window 0 0 0 width height 0)
                     (GLFW/glfwSetWindowSize window width height)
                     (GLFW/glfwSetWindowPos window (quot (- (.width primary-video-mode) screen-width) 2)
                                                   (quot (- (.height primary-video-mode) screen-height) 2))
-                    (GLFW/glfwShowWindow window)))))
-                (reset! current-video-mode @fullscreen))
+                    (let [[framebuffer-width framebuffer-height :as fb-size] (glfw-framebuffer-size window)
+                          ^ByteBuffer bbnil nil]
+                      (reset! framebuffer-size fb-size)
+                      (log/info "Changing size of fbo" fbo-texture)
+                      (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
+                      (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB framebuffer-width framebuffer-height 0 GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE bbnil)
+                      (GL11/glBindTexture GL11/GL_TEXTURE_2D 0))))
+                (reset! current-video-mode @window-size)))
             (GLFW/glfwWaitEvents)
             (recur)))))))
       

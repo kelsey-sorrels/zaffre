@@ -2,6 +2,7 @@
   (:require [zaffre.terminal :as zat]
             [zaffre.glterminal :as zgl]
             [zaffre.font :as zfont]
+            [zaffre.events :as zevents]
             [zaffre.util :as zutil]
             [clojure.core.async :as async :refer [go-loop]]
             [taoensso.timbre :as log])
@@ -20,9 +21,9 @@
         (< h 300) [x 0 c]
         (< h 360) [c 0 x]))))
 
-(def small-font-fn (constantly (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 true)))
-(def medium-font-fn (constantly (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2 true)))
-(def large-font-fn (constantly (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 3 true)))
+(def small-font-fn (constantly (zfont/construct (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 true))))
+(def medium-font-fn (constantly (zfont/construct (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2 true))))
+(def large-font-fn (constantly (zfont/construct (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 3 true))))
 (defn -main [& _]
   ;; render in background thread
   (zgl/create-terminal
@@ -42,7 +43,6 @@
                   #_"images/icon-128x128.png"]}
     (fn [terminal]
       (let [term-pub    (zat/pub terminal)
-            key-chan    (async/chan)
             close-chan  (async/chan)
             fullscreen-sizes (zat/fullscreen-sizes terminal)
             last-key    (atom nil)
@@ -70,11 +70,14 @@
                             (Thread/sleep 33)
                             (recur))]
     (log/info "Fullscreen sizes" fullscreen-sizes)
-    (async/sub term-pub :keypress key-chan)
     (async/sub term-pub :close close-chan)
+    (zevents/add-event-listener terminal :font-change
+      (fn [{:keys [character-width character-height] :as ev}]
+        (log/info "Got :font-change" character-width character-height ev)
+        (zat/set-window-size! terminal {:width (* 16 character-width) :height (* 16 character-height)})))
     ;; get key presses in fg thread
-    (go-loop []
-      (let [new-key (async/<! key-chan)]
+    (zevents/add-event-listener terminal :keypress
+      (fn [new-key]
         (reset! last-key new-key)
         (log/info "got key" (or (str @last-key) "nil"))
         ;; change font size on s/m/l keypress
@@ -86,10 +89,9 @@
                medium-font-fn)
           \l (zat/alter-group-font! terminal :app
                large-font-fn)
-          \f (zat/fullscreen! terminal (last fullscreen-sizes))
-          \w (zat/fullscreen! terminal {:width (* 16 16) :height (* 16 16)})
+          \f (zat/set-window-size! terminal (last fullscreen-sizes))
+          \w (zat/set-window-size! terminal {:width (* 16 16) :height (* 16 16)})
           \q (zat/destroy! terminal)
-          nil)
-        (recur)))
+          nil)))
     (async/<!! close-chan)
     (System/exit 0)))))

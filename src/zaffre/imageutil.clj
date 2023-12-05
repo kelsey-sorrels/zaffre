@@ -39,7 +39,7 @@
     (loop [idx 0 pngs (mapv png paths)]
       (if-let [png (first pngs)]
         (let [{:keys [width height pixels]} png]
-          (log/info "Icon" idx "(" width "x" height ")" (.limit pixels))
+          (log/info "Icon" idx "(" width "x" height ")" pixels)
           (doto icons
             (.position idx)
             (.width width)
