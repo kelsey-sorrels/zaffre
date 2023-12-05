@@ -70,7 +70,7 @@ maps))
                                :display :flex
                                :flex-direction :row
                                :cursor-char-on \u2592
-                               :cursor-char-off \space
+                               :cursor-char-off \_
                                :cursor-fg (zcolor/color 255 255 255 255)
                                :cursor-bg (zcolor/color 0 0 0 255)}}
         props (assoc (merge default-props props)
@@ -81,6 +81,7 @@ maps))
                 cursor-char-off
                 cursor-fg
                 cursor-bg]} (get props :style)
+        cursor-fg (if (and focused show-cursor) cursor-fg (zcolor/color 255 255 255))
         cursor (if (and focused show-cursor) cursor-char-on cursor-char-off)]
 
      (g/use-effect (fn []
