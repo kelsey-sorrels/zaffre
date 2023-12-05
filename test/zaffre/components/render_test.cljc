@@ -79,4 +79,33 @@
     (inspect-tree re-rendered-element)
     (is (= re-rendered-element rendered-element))))
 
+(deftest should-extract-native-elements
+  (let [c identity
+        root-elem (zc/create-element c {} [
+          (zc/create-element :terminal {} [
+            (zc/create-element c {} [
+              (zc/create-element :group {:id 1} [
+                (zc/create-element c {} [
+                  (zc/create-element :layer {:id 2} [
+                    (zc/create-element c {} [
+                      (zc/create-element :view {} [
+                        (zc/create-element c {} [
+                          (zc/create-element c {} [
+                            (zc/create-element :text {} ["hello"])])
+                          (zc/create-element :text {} ["world"])])])
+                      (zc/create-element :view {} [
+                        (zc/create-element c {} [
+                          (zc/create-element c {} [
+                            (zc/create-element :text {} ["hello"])])
+                          (zc/create-element :text {} ["world"])])])])])])])])])])]
+    (is (= [[:terminal {} [
+             [:group {:id 1} [
+               [:layer {:id 2} [
+                 [:view {} [
+                   [:text {} ["hello"]]
+                   [:text {} ["world"]]]]
+                 [:view {} [
+                   [:text {} ["hello"]]
+                   [:text {} ["world"]]]]]]]]]]]
+           (zcr/extract-native-elements root-elem)))))
 

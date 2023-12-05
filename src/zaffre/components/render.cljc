@@ -288,25 +288,28 @@
 
 (defn extract-native-elements [element]
   (cond
-    (string? element)
-      [element]
+    (nil? element)
+      []
+    (= :text (get element :type))
+      [[:text
+       (dissoc (get element :props {}) :children)
+       (filter string? (zc/element-children element))]]
     (keyword? (get element :type))
-      (mapcat identity (zc/map-children extract-native-elements element))
+      [[(get element :type)
+       (dissoc (get element :props {}) :children)
+       (vec (mapcat extract-native-elements (zc/element-children element)))]]
     :default
-      (map extract-native-elements (zc/element-children element))))
+      (vec (mapcat extract-native-elements (zc/element-children element)))))
 
 ;; Renders component into container. Does not call refresh! on container
-(defn render-into-container
-  [target render-state component]
-  (let [root-element (render-component render-state component)
-        group-info (zt/groups target)
+#_(defn render-into-container
+  [target component]
+  (let [group-info (zt/groups target)
         layer-info (layer-info group-info)
-        [type {:keys [zaffre/children]} :as terminal-element]
-          (render
-            {:style default-style}
-            render-state
-            component)
-        groups children]
+        ;; render to native elements
+        root-element (render-recursively component)
+        {:keys [type] :as terminal-root-element} (extract-native-elements root-element)
+        groups (zc/element-children terminal-element)]
     (log/trace "render-into-container" terminal-element)
     (assert (= type :terminal)
             (format "Root component not :terminal found %s instead" type))
@@ -321,8 +324,7 @@
       (when pos
         (zt/alter-group-pos! target group-id pos))
       ;; for each layer in group
-      (doseq [[type {:keys [layer-id zaffre/style]} :as layer] layers]
-        (assert (= type :layer)
+      (doseq [[type {:keys [layer-id zaffre/style]} :as layer] layers] (assert (= type :layer)
                 (format "Expected :layer found %s instead" type))
         ;; create a container to hold cells
         (let [layer-container (object-array rows)
