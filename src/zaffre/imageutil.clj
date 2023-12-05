@@ -75,17 +75,16 @@
     (jio/copy in x)))
 
 (defn cache-load [location]
-  (let [k (format "%x" (hash location))
-        f (jio/as-file k)]
-    (log/info "loading from cache" (.getCanonicalPath f))
-    (if (.exists f)
-      (slurp-bytes f)
+  (log/info "loading from cache" location (clojure.string/starts-with? location "http"))
+  (if (clojure.string/starts-with? location "http")
       (let [bytes (->
                     location
                     (client/get {:as :byte-array})
                     :body)]
-        (spit-bytes f bytes)
-        bytes))))
+        bytes)
+      (let [k (format "%x" (hash location))
+            f (jio/as-file location)]
+        (slurp-bytes f))))
       
 (defn load-image [location-or-bytes]
   (let [w           (BufferUtils/createIntBuffer 1)

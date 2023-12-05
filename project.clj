@@ -17,7 +17,7 @@
 (def LWJGL_NS "org.lwjgl")
 
 ;; Edit this to change the version.
-(def LWJGL_VERSION "3.1.5")
+(def LWJGL_VERSION "3.2.2")
 
 ;; Edit this to add/remove packages.
 (def LWJGL_MODULES ["lwjgl"
@@ -87,7 +87,7 @@
      [clojure-watch "0.1.14"]]
     (lwjgl-deps-with-natives)))
 
-(defproject zaffre "0.4.0-b4"
+(defproject zaffre "0.4.0-b6"
   :description "A fast Clojure console library"
   :url "https://github.com/kelsey-sorrels/zaffre"
   :license {:name "The MIT License (MIT)"

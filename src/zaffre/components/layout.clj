@@ -43,11 +43,13 @@
       ;; Split by number of words and then find max line length
       [(reduce max 0 (map count (partition height words))) height]))
 
+;; From
+;; https://github.com/lunarraid/react-pixi-layout/blob/ed3f697a0cfa7c0430cf6989feecaecc99fb7135/src/elements/Text.js#L30
 (defmethod measure-text :bi-restricted
   [width width-mode height height-mode text]
     (log/trace "measure-text :bi-restricted" width height text)
-    (let [words (clojure.string/split (clojure.string/trim text) #"\s+")
-          measure [(reduce max width (map count words))
+    (let [wrapped (ztext/word-wrap width text)
+          measure [(reduce max 0 (map count wrapped))
                    (count (ztext/word-wrap width text))]]
       (log/trace "measure-text :bi-restricted " measure)
       ;; Split by number of words and then find max line length
@@ -285,11 +287,11 @@
   "Takes [type props] elements and annotates them with yoga nodes like
    [type props node]. Does this recursively to the element's children"
   (log/trace "build-yoga-tree" index element)
-  (let [[type {:keys [style] :as props} children] (if (nil? parent)
-                                                    (-> element
-                                                      (assoc-in [1 :style :width] max-width)
-                                                      (assoc-in [1 :style :height] max-height))
-                                                    element)
+  (let [[type {:keys [style] :as props} children :as styled-element] (if (nil? parent)
+                                                                       (-> element
+                                                                         (assoc-in [1 :style :width] max-width)
+                                                                         (assoc-in [1 :style :height] max-height))
+                                                                       element)
         node (Yoga/YGNodeNew)]
     (Yoga/YGNodeStyleSetFlexDirection node Yoga/YGFlexDirectionColumn)
     
@@ -315,23 +317,23 @@
     (log/trace "node" node)
     ;; don't recurse into :text and :img
     (let [result
-      (if (or (= type :text) (= type :img))
-        [type props children node]
-        [type
-         props
-         (if children
-             ;; force eager evaluation so that entire tree is created
-             (vec (map-indexed (fn [index child]
-               (if (sequential? child)
-                 (let [child-props (second child)]
-                   ;; When position == fixed, detatch child and position separately
-                   (if (= (get-in child-props [:style :position]) :fixed)
-                     (build-yoga-tree max-width max-height nil index (assoc-in child [1 :style :position] :absolute))
-                     (build-yoga-tree max-width max-height node index child)))
-                 child))
-               children))
-           [])
-         node])]
+      (with-meta
+        (if (or (= type :text) (= type :img))
+          styled-element
+          [type
+           props
+           (if children
+               ;; force eager evaluation so that entire tree is created
+               (vec (map-indexed (fn [index child]
+                 (if (sequential? child)
+                   (let [child-props (second child)]
+                     ;; When position == fixed, detatch child and position separately
+                     (if (= (get-in child-props [:style :position]) :fixed)
+                       (build-yoga-tree max-width max-height nil index (assoc-in child [1 :style :position] :absolute))
+                       (build-yoga-tree max-width max-height node index child)))
+                   child))
+                 children))
+             [])]) {:node node})]
       ;; if no parent, then calculate layout before returning
       (when (nil? parent)
         (log/trace "build-yoga-tree YGNodeCalculateLayout" result)
@@ -346,8 +348,8 @@
     (transfer-layout 0 0 yoga-tree))
   ([parent-layout-x parent-layout-y yoga-tree]
     (log/trace "transfer-layout" yoga-tree)
-    (if (and (sequential? yoga-tree) (= 4 (count yoga-tree)))
-      (let [[type props children node] yoga-tree
+    (if-let [node (-> yoga-tree meta :node)]
+      (let [[type props children] yoga-tree
             style (get props :style)
             layout (get style :layout-type :static)
             left (Yoga/YGNodeLayoutGetLeft node)
@@ -378,8 +380,8 @@
         [type
          props-with-layout
          (if children
-           (vec (map (partial transfer-layout layout-x layout-y)
-                     children))
+           (mapv (partial transfer-layout layout-x layout-y)
+                 children)
            [])])
       yoga-tree)))
 

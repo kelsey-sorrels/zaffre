@@ -4,7 +4,8 @@
    [zaffre.color :as zcolor]
    [taoensso.timbre :as log])
   (:import
-    (java.util Arrays)))
+    (java.util Arrays)
+    (org.lwjgl.glfw GLFW)))
 
 (defn blend-mode->byte [blend-mode]
   (case blend-mode
@@ -24,6 +25,8 @@
   (get-fg [this col row])
   (get-bg [this col row])
   (set! [this c blend-mode fg bg col row])
+  (copy-fg [this offset length dest])
+  (copy-bg [this offset length dest])
   (zero! [this]))
 
 (defrecord Buffers [^int num-cols ^int num-rows
@@ -39,31 +42,45 @@
   (fg-buffer [this] fg-buffer)
   (bg-buffer [this] bg-buffer)
   (get-char [this col row]
-    (let [index (+ (* (int col) num-rows) (int row))]
+    (let [col (int col)
+          row (int row)
+          index (+ (* col num-rows) row)]
       (aget character-buffer index)))
   (get-blend-mode [this col row]
-    (let [index (+ (* (int col) num-rows) (int row))]
+    (let [col (int col)
+          row (int row)
+          index (+ (* col num-rows) row)]
       (aget blend-mode-buffer index)))
   (get-fg [this col row]
-    (let [index (+ (* (int col) num-rows) (int row))]
+    (let [col (int col)
+          row (int row)
+          index (+ (* col num-rows) row)]
       (aget fg-buffer index)))
   (get-bg [this col row]
-    (let [index (+ (* (int col) num-rows) (int row))]
+    (let [col (int col)
+          row (int row)
+          index (+ (* col num-rows) row)]
       (aget bg-buffer index)))
   (set! [this c blend-mode fg bg col row]
-    (when (and (< -1 col) (< col num-cols)
-               (< -1 row) (< row num-rows))
-      (let [index (+ (* (int col) num-rows) (int row))
-            fg-rgba (cond
-                         (integer? fg) fg
-                         (vector? fg) (zcolor/color fg))
-            bg-rgba (cond
-                         (integer? bg) bg
-                         (vector? bg) (zcolor/color bg))]
-        (aset character-buffer index (unchecked-char c))
-        (aset blend-mode-buffer index (unchecked-int (blend-mode->byte blend-mode)))
-        (aset fg-buffer index (unchecked-int fg-rgba))
-        (aset bg-buffer index (unchecked-int bg-rgba)))))
+    (let [col (int col)
+          row (int row)]
+      (when (and (< -1 col) (< col num-cols)
+                 (< -1 row) (< row num-rows))
+        (let [index (+ (* col num-rows) row)
+              fg-rgba (cond
+                           (integer? fg) fg
+                           (vector? fg) (zcolor/color fg))
+              bg-rgba (cond
+                           (integer? bg) bg
+                           (vector? bg) (zcolor/color bg))]
+          (aset character-buffer index (unchecked-char c))
+          (aset blend-mode-buffer index (unchecked-int (blend-mode->byte blend-mode)))
+          (aset fg-buffer index (unchecked-int fg-rgba))
+          (aset bg-buffer index (unchecked-int bg-rgba))))))
+  (copy-fg [this offset length dest]
+    (.put fg-buffer offset dest))
+  (copy-bg [this offset length dest]
+    (.put bg-buffer offset dest))
   (zero! [this]
     (Arrays/fill character-buffer (char 0))
     (Arrays/fill blend-mode-buffer (int 0))
@@ -89,7 +106,16 @@
   (put-chars! [this layer-id characters] "Changes the characters in a layer. `characters` is a sequence where each element is a map and must have these keys: :c - a character or keyword, :x int, column, :y int row, :fg [r g b], :bg [r g b] where r,g,b are ints from 0-255.")
   (put-layer! [this layer-id buffers] "Replaces all the characters in a layer. `buffer is an object implementing IBuffer.")
   (assoc-shader-param! [this k v] "Changes the value of a uniform variable in the post-processing shader.")
-  (pub [this] "Returns a clojure.core.async publication partitioned into these topics: :keypress :mouse-down :mouse-up :click :mouse-leave :mouse-enter :close.")
+  (pub [this] "Returns a clojure.core.async publication partitioned into these topics:
+              :keypress
+              :mouse-down
+              :mouse-up 
+              :click
+              :mouse-leave
+              :mouse-enter
+              :clipboard
+              :drag-and-drop
+              :close.")
   (refresh! [this] "Uses group and layer information to draw to the screen.")
   (clear! [this]
           [this layer-id] "Clears all layers or just a specific layer.")
@@ -121,13 +147,13 @@
                (let [dt# (second
                            (time-val
                              (dosync
-							   (do-frame-clear terminal#)
-							   ~@body
-							   (refresh! terminal#))))
+                               (do-frame-clear terminal#)
+                               ~@body
+                               (refresh! terminal#))))
                      pause# (max 0 (- sleep-time# dt#))]
-               (when (< 0 pause#)
-                 (Thread/sleep pause#))
-               (recur))))
+                 (when (< 0 pause#)
+                   (Thread/sleep pause#))
+                 (recur))))
            (log/info "finished do-frame loop")
            (catch Throwable th#
              (log/error th# "Error rendering")))))))

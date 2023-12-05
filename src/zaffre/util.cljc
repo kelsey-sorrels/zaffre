@@ -5,6 +5,36 @@
             clojure.set)
   (:import (zaffre.terminal Terminal)))
 
+
+(defmacro loop-with-index [idx-name bindings & body]
+  "bindings => binding-form seq-expression
+
+  Repeatedly executes body (presumably for side-effects) with
+  binding form and idx-name in scope.  `idx-name` is repeatedly bound to the index of the item being
+  evaluated ex: to each successive value in `(range (count (second bindings)))`. Does not retain
+      the head of the sequence. Returns nil.
+
+   (loop-with-index idx [[k v] {:a 1 :b 2 :c 3}] (println \"idx\" idx \"k\" k \"v\" v))
+   idx 0 k :a v 1
+   idx 1 k :b v 2
+   idx 2 k :c v 3
+   nil"
+  (let [form (bindings 0) coll (bindings 1)]
+     `(loop [coll# ~coll
+             ~idx-name 0]
+        (when coll#
+          (let [~form (first coll#)]
+            ~@body
+            (recur (next coll#) (inc ~idx-name)))))))
+
+(defmacro loop-range [idx-name from to & body]
+  `(let [lo# ~from
+         hi# ~to]
+     (loop [~idx-name lo#]
+       (when (< ~idx-name hi#)
+           ~@body
+           (recur (inc ~idx-name))))))
+
 (defn next-pow-2 [v]
   (int (Math/pow 2 (Math/ceil (/ (Math/log v) (Math/log 2))))))
 

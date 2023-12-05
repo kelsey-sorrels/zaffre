@@ -59,8 +59,9 @@
                      GLFW/GLFW_KEY_TAB           :tab
                      GLFW/GLFW_KEY_LEFT_CONTROL  :lcontrol
                      GLFW/GLFW_KEY_LEFT_SHIFT    :lshift
-
                      ;; Right special keys
+                     GLFW/GLFW_KEY_RIGHT_CONTROL  :rcontrol
+                     GLFW/GLFW_KEY_RIGHT_SHIFT    :rshift
                      ;GLFW/GLFW_KEY_ADD           :add
                      ;GLFW/GLFW_KEY_APOSTROPHE    :apostrophe
                      ;GLFW/GLFW_KEY_BACKSLASH     :backslash
@@ -92,11 +93,7 @@
                      ;GLFW/GLFW_KEY_SECTION       :section
                      ;GLFW/GLFW_KEY_SYSRQ         :sysrq
                      ;; event-key didn't match, default to event-char if it is printable, else nil
-                     event-key nil
-                     #_(when (<= (int (first " ")) (int event-key) (int \~))
-                       (if (bit-and event-mod GLFW/GLFW_MOD_SHIFT)
-                         (char event-key)
-                         (clojure.string/lower-case (char event-key)))))]
+                     event-key nil)]
       key)))
 
 

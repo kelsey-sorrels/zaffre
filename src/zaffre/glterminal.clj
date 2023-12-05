@@ -19,7 +19,7 @@
     (java.nio.charset Charset)
     (org.lwjgl.opengl GL GLUtil GL11 GL12 GL13 GL14 GL15 GL20 GL30 GL32)
     (org.lwjgl.glfw GLFW GLFWVidMode GLFWVidMode$Buffer GLFWImage GLFWImage$Buffer
-      GLFWErrorCallback GLFWCharCallback GLFWKeyCallback GLFWMouseButtonCallback
+      GLFWDropCallback GLFWErrorCallback GLFWCharCallback GLFWKeyCallback GLFWMouseButtonCallback
       GLFWCursorPosCallback GLFWFramebufferSizeCallback)
     (org.lwjgl.system Platform)
     (org.joml Matrix4f Vector3f)
@@ -36,6 +36,7 @@
 (def char-callback-atom (atom nil))
 (def mouse-button-callback-atom (atom nil))
 (def cursor-pos-callback-atom (atom nil))
+(def drop-callback-atom (atom nil))
 
 (defn flip-byte-buffer [^ByteBuffer byte-buffer]
   (let [buffer ^Buffer byte-buffer]
@@ -69,27 +70,6 @@
   "Def's a memoized fn. Same semantics as defn."
   `(def ~fn-name (memoize (fn ~@body))))
 
-(defmacro loop-with-index [idx-name bindings & body]
-  "bindings => binding-form seq-expression
-
-  Repeatedly executes body (presumably for side-effects) with
-  binding form and idx-name in scope.  `idx-name` is repeatedly bound to the index of the item being
-  evaluated ex: to each successive value in `(range (count (second bindings)))`. Does not retain
-      the head of the sequence. Returns nil.
-
-   (loop-with-index idx [[k v] {:a 1 :b 2 :c 3}] (println \"idx\" idx \"k\" k \"v\" v))
-   idx 0 k :a v 1
-   idx 1 k :b v 2
-   idx 2 k :c v 3
-   nil"
-  (let [form (bindings 0) coll (bindings 1)]
-     `(loop [coll# ~coll
-             ~idx-name 0]
-        (when coll#
-          (let [~form (first coll#)]
-            ~@body
-            (recur (next coll#) (inc ~idx-name)))))))
-
 (defn font-key [font] font)
 
 (defn- get-fields [#^Class static-class]
@@ -108,13 +88,13 @@
 
 (defn- except-gl-errors
   [msg]
-  nil
-  (let [error (GL11/glGetError)
-        error-string (str "OpenGL Error(" error "):"
-                          (gl-enum-name error) ": " msg " - "
-                          (zlwjgl/gl-error-string error))]
-    (if (not (zero? error))
-      (throw (Exception. error-string)))))
+  (when *assert*
+    (let [error (GL11/glGetError)
+          error-string (str "OpenGL Error(" error "):"
+                            (gl-enum-name error) ": " msg " - "
+                            (zlwjgl/gl-error-string error))]
+      (if (not (zero? error))
+        (throw (Exception. error-string))))))
 
 (defn-memoized gl-enum-value
   ;;"Takes a gl enum value as a keyword and returns the value, eg: :gl-one -> GL11/GL_ONE."
@@ -571,20 +551,21 @@
           rows    (-> layer-id layer-id->group deref :rows)
           group-id (-> layer-id layer-id->group deref :id)
           group-index  (get group-id->index group-id)
-          ^ByteBuffer glyph-image-data (get-in gl [:data :glyph-image-data group-index])
-          ^ByteBuffer fg-image-data    (get-in gl [:data :fg-image-data group-index])
-          ^ByteBuffer bg-image-data    (get-in gl [:data :bg-image-data group-index])
-          character->col-row (-> group-id group->font-texture deref :character->col-row)
+          data (:data gl)
+          ^ByteBuffer glyph-image-data (get-in data [:glyph-image-data group-index])
+          ^ByteBuffer fg-image-data    (get-in data [:fg-image-data group-index])
+          ^ByteBuffer bg-image-data    (get-in data [:bg-image-data group-index])
+          character->col-row (:character->col-row (-> group-id group->font-texture deref))
           texture-columns (int (zutil/next-pow-2 columns))
           texture-rows    (int (zutil/next-pow-2 rows))
           layer-size      (* 4 texture-columns texture-rows)
-          layer-index     (get layer-id->index layer-id)]
+          layer-index     (layer-id->index layer-id)]
       (doseq [{:keys [c x y fg bg blend-mode] :or {blend-mode :normal}} characters
               :when (and (< -1 x) (< x columns)
                          (< -1 y) (< y rows)
                          (not= c (char 0)))
               :let [i         (int (+ (* 4 (+ (* texture-columns (- rows y 1)) x)) (* layer-size layer-index)))
-                    [x y]     (get character->col-row c)
+                    [x y]     (character->col-row c)
                     fg (cond
                          (integer? fg) fg
                          (vector? fg) (zcolor/color fg))
@@ -619,18 +600,19 @@
       
   (put-layer! [_ layer-id buffers]
     #_(log/info "put-layer! characters" (count characters))
-    (let [columns (-> layer-id layer-id->group deref :columns)
-          rows    (-> layer-id layer-id->group deref :rows)
-          group-id (-> layer-id layer-id->group deref :id)
-          group-index  (get group-id->index group-id)
-          ^ByteBuffer glyph-image-data (get-in gl [:data :glyph-image-data group-index])
-          ^ByteBuffer fg-image-data    (get-in gl [:data :fg-image-data group-index])
-          ^ByteBuffer bg-image-data    (get-in gl [:data :bg-image-data group-index])
-          character->col-row (-> group-id group->font-texture deref :character->col-row)
+    (let [columns (:columns (-> layer-id layer-id->group deref))
+          rows    (:rows (-> layer-id layer-id->group deref))
+          group-id (:id (-> layer-id layer-id->group deref))
+          group-index  (group-id->index group-id)
+          data (:data gl)
+          ^ByteBuffer glyph-image-data (get-in data [:glyph-image-data group-index])
+          ^ByteBuffer fg-image-data    (get-in data [:fg-image-data group-index])
+          ^ByteBuffer bg-image-data    (get-in data [:bg-image-data group-index])
+          character->col-row (:character->col-row (-> group-id group->font-texture deref))
           texture-columns (int (zutil/next-pow-2 columns))
           texture-rows    (int (zutil/next-pow-2 rows))
           layer-size      (* 4 texture-columns texture-rows)
-          layer-index     (get layer-id->index layer-id)
+          layer-index     (layer-id layer-id->index)
           character-buffer (zt/character-buffer buffers)
           fg-buffer        (zt/character-buffer buffers)
           bg-buffer        (zt/character-buffer buffers)
@@ -652,44 +634,44 @@
           (log/error "fg-image-data nil"))
         (when-not bg-image-data
           (log/error "bg-image-data nil"))
-        (doseq [row (range (zt/num-rows buffers))]
-          (doseq [col (range num-cols)
-                  :let [c     (zt/get-char buffers col (- num-rows row 1))
-                        [x y] (get character->col-row c)
-                        blend-mode-byte (zt/get-blend-mode buffers col (- num-rows row 1))
-                        fg    (zt/get-fg buffers col (- num-rows row 1))
-                        bg    (zt/get-bg buffers col (- num-rows row 1))]
-                  :when (and (not= c (char 0)) x y)
-                  :let [i (int (+ (* 4 (+ (* texture-columns row) col)) (* layer-size layer-index)))
-                      ;blend-mode  (get character :blend-mode :normal)
-                      blend-mode :normal]]
-              (when (or (nil? x) (nil? y))
-                (log/error (format "X/Y nil - glyph not found for character %s %s"
-                             (or (str c) "nil")
-                             (or (cond
-                                   (nil? c) "nil"
-                                   (char? c) (format "%x" (int c))
-                                   :else (str c)))))
-                (assert
-                  (format "X/Y nil - glyph not found for character %s %s"
-                    (or (str c) "nil")
-                    (or (cond
-                          (nil? c) "nil"
-                          (char? c) (format "%x" (int c))
-                          :else (str c))))))
-              (when false
-                (log/info "put-layer!" col row i x y (Integer/toHexString fg) (Integer/toHexString bg)))
-              (.position glyph-image-data i)
-              (.position fg-image-data i)
-              (.position bg-image-data i)
+        (zutil/loop-range row 0 (zt/num-rows buffers)
+          (zutil/loop-range col 0 num-cols
+            (let [row (int row)
+                  col (int col)
+                  c     (zt/get-char buffers col (- num-rows row 1))
+                  [x y] (character->col-row c)
+                  blend-mode-byte (zt/get-blend-mode buffers col (- num-rows row 1))
+                  fg    (unchecked-int (zt/get-fg buffers col (- num-rows row 1)))
+                  bg    (unchecked-int (zt/get-bg buffers col (- num-rows row 1)))]
+              (when (and (not= (int c) 0) x y)
+                (let [i (int (+ (* 4 (+ (* texture-columns row) col)) (* layer-size layer-index)))]
+                  (when (or (nil? x) (nil? y))
+                    (log/error (format "X/Y nil - glyph not found for character %s %s"
+                                 (or (str c) "nil")
+                                 (or (cond
+                                       (nil? c) "nil"
+                                       (char? c) (format "%x" (int c))
+                                       :else (str c)))))
+                    (assert
+                      (format "X/Y nil - glyph not found for character %s %s"
+                        (or (str c) "nil")
+                        (or (cond
+                              (nil? c) "nil"
+                              (char? c) (format "%x" (int c))
+                              :else (str c))))))
+                  (when false
+                    (log/info "put-layer!" col row i x y (Integer/toHexString fg) (Integer/toHexString bg)))
+                  (.position glyph-image-data i)
+                  (.position fg-image-data i)
+                  (.position bg-image-data i)
 
-              (.put glyph-image-data (unchecked-byte x))
-              (.put glyph-image-data (unchecked-byte y))
-              ;; TODO fill with appropriate type
-              (.put glyph-image-data (unchecked-byte blend-mode-byte))
-              (.put glyph-image-data (unchecked-byte 0))
-              (.putInt fg-image-data (unchecked-int fg))
-              (.putInt bg-image-data (unchecked-int bg))))
+                  (.put glyph-image-data (unchecked-byte x))
+                  (.put glyph-image-data (unchecked-byte y))
+                  ;; TODO fill with appropriate type
+                  (.put glyph-image-data (unchecked-byte blend-mode-byte))
+                  (.put glyph-image-data (unchecked-byte 0))
+                  (.putInt fg-image-data fg)
+                  (.putInt bg-image-data bg))))))
        (catch Exception e
          (log/error "Error replacing characters in layer" layer-id "=" layer-index
                     "texture-columns" texture-columns "texture-rows" texture-rows glyph-image-data fg-image-data bg-image-data e)))))
@@ -714,7 +696,7 @@
         #_(log/info "drawing with" (mapv vec [glyph-textures fg-textures bg-textures glyph-image-data fg-image-data bg-image-data]))
         ;; Setup render to FBO
         (try
-          (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER, fbo-id)
+          ;(GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER, fbo-id)
           (GL11/glEnable GL11/GL_BLEND)
           (GL11/glDisable GL11/GL_DEPTH_TEST)
           ;(log/info "glViewport" 0 0 framebuffer-width framebuffer-height)
@@ -850,7 +832,7 @@
             (.clear glyph-image-data)
             (.clear fg-image-data)
             (.clear bg-image-data)))
-        (try 
+        #_(try 
           (GL20/glDisableVertexAttribArray 0)
           (GL20/glDisableVertexAttribArray 1)
           (GL20/glUseProgram 0)
@@ -899,10 +881,11 @@
           (GL20/glUseProgram 0)
           (GL30/glBindVertexArray 0)
           (except-gl-errors "end of refresh")
-          (GLFW/glfwSwapBuffers window)
           (except-gl-errors "end of update")
           (catch Error e
-            (log/error "OpenGL error:" e))))))
+            (log/error "OpenGL error:" e)))
+        (GLFW/glfwSwapBuffers window)
+        window)))
   (clear! [_]
     (dosync
       (try
@@ -1219,6 +1202,14 @@
                                              {:type :mouse-enter :col col :row row :group-id group-id})
                                            entered-locations)
                                       false))))
+        drop-callback         (proxy [GLFWDropCallback] []
+                                (invoke [window count names]
+                                  (let [names (map #(GLFWDropCallback/getName names %) (range count))]
+                                    (log/info "names" (vec names))
+                                    (async/onto-chan
+                                      term-chan
+                                      [{:type :drag-and-drop :names names}]
+                                      false))))
         framebuffer-size-callback
                               (proxy [GLFWFramebufferSizeCallback] []
                                 (invoke [window framebuffer-width framebuffer-height]
@@ -1318,10 +1309,12 @@
         (reset! char-callback-atom char-callback)
         (reset! mouse-button-callback-atom mouse-button-callback)
         (reset! cursor-pos-callback-atom cursor-pos-callback)
+        (reset! drop-callback-atom drop-callback)
         (GLFW/glfwSetKeyCallback window key-callback)
         (GLFW/glfwSetCharCallback window char-callback)
         (GLFW/glfwSetMouseButtonCallback window mouse-button-callback)
         (GLFW/glfwSetCursorPosCallback window cursor-pos-callback)
+        (GLFW/glfwSetDropCallback window drop-callback)
         (GLFW/glfwSetFramebufferSizeCallback window framebuffer-size-callback)
         (future
           ;; Wait for main thread loop to start
@@ -1342,6 +1335,7 @@
             (.countDown latch)
             (if (with-gl-context gl-lock window capabilities
                   (except-gl-errors "Start of loop")
+                  (Thread/sleep 8)
                   ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
                   ; input on the thread that created the window
                   (GLFW/glfwPollEvents)
@@ -1400,6 +1394,6 @@
                         (GLFW/glfwSetWindowPos window (quot (- monitor-width width) 2)
                                                       (quot (- monitor-height height) 2))))
                     (reset! last-video-mode @window-size)))
-                (GLFW/glfwWaitEvents)
+                ;(GLFW/glfwWaitEvents)
                 (recur)))))))
       

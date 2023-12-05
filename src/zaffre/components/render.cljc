@@ -6,7 +6,8 @@
             [zaffre.components :as zc]
             [zaffre.components.layout :as zl]
             [zaffre.text :as ztext]
-            [zaffre.terminal :as zt]))
+            [zaffre.terminal :as zt]
+            [zaffre.util :as zu]))
 
 (def default-style
   {:color (unchecked-int 0xffffffff) #_[255 255 255 255]
@@ -113,10 +114,10 @@
          (or (integer? background-color) (vector? background-color))
          (string? s)]}
   (when (between -1 y (zt/num-rows target))
-    (let [max-x (zt/num-cols target)
-          row y]
+    (let [max-x (int (zt/num-cols target))
+          row (int y)]
       (loop [index 0 s s]
-        (let [col (+ x index)
+        (let [col (int (+ x index))
               c   (first s)]
           (when (and (seq s) 
                      (between -1 col max-x))
@@ -135,36 +136,36 @@
                                                           [:text props (map (fn [child] [:text {} [child]]) children)]
                                                           text-element))]
     (log/trace "render-text-into-container lines" (vec lines))
-    (doseq [[dy line] (map-indexed vector lines)
-            :let [default-color (get default-style :color)
-                  default-background-color (get default-style :background-color)]]
-      (when (and (< dy height) (not (empty? line)))
-        (log/trace "rendering line" (vec line))
-        ;; remove inc? for spaces
-        (let [but-last (butlast line)
-              last-span (let [[s style _] (last line)
-                              s (clojure.string/trim s)]
-                         [s style (count s)])
-              line (concat but-last (list last-span))
-              _ (log/trace "rendering line2" (vec line))
-              span-lengths (map (fn [[s _ length]] length) line)
-              line-length (reduce + 0 span-lengths)
-              align-offset (case text-align
-                             :left 0
-                             :center (/ (- width line-length) 2)
-                             :right (- width line-length))
-              offsets (map (partial + align-offset) (cons 0 (reductions + span-lengths)))]
-          (log/trace "line-length" line-length)
-          (log/trace "lengths" (vec span-lengths))
-          (log/trace "offsets" (vec offsets))
-          (doseq [[dx [s {:keys [color background-color]} _]] (map vector offsets line)]
-            (render-string-into-container
-              target
-              (+ x dx) (+ y dy)
-              (or color default-color)
-              (or background-color default-background-color)
-              (clojure.string/trim s)
-              mix-blend-mode)))))))
+    (zu/loop-with-index dy [line lines]
+      (let [default-color (get default-style :color)
+            default-background-color (get default-style :background-color)]
+        (when (and (< dy height) (not (empty? line)))
+          (log/trace "rendering line" (vec line))
+          ;; remove inc? for spaces
+          (let [but-last (butlast line)
+                last-span (let [[s style _] (last line)
+                                s (clojure.string/trim s)]
+                           [s style (count s)])
+                line (concat but-last (list last-span))
+                _ (log/trace "rendering line2" (vec line))
+                span-lengths (map (fn [[s _ length]] length) line)
+                line-length (reduce + 0 span-lengths)
+                align-offset (case text-align
+                               :left 0
+                               :center (/ (- width line-length) 2)
+                               :right (- width line-length))
+                offsets (map (partial + align-offset) (cons 0 (reductions + span-lengths)))]
+            (log/trace "line-length" line-length)
+            (log/trace "lengths" (vec span-lengths))
+            (log/trace "offsets" (vec offsets))
+            (doseq [[dx [s {:keys [color background-color]} _]] (map vector offsets line)]
+              (render-string-into-container
+                target
+                (+ x dx) (+ y dy)
+                (or color default-color)
+                (or background-color default-background-color)
+                (clojure.string/trim s)
+                mix-blend-mode))))))))
 
 (defn render-img-into-container [target img-element]
   {:pre [(= (first img-element) :img)
@@ -176,26 +177,33 @@
         {:keys [x y width height overflow-bounds]} layout
         overflow-bounds (or overflow-bounds (layout->bounds layout))
         [overflow-min-x overflow-min-y overflow-max-x overflow-max-y] overflow-bounds
+        overflow-max-x (int overflow-max-x)
         ;; bounds for overflow/target container (whichever is smaller)
         min-x (dec (max 0 overflow-min-x))
         min-y (dec (max 0 overflow-min-y))
-        max-y (min overflow-max-y (zt/num-rows target))
+        num-cols-target (zt/num-cols target)
+        num-rows (int (zt/num-rows target))
+        max-y (min overflow-max-y num-rows)
         lines (last img-element)]
     #_(log/debug "render-img-into-container layout " layout)
     #_(log/trace "render-img-into-container lines" (vec lines))
-    (doseq [[dy line] (map-indexed vector lines)
-            :let [row (+ y dy)]]
-      (when (and (< dy height) (not (empty? line)) (< min-y row max-y))
-        #_(log/trace "rendering line" (vec line))
-        (doseq [[dx {:keys [c fg bg] :as pixel}] (map-indexed vector line)]
-          (assert (char? c))
-          (assert (or (integer? fg) (vector? fg)))
-          (assert (or (integer? bg) (vector? bg)))
-          (let [max-x (min overflow-max-x (zt/num-cols target))
-                col (int (+ x dx))]
-            (when (< min-x col max-x)
-              #_(log/trace "rendering pixel x:" col " y:" row " " pixel " max-x:" max-x " max-y:" (zt/num-rows target))
-              (zt/set! target (get pixel :c) mix-blend-mode (get pixel :fg) (get pixel :bg) col row))))))))
+    (zu/loop-with-index dy [line lines]
+      (let [y (int y)
+            dy (int dy)
+            row (+ y dy)]
+        (when (and (< dy height) (not (empty? line)) (< min-y row max-y))
+          #_(log/trace "rendering line" (vec line))
+          (zu/loop-with-index dx [{:keys [c fg bg] :as pixel} line]
+            (assert (char? c))
+            (assert (or (integer? fg) (vector? fg)))
+            (assert (or (integer? bg) (vector? bg)))
+            (let [max-x (min overflow-max-x num-cols-target)
+                  x (int x)
+                  dx (int dx)
+                  col (int (+ x dx))]
+              (when (< min-x col max-x)
+                #_(log/trace "rendering pixel x:" col " y:" row " " pixel " max-x:" max-x " max-y:" (zt/num-rows target))
+                (zt/set! target (get pixel :c) mix-blend-mode (get pixel :fg) (get pixel :bg) col row)))))))))
 
 (defn element-seq [element]
   "Returns :view and top-level :text elements."
@@ -316,7 +324,6 @@
           [type
            props
            (map (partial inherit-overflow-bounds parent-bounds) children)]))))
-      
 
 (defn render-layer-into-container
   [target layer]
@@ -329,7 +336,8 @@
     #_(log/trace "render-layer-into-container layer-en-place" (zc/tree->str layer-en-place))
     (doseq [element elements]
       #_(log/debug "render-layer-into-container element" element)
-      (render-component-into-container target element))))
+      (render-component-into-container target element))
+    elements))
                     
 (defn log-layer [^"[[Ljava.lang.Object;" layer-container]
   (doseq [y (range (alength layer-container))
@@ -572,17 +580,21 @@
 
 ;; Renders component into container. Does not call refresh! on container
 (defn render-into-container
-  ([target component]
-    (render-into-container target nil component))
-  ([target existing component]
+  "Renders element into target. If existing is supplied, appropriate component
+   lifecycle handlers will be invoked. Response is rendered elements with a
+   meta property :layout-elements containing component id and layout records."
+  ([target element]
+    (render-into-container target nil element))
+  ([target existing element]
     (let [group-info (zt/groups target)
           layer-info (layer-info group-info)
           ;; render to native elements
-          root-element (render-recursively existing component)
+          root-element (render-recursively existing element)
           [type props groups :as root-dom] (-> root-element
                                               extract-native-elements
                                               first
-                                              cascade-style)]
+                                              cascade-style)
+          elements (atom (list))]
       #_(log/info "render-into-container existing" (zc/tree->str existing))
       #_(log/info "render-into-container rendered-element" (zc/tree->str root-element))
       ;(log/trace "render-into-container" (clojure.pprint/pprint root-dom))
@@ -603,7 +615,8 @@
                   (format "Expected :layer found %s instead. %s" type (str layer)))
           ;; create a container to hold cells
           ;; TODO reuse buffers
-          (let [layer-container (zt/array-buffers columns rows)#_(or (get @terminal-layer-buffers id)
+          (let [layer-container (zt/array-buffers columns rows)
+                                #_(or (get @terminal-layer-buffers id)
                                     (let [buffers (zt/array-buffers columns rows)]
                                       (swap! terminal-layer-buffers assoc id buffers)
                                       buffers))
@@ -613,14 +626,15 @@
             ;; reusing layer-container so zero out before rendering
             ;(zt/zero! layer-container)
             ;; render layer into layer-container
-            (render-layer-into-container
-               layer-container
-               (-> layer
-                 ;; assign width and height to layer style
-                 (assoc-in [1 :style :width] columns)
-                 (assoc-in [1 :style :height] rows)))
+            (swap! elements concat
+              (render-layer-into-container
+                 layer-container
+                 (-> layer
+                   ;; assign width and height to layer style
+                   (assoc-in [1 :style :width] columns)
+                   (assoc-in [1 :style :height] rows))))
             #_(log-layer layer-container)
             ;; send layer changes to terminal
             (zt/put-layer! target id layer-container))))
-      root-element)))
+      (with-meta root-element {:layout-elements @elements}))))
 

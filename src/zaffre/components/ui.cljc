@@ -96,6 +96,8 @@
       :max-length 28
       :style {:width 30
               :height 1
+              :display :flex
+              :flex-direction :row
               :cursor-char-on \u2592
               :cursor-char-off \space
               :cursor-fg (zcolor/color 255 255 255 255)
@@ -132,7 +134,7 @@
               show-cursor (< t duty-on)
               cursor (if (and focused show-cursor) cursor-char-on cursor-char-off)]
           (log/debug "Input render" show-cursor (dissoc props :children))
-          (zc/csx [:text {} [
+          (zc/csx [:view {:style style} [
                     [:text {} [value]]
                     [:text {:style {:color cursor-fg :background-color cursor-bg}} [(str cursor)]]
                     [:text {} [(apply str (repeat (- width (count value)) "_"))]]]])))}))
@@ -376,7 +378,6 @@
                                   ;:margin-bottom 10
                                   :padding 0
                                   :border 1 :border-style :single
-                                  :text-align :center
                                   :max-height "90%"
                                   :max-width "90%"}
                                 style)}

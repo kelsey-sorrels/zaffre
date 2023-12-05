@@ -69,12 +69,7 @@
   (let [leaves (-> text-element text-tree-seq filter-leaves)]
     (log/trace "text element" text-element)
     (log/trace "text leaves" (vec leaves))
-  (->> text-element
-    text-tree-seq
-    filter-leaves
-    (map last)
-    (apply str))
-  (->> leaves (map last) (apply str))))
+    (->> leaves (map last) (apply str))))
 
 ;; return list of sequence of lines where each line is a sequence
 ;; of [s style length]

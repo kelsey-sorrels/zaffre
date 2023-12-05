@@ -27,18 +27,23 @@
     (color r g b a)))
 
 (defn red [color]
-  (bit-and 0x000000ff color))
+  (let [color (unchecked-int color)]
+    (bit-and 0x000000ff color)))
 
 (defn green [color]
-  (bit-shift-right (bit-and 0x0000ff00 color) (int 8)))
+  (let [color (unchecked-int color)]
+    (bit-shift-right (bit-and 0x0000ff00 color) (int 8))))
 
 (defn blue [color]
-  (bit-shift-right (bit-and 0x00ff0000 color) (int 16)))
+  (let [color (unchecked-int color)]
+    (bit-shift-right (bit-and 0x00ff0000 color) (int 16))))
 
 (defn alpha [color]
-  (bit-shift-right (bit-and 0xff000000 color) (int 24)))
+  (let [color (unchecked-int color)]
+    (bit-shift-right (bit-and 0xff000000 color) (int 24))))
 
 (defn with-alpha [color alpha]
-  (bit-or color
-          (bit-shift-left (bit-and 0xff alpha) (int 24))))
+  (let [color (unchecked-int color)]
+    (bit-or (bit-and 0x00ffffff color)
+            (bit-shift-left (bit-and 0xff alpha) (int 24)))))
 

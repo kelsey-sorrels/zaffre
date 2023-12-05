@@ -145,12 +145,12 @@
       (throw (RuntimeException. "Error loading font"))
       info)))
 
-(def cjk-blocks
-  (set
-    (concat (range 0x2E80 0x2EFF)
-            (range 0x3000 0x9FFF)
-            (range 0xAC00 0xD7AF)
-            (range 0xF900 0xFAFF))))
+(defn cjk-codepoint?
+  [codepoint]
+    (or (<= 0x2E80 codepoint 0x2EFF)
+        (<= 0x3000 codepoint 0x9FFF)
+        (<= 0xAC00 codepoint 0xD7AF)
+        (<= 0xF900 codepoint 0xFAFF)))
 
 
 (defn- displayable-characters [^STBTTFontinfo font]
@@ -159,7 +159,7 @@
     (reduce (fn [m codepoint]
              (let [glyph-index (STBTruetype/stbtt_FindGlyphIndex font (int codepoint))]
                (if  (and (pos? glyph-index)
-                         (not (contains? cjk-blocks codepoint)))
+                         (not (cjk-codepoint? codepoint)))
                  (assoc m codepoint glyph-index)
                  m)))
           {}

@@ -519,14 +519,17 @@
   (assert (every? is-valid-event-handler-key?
                   (filter (fn [k] (clojure.string/starts-with? (name k) "on-"))
                           (keys config)))
-    "Found unsupported event")
+    (str "Found unsupported event"
+         (vec (remove is-valid-event-handler-key?
+                  (filter (fn [k] (clojure.string/starts-with? (name k) "on-"))
+                          (keys config))))))
   (let [ref    (if (and config (has-valid-ref? config)) (get config :ref))
         key    (if (and config (has-valid-key? config)) (get config :key))
         self   (get config :self)
         source (get config :source)
         ;; either a single children array arg or multiple children using & more
-        children (if (not (empty? more)) (cons children more) children)
-        _ (valid-children? type children)
+        children (remove nil? (if (not (empty? more)) (cons children more) children))
+        _ (assert (valid-children? type children))
         props  (deep-merge
                     {:children children}
                     (if type (get type :default-props {}) {})
@@ -578,7 +581,7 @@
         display-name# (str sym#)]
     (list 'def sym# (list create-react-class {
                :display-name display-name#
-               :render `(fn ~@fn-tail)}))))
+               :render `(fn ~sym ~@fn-tail)}))))
 
 (defn component-display-name [component]
   (cond
