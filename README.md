@@ -9,6 +9,10 @@ Zaffre is fast console library for drawing characters to a screen.
   * Cross-platform codebase
   * Thread safe
 
+## Not Features
+  * Multiple fonts
+  * Glyph stacking
+
 ## Usage
 
 Add the dependency to your project:
