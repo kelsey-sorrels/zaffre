@@ -35,12 +35,13 @@
      :effects []}
     (fn [terminal] ;; Receive the terminal in a callback
       ;; Save the last key press in an atom
-      (let [last-key (atom nil)]
+      (let [last-key (atom nil)
+            render-state (atom {})]
         ;; Every 33ms, draw a full frame
         (zat/do-frame terminal 33 
           (let [key-in (or @last-key \?)]
             ;; Draw components
-            (zcr/render-into-container terminal
+            (zcr/render-into-container terminal render-state
               [:ui {}
                 [:label {:x 5 :y 2}  "hello world"]])))
         ;; Wire up terminal events to channels we read from

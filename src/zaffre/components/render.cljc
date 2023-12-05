@@ -1,5 +1,6 @@
 (ns zaffre.components.render
   (:require [clojure.test :refer [is]]
+            [taoensso.timbre :as log]
             [zaffre.components :as zc]
             [zaffre.terminal :as zt]))
 
@@ -8,24 +9,24 @@
 (defn get-props-in-env [env k]
   (if (nil? env)
     nil
-    (get-in env [:env/props k] (get-props-in-env (get env :env/parent) k))))
+    (get-in env [:props k] (get-props-in-env (get env :parent) k))))
 
-(defn wrap-env [child parent key]
+(defn wrap-env [parent child key]
   {
-    :env/key key
-    :env/child child
-    :env/props (assoc (second child)
-                      :children (drop 2 child))
-    :env/parent parent
+    :key key
+    ;:env/child child
+    ;:env/props (assoc (second child)
+    ;                  :children (drop 2 child))
+    :parent parent
   })
 
 (defn env-path [env]
   (if (nil? env)
     []
-    (cons (get env :env/path) (env-path (get env :env/parent)))))
+    (cons (get env :key) (env-path (get env :parent)))))
 
 (defn env-path->str [env]
-  (str (interpose (reverse (env-path env)) " > ")))
+  (apply str (interpose " > " (reverse (env-path env)))))
 
 ;; Primitive elements
 (defprotocol PrimitiveElement
@@ -95,37 +96,74 @@
 ;; Recursively calculate dimensions based on size of child components
 ;; Finds env in render-state and returns it. If not found,
 ;; evaluates body and caches result in render-state
-(defmacro caching-render [env render-state & body]
-  `(if-let [result# (get (deref ~render-state) ~env)]
-    result#
-    (let [result# (do ~@body)]
-      (swap! ~render-state (fn [render-state] (assoc render-state ~env result#)))
-      result#)))
+(defmacro caching-render [component render-state & body]
+  `(let [component# ~component
+         render-state# ~render-state
+         k# (if (string? component#)
+              component#
+              (let [type# (first component#)
+                    props# (second component#)]
+                [type# props#]))]
+     (log/trace "render-state val" render-state# (contains? (deref render-state#) k#))
+     ;; either get the cached value, or generate, cache and return it
+     ;; use or instead of default value for get because get's default value
+     ;; is eagerly evaluaged and will swap! every time
+     (or
+       (get (deref render-state#) k#)
+       (let [result# (do ~@body)]
+         (when (> (count (deref render-state#)) 10000)
+           (reset! render-state# {}))
+         (log/trace "swap!-ing render-state" render-state# k#)
+         (swap! render-state# #(assoc % k# result#))
+         (log/trace "new render-state" (deref render-state#))
+         result#))))
 
 (declare render)
-(defn render-primitive [component]
-  (if (string? component)
-    component
-    (let [[type props & children] component]
-      [type (assoc props :children (vec (map render children)))])))
+(defn render-primitive [env render-state component]
+  (log/trace "render-primitive" (env-path->str env) component)
+  (caching-render component render-state
+    (if (string? component)
+      component
+      (let [[type props & children] component
+            wrapped-env (wrap-env env component type)]
+        [type
+         (assoc props
+                :children
+                (vec (map-indexed
+                       (fn [index child]
+                         (render
+                           (wrap-env
+                             env
+                             child
+                             (get props :key index))
+                           render-state
+                           child))
+                       children)))]))))
     
-(defn render-composite [component]
-  (if (string? component)
-    (zc/render-comp component {})
-    (let [type     (first component)
-          props    (or (second component) {})
-          children (drop 2 component)
-          element  (zc/render-comp type (assoc props :children children))]
-      (render element))))
+(defn render-composite [env render-state component]
+  (log/trace "render-composite" (env-path->str env) component)
+  (caching-render component render-state
+    (if (string? component)
+      (zc/render-comp component {})
+      (let [type     (first component)
+            props    (or (second component) {})
+            children (drop 2 component)
+            element  (zc/render-comp type (assoc props :children children))]
+        (render env render-state element)))))
 
 (defn render
-  ([component]
-    (render component {} (atom {})))
-  ([component env render-state]
-    ;; render the component
-    (if (primitive? component)
-      (render-primitive component)
-      (render-composite component))))
+  #_([component]
+    (render nil (atom {}) component))
+  ([render-state component]
+    (render nil render-state component))
+  ([env render-state component]
+    (log/trace "render" (env-path->str env) component)
+    (let [env (wrap-env env component (first component))]
+      (caching-render component render-state
+        ;; render the component
+        (if (primitive? component)
+          (render-primitive env render-state component)
+          (render-composite env render-state component))))))
 
 (defn merge-envs [env other]
   {:fg (get env :fg (get other :fg))
@@ -170,8 +208,8 @@
 
 ;; Renders component into container. Does not call refresh! on container
 (defn render-into-container
-  [container component]
-  (let [[type {:keys [children]} :as terminal-element] (render component)
+  [container render-state component]
+  (let [[type {:keys [children]} :as terminal-element] (render render-state component)
         groups children
         group-info (zt/groups container)]
     (assert (= type :terminal)
