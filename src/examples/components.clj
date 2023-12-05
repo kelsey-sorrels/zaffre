@@ -76,85 +76,39 @@
                                      [:view {:style {:fg nil :bg nil
                                                      :position-type :absolute}} [
                                        [zcui/Image {:src "/home/santos/src/zaffre/earthmap.jpg"}]]]]]
-                                     #_[zcui/AnimateProps {:gen (fn [state-chan close-chan]
-                                                          (go-loop
-                                                            (let [
-                                                              a (thread
-                                                                  (>! state-chan
-                                                                    {:style {
-                                                                      :position-top 4}})
-                                                                  (>! state-chan
-                                                                    {:style {
-                                                                      :position-top (interpolate-to 4 10 200)}})
-                                                                  (<! (timeout 200))
-                                                                  (>! state-chan
-                                                                    {:style {
-                                                                      :position-top 10}})
-                                                                  (<! (timeout 200))
-                                                                  (>! state-chan
-                                                                    {:style {
-                                                                      :position-top (interpolate-to 10 4 200)}})
-                                                                  (<! (timeout 200))
-                                                                  (>! state-chan
-                                                                    {:style {
-                                                                      :position-top 4}})
-                                                                  (<! (timeout 200)))
-                                                              b (thread
-                                                                  (>! state-chan
-                                                                    {:style {
-                                                                      :position-left 4}})
-                                                                  (<! (timeout 200))
-                                                                  (>! state-chan
-                                                                    {:style {
-                                                                      :position-left 4}})
-                                                                  (<! (timeout 200))
-                                                                  (>! state-chan
-                                                                    {:style {
-                                                                      :position-left (interpolate-to 4 10 200)}})
-                                                                  (<! (timeout 200))
-                                                                  (>! state-chan
-                                                                    {:style {
-                                                                      :position-left 10}})
-                                                                  (<! (timeout 200))
-                                                                  (>! state-chan
-                                                                    {:style {
-                                                                      :position-left (interpolate-to 10 4 200)}})
-                                                                  (<! (timeout 200)) )]
-                                                              (<! (merge [a b]))
-                                                              (when (<! close-chan)
-                                                                (recur)))))} [
-                                         [:view {:style {:width 1
-                                                         :position-type :relative}} [
-                                           [:text {} ["*"]]]]]]
                                      [zcui/AnimateProps2 {:gen (fn [state-chan open-chan]
+                                                                 (let [x-min 4
+                                                                       y-min 4
+                                                                       x-max 16
+                                                                       y-max 16]
                                                           (zcui/cycle open-chan
                                                             (zcui/parallel
                                                               (zcui/sequence state-chan
                                                                 {:style {
-                                                                  :position-top (zcui/interpolate-to 4 16)}}
+                                                                  :position-top (zcui/interpolate-to y-min y-max)}}
                                                                 200
                                                                 {:style {
-                                                                  :position-top 16}}
+                                                                  :position-top y-max}}
                                                                 200
                                                                 {:style {
-                                                                  :position-top (zcui/interpolate-to 16 4)}}
+                                                                  :position-top (zcui/interpolate-to y-max y-min)}}
                                                                 200
                                                                 {:style {
-                                                                  :position-top 4}}
+                                                                  :position-top y-min}}
                                                                 200)
                                                               (zcui/sequence state-chan
                                                                 {:style {
-                                                                  :position-left 4}}
+                                                                  :position-left x-min}}
                                                                 200
                                                                 {:style {
-                                                                  :position-left (zcui/interpolate-to 4 16)}}
+                                                                  :position-left (zcui/interpolate-to x-min x-max)}}
                                                                 200
                                                                 {:style {
-                                                                  :position-left 16}}
+                                                                  :position-left x-max}}
                                                                 200
                                                                 {:style {
-                                                                  :position-left (zcui/interpolate-to 16 4)}}
-                                                                200))))} [
+                                                                  :position-left (zcui/interpolate-to x-max x-min)}}
+                                                                200)))))} [
                                          [:view {:style {:width 1
                                                          :position-type :relative}} [
                                            [:text {} ["*"]]]]]]]]]]]]
