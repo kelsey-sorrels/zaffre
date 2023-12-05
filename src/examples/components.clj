@@ -69,7 +69,6 @@
         ;; Save the last key press in an atom
         (let [last-key (atom nil)
               width (atom 16)
-              pool (atat/mk-pool)
               frames (atom 0)
               fps (atom 0)
               text-value (atom "")
@@ -79,21 +78,18 @@
                                  #(do
                                    (reset! fps @frames)
                                    (reset! frames 0))
-                                 pool)]
+                                 zc/*pool*)]
           ;; Every 20ms, draw a full frame
-          (zat/do-frame terminal 33 
+          (zat/do-frame terminal 16
             (binding [zc/*updater* updater]
               (let [key-in (or @last-key \?)
-                    key-events @key-event-queue
+                    [key-events _] (reset-vals! key-event-queue [])
                     dom (zcr/render-into-container terminal
                           @last-dom
                           (zc/csx [UI {:fps @fps
                                        :a true #_(= @last-key \a)
                                        :text-value text-value}]))]
-                ;; pump all state changes through the updater
-                (zc/update-state! zc/*updater*)
                 (reset! last-dom dom)
-                (reset! key-event-queue [])
                 ;; pump all terminal events to elements
                 (zce/send-events-to-dom key-events dom)
                 (swap! frames inc))))
@@ -113,7 +109,7 @@
                 \s (clojure.inspector/inspect-tree @last-dom)
                 \q (do
                      (atat/stop fps-fn)
-                     (atat/stop-and-reset-pool! pool :strategy :kill)
+                     (atat/stop-and-reset-pool! zc/*pool* :strategy :kill)
                      (zat/destroy! terminal))
                 nil))))))))
 
