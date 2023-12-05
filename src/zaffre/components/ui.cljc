@@ -175,7 +175,7 @@ maps))
                 cursor-char-off
                 cursor-fg
                 cursor-bg]} (get props :style)
-        cursor (if (and focused show-cursor) cursor-char-on (if selected "*" " "))]
+        cursor (if (and focused show-cursor) (str cursor-char-on) (if selected :ref/radio-checked :ref/radio-unchecked))]
      (g/use-effect (fn []
        (go-loop []
          (<! (timeout 400))
@@ -183,10 +183,54 @@ maps))
          (recur))) [])
 
     [:view props
-      (cons [:text {:key "radio-text"} (str "(" cursor ")")]
+      (concat
+        [[:text {:key "radio-left" :style {:content :ref/radio-left
+                                           :color :ref/on-surface}} ""]
+         [:text {:key "radio-check" :style {:content cursor
+                                           :color :ref/on-surface}} ""]
+         [:text {:key "radio-right" :style {:content :ref/radio-right
+                                           :color :ref/on-surface}} ""]]
         children)]))
 
 (g/defcomponent ProgressBar
+  [props _]
+  (let [left (int (get props :value 0))
+        right (- 100 left)]
+    ; FIXME copy key (props?) into view
+    [:view {:key "progress-bar"
+            :style {:display :flex
+                    :flex-direction :row}}
+      [:view {:key "left"
+              :style {:background-char :ref/progress-filled
+                      :background-color :ref/secondary
+                      :width (str left "%")
+                      :height 1}}]
+      [:view {:key "right"
+              :style {:background-char :ref/progess-empty
+                      :color :ref/secondary
+                      :width (str right "%")
+                      :height 1}}]]))
+
+
+#_(g/defcomponent VScrollBar
+  [props _]
+  (let [{:keys [height num-items pos]} props]
+    [:view {:style {:display :flex
+                            :flex-direction :column
+                            :width 1
+                            :justify-content :space-between
+                            :background-color (rcolor/color->rgb :dark-gray)
+                            :height "100%"}}
+      [:view {}
+        [:text {:style {:color (rcolor/color->rgb :highlight)}} ruicommon/up-arrow-char]]
+      [:view {:style {:height (- height 2)
+                      :background-color (rcolor/color->rgb :darker-gray)}}
+        [:text {:style {:color (rcolor/color->rgb :dark-gray)
+                        :top (int (/ (* pos height) (dec num-items)))}} ruicommon/cursor-char]]
+      [:view {}
+        [:text {:style {:color (rcolor/color->rgb :highlight)}} ruicommon/down-arrow-char]]]))
+
+(g/defcomponent ScrollPane
   [props _]
   (let [left (int (get props :value 0))
         right (- 100 left)]

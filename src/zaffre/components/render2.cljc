@@ -12,6 +12,7 @@
             [gossamer.element :as ge]
             [gossamer.host-config :as ghc]
             [zaffre.components.layout :as zl]
+            [zaffre.color :as zcolor]
             [zaffre.text :as ztext]
             [zaffre.terminal :as zt]
             [zaffre.util :as zu]))
@@ -27,6 +28,32 @@
    :border-top 0
    :border-bottom 0
    :mix-blend-mode :normal
+   ;; Theme (Dark)
+   ; backgrounds
+   :primary (zcolor/color 187 134 252)
+   :primary-variant (zcolor/color 54 0 179)
+   :secondary (zcolor/color 3 218 196)
+   :secondary-variant (zcolor/color 3 218 196)
+   :background (zcolor/color 18 18 18)
+   :surface (zcolor/color 18 18 18)
+   :error (zcolor/color 207 102 121)
+   ; text
+   :on-primary (zcolor/color 0 0 0)
+   :on-secondary (zcolor/color 0 0 0)
+   :on-background (zcolor/color 255 255 255)
+   :on-surface (zcolor/color 255 255 255)
+   :on-error (zcolor/color 0 0 0)
+   ; characters
+   :radio-checked "*"
+   :radio-unchecked " "
+   :radio-left "("
+   :radio-right ")"
+   :checkbox-checked "x"
+   :checkbox-unchecked " " 
+   :checkbox-left "["
+   :checkbbox-right "]"
+   :progress-filled " "
+   :progress-empty "\u2592"
 })
 
 ;; Primitive elements
@@ -94,19 +121,83 @@
   :volume
   :white-space
   :widows
-  :word-spacing})
+  :word-spacing
+  ;; Theme
+  ;; NOTE: Theme values should ALWAYS be inheirited so that they propogate
+  ;; throughout the element tree
+  :primary-variant
+  :secondary
+  :secondary-variant
+  :background
+  :surface
+  :error
+  ; text
+  :on-primary
+  :on-secondary
+  :on-background
+  :on-surface
+  :on-error
+  ; characters
+  :radio-checked
+  :radio-unchecked
+  :radio-left
+  :radio-right
+  :checkbox-checked
+  :checkbox-unchecked
+  :checkbox-left
+  :checkbbox-right
+  :progress-filled
+  :progress-empty
+})
+
+(defn resolve-value
+  [style v]
+  #_(log/info "resolving" v (qualified-keyword? v) (if (qualified-keyword? v) (namespace v) v))
+  #_(log/info "using" style)
+  (if (and (qualified-keyword? v)
+           (= (namespace v) "ref"))
+    ; if value is qualified with ref ex: :ref/background-color
+    ; then resolve the ref by looking up the unqualified version the keyword
+    (get style (resolve-value style (keyword (name v))))
+    v))
+
+(defn merge-default-style
+  [existing-style parent-style]
+  #_(log/info "cascading parent-style" parent-style "existing-style" existing-style)
+  ; merge in inheiriable parent styles with existing style
+  (let [merged-style (merge (select-keys parent-style inheritable-styles) (or existing-style {}))
+        resolved-style
+    ; resoolve all style refs
+    (->> merged-style
+      (map (fn [[k v]]
+             [k (resolve-value merged-style v)]))
+      (into {}))]
+    #_(log/info "merged-style" merged-style)
+    #_(log/info "resolved-style" resolved-style)
+    resolved-style))
+
+(defn replace-content
+  [[type props children :as element]]
+  #_(log/info "replacing content for" type (get-in props [:content :style]) props )
+  (if-let [content (get-in props [:style :content])]
+     (let [resolved-content (resolve-value (get props :style) content)]
+       #_(log/info "resolved-content" resolved-content)
+       [type props [resolved-content]])
+     element))
 
 (defn cascade-style
   ([element] (cascade-style {} element))
   ([parent-style [type props children]]
-    (if (or (= type :text) (= type :img))
-      [type
-       (update props :style #(merge (select-keys parent-style inheritable-styles) (or % {})))
-       children]
-      (let [new-style (merge (select-keys parent-style inheritable-styles) (get props :style {}))]
+    (replace-content
+      (if (or (= type :text) (= type :img))
         [type
-         (assoc props :style new-style)
-         (map (partial cascade-style new-style) children)]))))
+         ; update props style
+         (update props :style merge-default-style parent-style)
+         children]
+        (let [new-style (merge (select-keys parent-style inheritable-styles) (get props :style {}))]
+          [type
+           (update props :style merge-default-style parent-style)
+           (map (partial cascade-style new-style) children)])))))
       
 ; bounds are [x1 y1 x2 y2]
 (defn layout->bounds [{:keys [x y width height]}]
@@ -137,14 +228,16 @@
   {:pre [(= (first text-element) :text)
          (map? (second text-element))
          (not (empty? (last text-element)))]}
-  (log/debug "render-text-into-container" text-element)
+  #_(log/debug "render-text-into-container" text-element)
   (let [[type {:keys [style zaffre/layout] :or {style {}} :as props} children] text-element
         {:keys [x y width height]} layout
         {:keys [text-align mix-blend-mode] :or {text-align :left mix-blend-mode :normal}} style
-        lines (ztext/word-wrap-text-tree width height (if (every? string? children)
-                                                          [:text props (map (fn [child] [:text {} [child]]) children)]
-                                                          text-element))]
-    (log/trace "render-text-into-container lines" (vec lines))
+        text-element (if (every? string? children)
+                       [:text props (map (fn [child] [:text {} [child]]) children)]
+                       text-element)
+        #_ (log/info "text-element" text-element)
+        lines (ztext/word-wrap-text-tree width height text-element)]
+    #_(log/trace "render-text-into-container lines" (vec lines))
     (zu/loop-with-index dy [line lines]
       (let [default-color (get default-style :color)
             default-background-color (get default-style :background-color)]
@@ -164,9 +257,9 @@
                                :center (/ (- width line-length) 2)
                                :right (- width line-length))
                 offsets (map (partial + align-offset) (cons 0 (reductions + span-lengths)))]
-            (log/trace "line-length" line-length)
-            (log/trace "lengths" (vec span-lengths))
-            (log/trace "offsets" (vec offsets))
+            #_(log/trace "line-length" line-length)
+            #_(log/trace "lengths" (vec span-lengths))
+            #_(log/trace "offsets" (vec offsets))
             (doseq [[dx [s {:keys [color background-color]} _]] (map vector offsets line)]
               (render-string-into-container
                 target
@@ -263,6 +356,8 @@
       (when background-color
         (doseq [dy (range height)
                 :let [color (or color (get default-style :color))]]
+          #_(log/info "color" color "background-color" background-color)
+          (assert (or (integer? background-color) (vector? background-color)))
           (render-string-into-container target x (+ y dy) color background-color (clojure.string/join (repeat width background-char)) mix-blend-mode)))
       ; render border when set
       (when border-style
@@ -596,20 +691,21 @@
   "Renders element into target. If existing is supplied, appropriate component
    lifecycle handlers will be invoked. Response is rendered elements with a
    meta property :layout-elements containing component id and layout records."
-  ([target element]
-    (render-into-container target nil element))
-  ([target existing root-element]
+  ([target element style]
+    (render-into-container target nil element style))
+  ([target existing root-element style]
     #_(log/info "render-into-container root-element" root-element)
     (let [group-info (zt/groups target)
           layer-info (layer-info group-info)
           ;; render to native elements
           #_#_root-element (render-recursively existing element)
           
-          [type props groups :as root-dom] (cascade-style root-element)
+          [type props groups :as root-dom] (cascade-style style root-element)
           elements (atom (list))]
       #_(log/info "render-into-container existing" (zc/tree->str existing))
       #_(log/info "render-into-container rendered-element" (zc/tree->str root-element))
       #_(log/info "render-into-container root-dom" (zc/tree->str root-dom))
+      #_(System/exit 1)
       #_(log/info "type" type)
       (assert (= type :terminal)
               (format "Root component not :terminal found %s instead" type))
@@ -811,97 +907,100 @@
     (on-blur {:target target-element})))
 
 (defn render 
-  [terminal component props]
-  ; render into an empty vector
-  (let [term-pub (zt/pub terminal)
-        keypress-chan (chan (buffer 100))
-        click-chan (chan (buffer 100))
-        mouse-enter-chan (chan (buffer 100))
-        mouse-leave-chan (chan (buffer 100))
-        exec-in-context (chan (buffer 100))
-        render-chan (g/render-with-context component props exec-in-context)
-        last-render (atom nil)
-        last-layout (atom nil)
-        input-values (atom {})]
+  ([terminal component props]
+    (render terminal component props {})) 
+  ([terminal component props style]
+    ; render into an empty vector
+    (let [style (merge style default-style)
+          term-pub (zt/pub terminal)
+          keypress-chan (chan (buffer 100))
+          click-chan (chan (buffer 100))
+          mouse-enter-chan (chan (buffer 100))
+          mouse-leave-chan (chan (buffer 100))
+          exec-in-context (chan (buffer 100))
+          render-chan (g/render-with-context component props exec-in-context)
+          last-render (atom nil)
+          last-layout (atom nil)
+          input-values (atom {})]
 
-    ; Subscribe to events and send them to chans
-    (a/sub term-pub :keypress keypress-chan)
-    (a/sub term-pub :click click-chan)
-    (a/sub term-pub :mouse-enter mouse-enter-chan)
-    (a/sub term-pub :mouse-leave mouse-leave-chan)
+      ; Subscribe to events and send them to chans
+      (a/sub term-pub :keypress keypress-chan)
+      (a/sub term-pub :click click-chan)
+      (a/sub term-pub :mouse-enter mouse-enter-chan)
+      (a/sub term-pub :mouse-leave mouse-leave-chan)
 
-    ; Listen for renders and print them out
-    (go-loop []
-      (let [[container port] (a/alts! [render-chan] :default nil)]
-        (try
-          #_(clojure.pprint/pprint (g/clj-elements dom-element))
-          (when-not (= port :default)
-            (let [root-element (g/clj-elements container)]
-              #_(log/info "root-element" root-element)
-              (doseq [animation-frame-request @request-animation-frame-handlers]
-                (try
-                  (>! exec-in-context animation-frame-request)
-                  (catch Throwable t
-                    (log/error t))))
-              (reset! request-animation-frame-handlers [])
-              ; Render elements to chars, update terminal layers
-              (let [dom (render-into-container terminal root-element)
-                    ; capture element layout
-                    {:keys [layout-elements]} (meta dom)]
-                #_(log/info "layout-elements" (vec layout-elements))
-                ; On first render set focusable index to first element claiming focus. -1 otherwise.
-                (when (nil? @last-render)
-                  #_(log/info "finding autofocus in" (mapv zip/node (zipper-descendants (zipper-elements root-element))))
-                  ;; set initial focused element
-                  (when-let [[initial-focus-index initial-element-loc]
-                          (->> root-element
-                            focusable-element-locs
-                            (map-indexed vector)
-                            (filter (fn [[_ element-loc]]
-                              #_(log/info "element-loc" element-loc)
-                              (let [element (zip/node element-loc)
-                                    props (second element)]
-                                #_(log/info "props" props)
-                                (get props :autofocus))))
-                            first)]
-                    (log/info "setting focus-index" initial-focus-index)
-                  (reset! focus-index initial-focus-index)
-                  (>! exec-in-context (partial handle-focus (zip/node initial-element-loc)))))
-                ; Store last render for event handlers
-                (reset! last-render root-element)
-                ; Store last layout for event handlers
-                #_(log/info "layout-elements")
-                #_(doseq [elem layout-elements]
-                  (log/info "layout-element" elem))
-                (reset! last-layout layout-elements))))
-          ; Draw terminal frame
-          (zt/refresh! terminal)
-          (catch Throwable t
-            (log/error t)))
-        (recur)))
-     ;; All handlers use exec-in-context so that gossamer bindings are avalable during execution
-     (go-loop []
-       (when-let [layout @last-layout]
-         (let [[event event-chan] (a/alts! [keypress-chan click-chan mouse-enter-chan mouse-leave-chan] :default nil)]
-           (condp = event-chan
-             keypress-chan
-               (let [[k action] event]
-                 (case k
-                   :tab
-                     (do
-                       (>! exec-in-context (partial handle-blur (active-element @last-render)))
-                       (advance-focus-index! @last-render)
-                       (>! exec-in-context (partial handle-focus (active-element @last-render))))
-                   ; else, send to active element
-                   (>! exec-in-context (partial handle-keypress (active-element @last-render) @last-render k action))))
-             click-chan
-               (>! exec-in-context (partial handle-click layout event))
-             mouse-enter-chan
-               (>! exec-in-context (partial handle-mouse-enter layout (first event)))
-             mouse-leave-chan
-               (>! exec-in-context (partial handle-mouse-leave layout (first event)))
-             :default nil)))
-       (recur))))
+      ; Listen for renders and print them out
+      (go-loop []
+        (let [[container port] (a/alts! [render-chan] :default nil)]
+          (try
+            #_(clojure.pprint/pprint (g/clj-elements dom-element))
+            (when-not (= port :default)
+              (let [root-element (g/clj-elements container)]
+                #_(log/info "root-element" root-element)
+                (doseq [animation-frame-request @request-animation-frame-handlers]
+                  (try
+                    (>! exec-in-context animation-frame-request)
+                    (catch Throwable t
+                      (log/error t))))
+                (reset! request-animation-frame-handlers [])
+                ; Render elements to chars, update terminal layers
+                (let [dom (render-into-container terminal root-element style)
+                      ; capture element layout
+                      {:keys [layout-elements]} (meta dom)]
+                  #_(log/info "layout-elements" (vec layout-elements))
+                  ; On first render set focusable index to first element claiming focus. -1 otherwise.
+                  (when (nil? @last-render)
+                    #_(log/info "finding autofocus in" (mapv zip/node (zipper-descendants (zipper-elements root-element))))
+                    ;; set initial focused element
+                    (when-let [[initial-focus-index initial-element-loc]
+                            (->> root-element
+                              focusable-element-locs
+                              (map-indexed vector)
+                              (filter (fn [[_ element-loc]]
+                                #_(log/info "element-loc" element-loc)
+                                (let [element (zip/node element-loc)
+                                      props (second element)]
+                                  #_(log/info "props" props)
+                                  (get props :autofocus))))
+                              first)]
+                      (log/info "setting focus-index" initial-focus-index)
+                    (reset! focus-index initial-focus-index)
+                    (>! exec-in-context (partial handle-focus (zip/node initial-element-loc)))))
+                  ; Store last render for event handlers
+                  (reset! last-render root-element)
+                  ; Store last layout for event handlers
+                  #_(log/info "layout-elements")
+                  #_(doseq [elem layout-elements]
+                    (log/info "layout-element" elem))
+                  (reset! last-layout layout-elements))))
+            ; Draw terminal frame
+            (zt/refresh! terminal)
+            (catch Throwable t
+              (log/error t)))
+          (recur)))
+       ;; All handlers use exec-in-context so that gossamer bindings are avalable during execution
+       (go-loop []
+         (when-let [layout @last-layout]
+           (let [[event event-chan] (a/alts! [keypress-chan click-chan mouse-enter-chan mouse-leave-chan] :default nil)]
+             (condp = event-chan
+               keypress-chan
+                 (let [[k action] event]
+                   (case k
+                     :tab
+                       (do
+                         (>! exec-in-context (partial handle-blur (active-element @last-render)))
+                         (advance-focus-index! @last-render)
+                         (>! exec-in-context (partial handle-focus (active-element @last-render))))
+                     ; else, send to active element
+                     (>! exec-in-context (partial handle-keypress (active-element @last-render) @last-render k action))))
+               click-chan
+                 (>! exec-in-context (partial handle-click layout event))
+               mouse-enter-chan
+                 (>! exec-in-context (partial handle-mouse-enter layout (first event)))
+               mouse-leave-chan
+                 (>! exec-in-context (partial handle-mouse-leave layout (first event)))
+               :default nil)))
+         (recur)))))
 
 (defmacro defcomponent
   [compname args & body]
