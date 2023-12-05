@@ -4,7 +4,7 @@
     [clj-http.client :as client]
     [clojure.java.io :as jio]
     [clojure.core.cache :as cache]
-    [clojure.core.async :refer [>! <! chan to-chan timeout merge go go-loop thread]]
+    [clojure.core.async :as async :refer [>! <! chan to-chan timeout go go-loop thread]]
     [clojure.pprint :as pprint]
     [taoensso.timbre :as log]
     rockpick.core
@@ -359,36 +359,6 @@
                                 :max-width "90%"}}
                     children]]])))}))
 
-(def AnimateProps (zc/create-react-class {
-  :display-name "AnimateProps"
-  :get-initial-state (fn []
-                       (log/debug "AnimateProps get-initial-state")
-                       {:t 0
-                        :start-time (System/currentTimeMillis)})
-  :render (fn [this]
-    (log/debug "AnimateProps render")
-    (let [{:keys [children] :as props} (zc/props this)
-          {:keys [start-time]} (zc/state this)
-          generators (dissoc props :children)
-          t (- (System/currentTimeMillis) start-time)
-          child-props (clojure.walk/postwalk (fn [node]
-                                               (cond
-                                                 (fn? node)
-                                                   (try
-                                                     (node t)
-                                                     (catch Exception e
-                                                       (log/error e)
-                                                       (assert false e)))
-                                                 :else
-                                                   node))
-                                             generators)
-          updated-children (map (fn [child]
-                                  (update child :props 
-                                    (fn [prev-child-props]
-                                      (zc/deep-merge prev-child-props child-props))))
-                                children)]
-      (first updated-children)))}))
-
 (defn interpolate-to [start end]
   (fn [steps]
     (let [interval (- end start)
@@ -405,7 +375,7 @@
 (defn parallel [& chans]
   (fn []
     (go
-      (<! (merge (map (fn [c] (c)) chans))))))
+      (<! (async/merge (map (fn [c] (c)) chans))))))
 
 (defn keys-to-leaves [prefix m]
   (mapcat (fn [[k v]]
@@ -454,14 +424,14 @@
            :default
               (assert false (str "cmd must be map or number. found:" cmd " " next-cmd)))))))
 
-(def AnimateProps2 (zc/create-react-class {
-  :display-name "AnimateProps2"
+(def AnimateProps (zc/create-react-class {
+  :display-name "AnimateProps"
   :get-initial-state (fn []
-                       (log/debug "AnimateProps2 get-initial-state")
+                       (log/debug "AnimateProps get-initial-state")
                        {:open-chan (to-chan (repeat :open))
                         :start-time (System/currentTimeMillis)})
   :component-will-mount (fn [this]
-    (log/info "AnimateProps2 component-will-mount" (zc/element-id-str zc/*current-owner*))
+    (log/info "AnimateProps component-will-mount" (zc/element-id-str zc/*current-owner*))
     ;; pass current-owner binding through to the scheduled fn
     (let [owner zc/*current-owner*
           updater zc/*updater*
@@ -479,7 +449,7 @@
       ;; puts state changes on state-chan until the open-chan closes
       ((gen state-chan open-chan))))
   :render (fn [this]
-    (log/debug "AnimateProps2 render")
+    (log/debug "AnimateProps render")
     (let [{:keys [children] :as props} (zc/props this)
           {:keys [child-props
                   state-chan
