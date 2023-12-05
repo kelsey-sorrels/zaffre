@@ -87,7 +87,7 @@
      [clojure-watch "0.1.14"]]
     (lwjgl-deps-with-natives)))
 
-(defproject zaffre "0.4.0-b2"
+(defproject zaffre "0.4.0-b4"
   :description "A fast Clojure console library"
   :url "https://github.com/kelsey-sorrels/zaffre"
   :license {:name "The MIT License (MIT)"
