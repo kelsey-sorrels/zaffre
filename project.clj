@@ -72,7 +72,7 @@
 
 (def all-dependencies
   (into ;; Add your non-LWJGL dependencies here
-   '[[org.clojure/clojure "1.9.0"]
+   '[[org.clojure/clojure "1.10.1"]
      [org.clojure/core.cache "0.8.2"]
      [org.clojure/core.async "0.4.474"]
      [commons-io/commons-io "2.6"]
@@ -98,12 +98,19 @@
                  :scm :git
                  :build-uberjar true}
   :global-vars {*warn-on-reflection* true}
+  :java-cmd "/home/santos/Downloads/graalvm-ce-java11-20.1.0/bin/java"
   :jvm-opts ~(if (-> (System/getProperty "os.name")
                     (.toLowerCase)
                     (.contains "mac"))
               ["-XstartOnFirstThread"
                "-Dorg.lwjgl.opengl.Display.enableHighDPI=true"
-               "-XX:-OmitStackTraceInFastThrow"
+               #_"-XX:-OmitStackTraceInFastThrow"
                #_"-Djava.library.path=native/"]
-              ["-Dclojure.debug=true"
+              [#_"-Dclojure.debug=true"
+               "-XX:+UnlockExperimentalVMOptions"
+               "-XX:+EnableJVMCI"
+               "-XX:+EagerJVMCI"
+               "-XX:+UseJVMCICompiler"
+               "-XX:-OmitStackTraceInFastThrow"
+               #_"-Dgraal.TraceTruffleCompilation=true"
                #_"-Djava.library.path=native/"]))

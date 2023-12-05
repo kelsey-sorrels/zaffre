@@ -1,6 +1,7 @@
 (ns zaffre.components.ui
   (:require
     [overtone.at-at :as atat]
+    [gossamer.core-graal :as g]
     [clj-http.client :as client]
     [clojure.java.io :as jio]
     [clojure.core.cache :as cache]
@@ -13,6 +14,21 @@
     [zaffre.imageutil :as ziu]))
 
 (log/set-level! :info)
+
+; From merge-with Clojure cheatsheet
+(defn deep-merge-with
+  "Like merge-with, but merges maps recursively, applying the given fn
+    only when there's a non-map at a particular level.
+  (deep-merge-with + {:a {:b {:c 1 :d {:x 1 :y 2}} :e 3} :f 4}
+                     {:a {:b {:c 2 :d {:z 9} :z 3} :e 100}})
+  -> {:a {:b {:z 3, :c 3, :d {:z 9, :x 1, :y 2}}, :e 103}, :f 4}"
+  [f & maps]
+  (apply
+    (fn m [& maps]
+      (if (every? map? maps)
+        (apply merge-with m maps)
+        (apply f maps)))
+maps))
 
 (def resource-cache (atom (cache/ttl-cache-factory {} :ttl 30000)))
 (def image-cache (atom (cache/fifo-cache-factory {} :ttl 30000)))
@@ -36,10 +52,9 @@
     \ 
     event))
 
-(def InputSelect (zc/create-react-class {
-  :display-name "InputSelect"
-  :get-initial-state (fn []
-    {:index 0})
+#_(g/defcomponent InputSelect
+  [_ _]
+  (let [[state set-state] (g/use-state {:index 0})]
   :get-default-props (fn input-get-default-props [] {
     :on-keypress (fn input-select-on-keypress [this e]
                    (log/info "InputSelect on-keypress" (get e :key))
@@ -79,52 +94,41 @@
     (fn [this]
       (let [{:keys [children] :as props} (zc/props this)]
         (log/trace "InputSelect render")
-        (first children)))}))
+        (first children)))))
   
-(def Input (zc/create-react-class {
-    :display-name "Input"
-    :get-initial-state (fn []
-                         (log/info "Input get-initial-state" (zc/element-id-str zc/*current-owner*))
-                         (assert (not (nil? zc/*current-owner*)) "Input *current-owner* nil")
-                         (assert (not= (zc/element-id-str zc/*current-owner*) "null") "Input *current-owner* null")
-                         {:value ""
-                          :show-cursor false
-                          :focused false})
-    :get-derived-state-from-props (fn [this next-props next-state]
-                                    (select-keys next-props [:value :focused]))
-    :get-default-props (fn input-get-default-props [] {
-      :max-length 28
-      :style {:width 30
-              :height 1
-              :display :flex
-              :flex-direction :row
-              :cursor-char-on \u2592
-              :cursor-char-off \space
-              :cursor-fg (zcolor/color 255 255 255 255)
-              :cursor-bg (zcolor/color 0 0 0 255)}
-      :on-focus (fn [this e]
-                  (zc/set-state! this (fn [s] (merge s {:focused true}))))
-      :on-blur (fn [this e]
-                  (zc/set-state! this (fn [s] (merge s {:focused false}))))
-      :on-keypress (fn input-on-keypress [this e]
-                     (log/info "Input on-keypress" e)
-                     (let [{:keys [max-length]} (zc/props this)
-                           k (get e :key)]
-                       (cond
-                         (= k :backspace)
-                             (zc/set-state! this (fn [{:keys [value]}]
-                                                   {:value (subs value 0 (dec (count value)))}))
-                         (and (or (char? k) (= k :space)) (not= k \newline))
-                           (zc/set-state! this (fn [{:keys [value]}]
-                                                 (if (< (count value) max-length)
-                                                   {:value (str value (to-input-char k))}
-                                                   {:value value}))))))})
-    :render
-      (fn [this]
-        (let [{:keys [value focused]} (zc/state this)
-              {:keys [style] :as props} (zc/props this)
-              prop-value (get props :value)
-              value (or prop-value value)
+(g/defcomponent Input
+  [props _]
+  (let [[value set-value!] (g/use-state (get props :value ""))
+        [focused set-focus!] (g/use-state (get props :focus false))
+         default-props {:max-length 28
+                        :style {:width 30
+                                :height 1
+                                :display :flex
+                                :flex-direction :row
+                                :cursor-char-on \u2592
+                                :cursor-char-off \space
+                                :cursor-fg (zcolor/color 255 255 255 255)
+                                :cursor-bg (zcolor/color 0 0 0 255)}}
+         props (assoc (merge default-props props)
+                 :style (merge (:style props)
+                               (:style default-props)))]
+
+     #_(log/info "Input value" value (type value))
+     #_(log/info "props" props)
+     (letfn [(on-focus [_] true)
+             (on-blur [_] false)
+             (on-keypress [e]
+                (log/info "Input on-keypress" e)
+                (let [{:keys [max-length]} props
+                      k (get e :key)]
+                  (cond
+                    (= k :backspace)
+                      (set-value! (subs value 0 (dec (count value))))
+                    (and (or (char? k) (= k :space)) (not= k \newline))
+                      (set-value! (if (< (count value) max-length)
+                                    (str value (to-input-char k))
+                                    value)))))]
+        (let [{:keys [style]} props
               {:keys [width
                       cursor-char-on cursor-char-off
                       cursor-fg cursor-bg]}  style
@@ -133,189 +137,140 @@
               t (mod (System/currentTimeMillis) (+ duty-on duty-off))
               show-cursor (< t duty-on)
               cursor (if (and focused show-cursor) cursor-char-on cursor-char-off)]
-          (log/debug "Input render" show-cursor (dissoc props :children))
-          (zc/csx [:view {:style style} [
-                    [:text {} [value]]
-                    [:text {:style {:color cursor-fg :background-color cursor-bg}} [(str cursor)]]
-                    [:text {} [(apply str (repeat (- width (count value)) "_"))]]]])))}))
+          #_(log/debug "Input render" show-cursor (dissoc props :children))
+          #_(log/info "Input width" width (type width))
+          #_(log/info "cursor fg" cursor-fg "cursor-bg" cursor-bg "t" t "cursor" cursor)
+          [:view {:style style
+                  :class :tabbable
+                  :on-focus on-focus
+                  :on-blur on-blur
+                  :on-keypress on-keypress}
+            [:text {:key "text"} value]
+            [:text {:key "cursor" :style {:color cursor-fg :background-color cursor-bg}} (str cursor)]
+            [:text {:key "rest"} (apply str (repeat (- width (count value)) "_"))]]))))
 
-(def FileResource (zc/create-react-class {
-  :display-name "FileResource"
-  :get-initial-state (fn [] {:state :not-loaded})
-  :component-will-mount (fn [this]
-    (log/info "FileResource component-will-mount" (zc/element-id-str zc/*current-owner*))
-    ;; pass current-owner binding through to the scheduled fn
-    (let [owner zc/*current-owner*
-          updater zc/*updater*
-          {:keys [src child-type]} (zc/props this)]
-      (zc/set-state! this {:state :loading})
-      (future
+(defn async-load-file
+  [path on-load on-error]
+  (future
+    (try
+      (let [bytes (get (swap! resource-cache
+                              cache/through-cache
+                              path
+                              (constantly (ziu/slurp-bytes (jio/as-file path))))
+                       path)]
+        (on-load bytes))
+      (catch Throwable t
+        (on-error t)))))
+
+(defn async-load-url
+  [url on-load on-error]
+  (future
+    (try
+      (let [response (get (swap! resource-cache
+                              cache/through-cache
+                              url
+                              (constantly (client/get url {:as :byte-array})))
+                       url)]
+        (log/info "async-load-url" response (type response))
+        (on-load (:body response)))
+      (catch Throwable t
+        (on-error t)))))
+
+; Adapted from https://dev.to/gethackteam/from-higher-order-components-hoc-to-react-hooks-2bm9
+(defn use-resource
+  [src]
+  (let [[data set-data!] (g/use-state nil)
+        [error set-error!] (g/use-state nil)
+        [is-loading set-is-loading!] (g/use-state true)]
+    (g/use-effect (fn effect-fn []
         (try
-          (binding [zc/*current-owner* owner
-                    zc/*updater* updater]
-            (log/info "FileResource component-will-mount load-fn " src " " (zc/element-id-str zc/*current-owner*))
-            (let [bytes (get (swap! resource-cache
-                                    cache/through-cache
-                                    src
-                                    (constantly (ziu/slurp-bytes (jio/as-file src))))
-                             src)]
-              (log/info "FileResource loaded " (count bytes) " bytes" (zc/element-id-str zc/*current-owner*))
-              (zc/set-state! this {:state :loaded :data bytes})))
-          (catch Exception e
-            (log/error e))))))
-  :render (fn [this]
-    {:post [(zc/element? %)]}
-    (let [{:keys [src render]} (zc/props this)
-          {:keys [state data]} (zc/state this)]
-      (log/trace "File Resource render" src state)
-      (case state
-         :not-loaded
-           (zc/csx [:text {} ["not loaded"]])
-         :loading
-           (zc/csx [:text {} ["loading"]])
-         :loaded
-           (render data))))}))
+          (log/info "Using resource" src "data" data "error" error "is-loading" is-loading)
+          ((if (clojure.string/starts-with? src "http")
+             async-load-url
+             async-load-file)
+           src
+           (fn on-load [bytes]
+             (log/info "setting data" bytes)
+             #_(assert false)
+             (set-is-loading! false)
+             (set-data! bytes)
+             (log/info "finished setting data"))
+           (fn on-error [e]
+             (log/error "Error loading " src)
+             (println e)
+             (log/error e)
+             #_(assert false)
+             (set-is-loading! false)
+             (set-error! e)
+             (log/info "finished setting error")))
+           (log/info "finished using resource")
+           (catch Throwable t
+             (log/error t))))
+     [])
+    [data error is-loading]))
 
-(def UrlResource (zc/create-react-class {
-  :display-name "UrlResource"
-  :get-initial-state (fn [] {:state :not-loaded})
-  :component-will-mount (fn [this]
-    (log/info "UrlResource component-will-mount" (zc/element-id-str zc/*current-owner*))
-    ;; pass current-owner binding through to the scheduled fn
-    (let [owner zc/*current-owner*
-          updater zc/*updater*
-          {:keys [src child-type]} (zc/props this)]
-      #_(zc/set-state! this {:state :loading})
-      (future
-        (try
-          (binding [zc/*current-owner* owner
-                    zc/*updater* updater]
-            (log/info "UrlResource component-will-mount load-fn" (zc/element-id-str owner))
-            (let [bytes (get (swap! resource-cache
-                                    cache/through-cache
-                                    src
-                                    (constantly (client/get src {:as :byte-array})))
-                             src)]
-              (zc/set-state! this {:state :loaded :data bytes})))
-          (catch Exception e
-            (log/error e)
-            (assert false))))))
-  :render (fn [this]
-    (let [{:keys [src render]} (zc/props this)
-          {:keys [state data]} (zc/state this)]
-      (case state
-         :not-loaded
-           (zc/csx [:text {} ["not loaded"]])
-         :loading
-           (zc/csx [:text {} ["loading"]])
-         :loaded
-           (render data))))}))
+(g/defcomponent NativeImage
+  [props _]
+  (let [{:keys [src data style]} props
+        clip (get style :clip)
+        [width height img-characters :as memo] (g/use-memo
+          (fn []
+            (let [img (ziu/load-image data)
+                  clipped-img (if clip
+                                (ziu/clip-image img clip)
+                                img)
+                  pixels (ziu/pixel-seq clipped-img)
+                  width (ziu/width clipped-img)
+                  height (ziu/height clipped-img)
+                  lines (partition width pixels)]
+              ; TODO: close?
+              ;(.close img)
+              ;(.close clipped-img)
+              (log/debug "NativeImage render" (get style :clip) width "x" height)
+              (log/debug "NativeImage render" (count lines))
+              #_(doseq [line lines]
+                (log/info (vec line)))
+              (let [img-characters (mapv (fn [[line1 line2]]
+                                           (mapv (fn [px1 px2]
+                                                  {:c \u2580 ; ▀
+                                                   :fg (zcolor/color
+                                                         (conj (mapv (comp (partial bit-and 0xFF) byte) px1) 255))
+                                                   :bg (zcolor/color
+                                                         (conj (mapv (comp (partial bit-and 0xFF) byte) px2) 255))})
+                                                 line1 line2))
+                                         (partition 2 lines))]
+                (log/trace "img-characters" img-characters)
+                (log/info "Loaded image " width "x" height)
+                [width height img-characters])))
+          [src clip])]
+     #_(log/info "memo" memo "width" width "height" height "img-characters" (count img-characters))
+     [:img {:width width
+            :height (/ height 2)
+            :pixels img-characters}]))
 
-
-(def Resource (zc/create-react-class {
-  :display-name "Resource"
-  :render (fn [this]
-    (let [{:keys [src render]} (zc/props this)]
-      (log/trace "Resource render" src)
-      (if (clojure.string/starts-with? src "http")
-        (zc/csx [UrlResource {:src src :render render}])
-        (zc/csx [FileResource {:src src :render render}]))))}))
-  
-(def NativeImage (zc/create-react-class {
-  :display-name "NativeImage"
-  :get-initial-state (fn []
-                       (log/info "NativeImage get-initial-state")
-                       {:state :not-loaded})
-  :component-will-mount (fn [this]
-    (log/info "NativeImage component-will-mount" (zc/element-id-str zc/*current-owner*))
-    ;; pass current-owner binding through to the scheduled fn
-    (let [owner zc/*current-owner*
-          updater zc/*updater*
-          {:keys [src child-type]} (zc/props this)]
-      #_(zc/set-state! this {:state :loading})
-      (future
-        (try
-          (binding [zc/*current-owner* owner
-                    zc/*updater* updater]
-            (log/info "NativeImage component-will-mount load-fn" (zc/element-id-str owner))
-            (let [{:keys [data style]} (zc/props this)
-                  clip (get style :clip)
-                  k [data clip]
-                  child (try
-                          (get (swap! image-cache
-                                    cache/through-cache
-                                    k
-                                    (constantly 
-                                      (let [img (ziu/load-image data)
-                                            clipped-img (if clip
-                                                          (ziu/clip-image img clip)
-                                                          img)
-                                            pixels (ziu/pixel-seq clipped-img)
-                                            width (ziu/width clipped-img)
-                                            height (ziu/height clipped-img)
-                                            lines (partition width pixels)]
-                                        ; TODO: close?
-                                        ;(.close img)
-                                        ;(.close clipped-img)
-                                        (log/debug "NativeImage render" (get style :clip) width "x" height)
-                                        (log/debug "NativeImage render" (count lines))
-                                        #_(doseq [line lines]
-                                          (log/info (vec line)))
-                                        (let [img-characters (mapv (fn [[line1 line2]]
-                                                                     (mapv (fn [px1 px2]
-                                                                            {:c \u2580 ; ▀
-                                                                             :fg (zcolor/color
-                                                                                   (conj (mapv (comp (partial bit-and 0xFF) byte) px1) 255))
-                                                                             :bg (zcolor/color
-                                                                                   (conj (mapv (comp (partial bit-and 0xFF) byte) px2) 255))})
-                                                                           line1 line2))
-                                                                   (partition 2 lines))]
-                                          (log/trace "img-characters" img-characters)
-                                          (zc/csx [:img {:width width :height (/ height 2)}
-                                                   img-characters])))))
-                             k)
-                            (catch Exception e
-                              (log/error e)
-                              (assert false)))]
-              (zc/set-state! this {:state :loaded :child child})))
-          (catch Exception e
-            (log/error e)
-            (assert false))))))
-  :render (fn [this]
-    (let [{:keys [src render]} (zc/props this)
-          {:keys [state child]} (zc/state this)]
-      (case state
-         :not-loaded
-           (zc/csx [:text {} ["not loaded"]])
-         :loading
-           (zc/csx [:text {} ["loading"]])
-         :loaded
-           child)))}))
-
-(def RexPaintImage (zc/create-react-class {
-  :display-name "RexPaintImage"
-  :render (fn [this]
-    (let [{:keys [data layer-index]} (zc/props this)
-          layer-index (or layer-index 0)
-          layers (if (sequential? data) data (rockpick.core/read-xp (clojure.java.io/input-stream data)))
-          layer (nth layers layer-index)
-          pixels (mapv (fn [line]
-                   (mapv (fn [{:keys [ch fg bg]}]
-                          (let [fg-r (get fg :r)
-                                fg-g (get fg :g)
-                                fg-b (get fg :b)
-                                fg-a 255
-                                bg-r (get bg :r)
-                                bg-g (get bg :g)
-                                bg-b (get bg :b)
-                                bg-a 255]
-                          {:c (get zfont/cp437-unicode (int ch))
-                           :fg (zcolor/color [fg-r fg-g fg-b fg-a])
-                           :bg (zcolor/color [bg-r bg-g bg-b bg-a])}))
-                         line))
-               layer)]
-      (log/trace "pixels" pixels)
-      (zc/csx [:img {:width (count (first pixels)) :height (count pixels)} pixels])))}))
+(g/defcomponent RexPaintImage
+  [props _]
+  (let [{:keys [data layer-index]} props
+        layer-index (or layer-index 0)
+        layers (if (sequential? data) data (rockpick.core/read-xp (clojure.java.io/input-stream data)))
+        layer (nth layers layer-index)
+        pixels (mapv (fn [line]
+                 (mapv (fn [{:keys [ch fg bg]}]
+                        (let [fg-r (get fg :r)
+                              fg-g (get fg :g)
+                              fg-b (get fg :b)
+                              fg-a 255
+                              bg-r (get bg :r)
+                              bg-g (get bg :g)
+                              bg-b (get bg :b)
+                              bg-a 255]
+                        {:c (get zfont/cp437-unicode (int ch))
+                         :fg (zcolor/color [fg-r fg-g fg-b fg-a])
+                         :bg (zcolor/color [bg-r bg-g bg-b bg-a])}))
+                       line))
+             layer)]
+    (log/trace "pixels" pixels)
+    [:img {:width (count (first pixels)) :height (count pixels)} pixels]))
 
 (defn data-to-pixels [data]
   (mapv (fn [[line1 line2]]
@@ -336,26 +291,31 @@
       (log/trace "img-characters" pixels)
       (zc/csx [:img {:width width :height (/ height 2)} pixels])))}))
 
-(def DataImage  (zc/create-react-class {
-  :display-name "DataImage"
-  :render (fn [this]
-    (let [{:keys [src data style]} (zc/props this)]
-      (if (clojure.string/ends-with? src "xp")
-        (zc/csx [RexPaintImage {:data data :style style}])
-        (zc/csx [NativeImage {:data data :style style}]))))}))
+(g/defcomponent DataImage
+  [props _]
+  (let [{:keys [src data style]} props]
+    (if (clojure.string/ends-with? src "xp")
+      [RexPaintImage {:src src :data data :style style}]
+      [NativeImage {:src src :data data :style style}])))
   
-(def Image (zc/create-react-class {
-  :display-name "Image"
-  :render (fn [this]
-    (let [props (assoc (zc/props this)
-                  :render (fn [data]
-                            {:post [(zc/element? %)]}
-                            (let [props (assoc (zc/props this) :data data)]
-                              (log/trace "Image render-prop fn" (get props :src))
-                              (zc/csx [DataImage props]))))]
-      (log/trace "Image render" (get props :src))
-      ;; passes :src :style, etc through
-      (zc/csx [Resource props []])))}))
+(g/defcomponent Image
+  [props _]
+  ;; passes :src :style, etc through
+  (let [[data error is-loading] (use-resource (get props :src))]
+       #_(log/info "resource:" data error is-loading)
+    (try
+      (cond
+        is-loading
+          [:text {} "loading"]
+        data
+          [DataImage (merge props {:data data})]
+        error
+          [:text {} (str error)]
+        :else
+          [:text {} (str "Error loading " (get props :src))])
+      (catch Throwable t
+        (log/error "Error rendering Image")
+        (log/error t)))))
 
 ;; style taken from https://www.nucleo.com.au/using-flexbox-for-modal-dialogs/
 (def Popup (zc/create-react-class {

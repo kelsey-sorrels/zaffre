@@ -1,10 +1,13 @@
 (ns zaffre.components.render2
   (:require clojure.data
+            [clojure.core.async :as a :refer [buffer chan go-loop <! >!]]
             [clojure.string]
+            [clojure.contrib.def]
             [clojure.test :refer [is]]
             [taoensso.timbre :as log]
             [zaffre.components :as zc]
             [gossamer.core-graal :as g]
+            [gossamer.template :as gt]
             [gossamer.element :as ge]
             [gossamer.host-config :as ghc]
             [zaffre.components.layout :as zl]
@@ -96,7 +99,7 @@
   ([parent-style [type props children]]
     (if (or (= type :text) (= type :img))
       [type
-       (update-in props [:style] #(merge (select-keys parent-style inheritable-styles) %))
+       (update props :style #(merge (select-keys parent-style inheritable-styles) (or % {})))
        children]
       (let [new-style (merge (select-keys parent-style inheritable-styles) (get props :style {}))]
         [type
@@ -176,7 +179,7 @@
          (map? (second img-element))
          #_(not (empty? (last img-element)))]}
   #_(log/debug "render-img-into-container" img-element)
-  (let [[type {:keys [style zaffre/layout] :or {style {}} :as props} children] img-element
+  (let [[type {:keys [style zaffre/layout pixels] :or {style {}} :as props} children] img-element
         {:keys [mix-blend-mode] :or {mix-blend-mode (get default-style :mix-blend-mode)}} style
         {:keys [x y width height overflow-bounds]} layout
         overflow-bounds (or overflow-bounds (layout->bounds layout))
@@ -188,7 +191,7 @@
         num-cols-target (zt/num-cols target)
         num-rows (int (zt/num-rows target))
         max-y (min overflow-max-y num-rows)
-        lines (last img-element)]
+        lines pixels]
     #_(log/debug "render-img-into-container layout " layout)
     #_(log/trace "render-img-into-container lines" (vec lines))
     (zu/loop-with-index dy [line lines]
@@ -593,26 +596,27 @@
   ([target element]
     (render-into-container target nil element))
   ([target existing root-element]
+    #_(log/info "render-into-container root-element" root-element)
     (let [group-info (zt/groups target)
           layer-info (layer-info group-info)
           ;; render to native elements
           #_#_root-element (render-recursively existing element)
-          [type props groups :as root-dom] (-> root-element
-                                              extract-native-elements
-                                              first
-                                              cascade-style)
+          
+          [type props groups :as root-dom] (cascade-style root-element)
           elements (atom (list))]
       #_(log/info "render-into-container existing" (zc/tree->str existing))
       #_(log/info "render-into-container rendered-element" (zc/tree->str root-element))
-      ;(log/trace "render-into-container" (clojure.pprint/pprint root-dom))
+      #_(log/info "render-into-container root-dom" (zc/tree->str root-dom))
+      #_(log/info "type" type)
       (assert (= type :terminal)
               (format "Root component not :terminal found %s instead" type))
       ;; for each group in terminal
-      (doseq [[type {:keys [id pos]} layers] groups
+      (doseq [[type {:keys [id pos] :as group-props} layers] groups
               :let [{:keys [columns rows]} (get group-info id)]]
         (assert (= type :group)
                 (format "Expected :group found %s instead" type))
-        (log/trace "rendering group" id)
+        ;(assert id (str "No id found for group" group-props))
+        #_(log/info "rendering group" id)
         ;; update group pos
         (when pos
           (zt/alter-group-pos! target id pos))
@@ -645,24 +649,39 @@
             (zt/put-layer! target id layer-container))))
       (with-meta root-element {:layout-elements @elements}))))
 
+; Animation frame support
+(defonce request-animation-frame-handlers (atom []))
+(defn request-animation-frame
+  [f]
+  (swap! request-animation-frame-handlers conj f))
 
-(defn commit-mount
-  [terminal frames root-container-instance]
-  (log/info "reset-after-commit")
-  (log/info "rendering" root-container-instance)
-  ;(render-into-container terminal root-container-instance)
-  ;(zt/refresh! terminal)
-  (swap! frames inc)
-  (log/info "After frames inc"))
+(defn render 
+  [terminal component props frames]
+  ; render into an empty vector
+  (let [exec-in-context (chan (buffer 100))
+        render-chan (g/render-with-context component props exec-in-context)]
+    ; Listen for renders and print them out
+    (go-loop []
+      (let [[container port] (a/alts! [render-chan] :default nil)]
+        (try
+          #_(clojure.pprint/pprint (g/clj-elements dom-element))
+          (when-not (= port :default)
+            (let [element (g/clj-elements container)]
+              (doseq [animation-frame-request @request-animation-frame-handlers]
+                (try
+                  (>! exec-in-context animation-frame-request)
+                  (catch Throwable t
+                    (log/error t))))
+              (reset! request-animation-frame-handlers [])
+              (render-into-container terminal element))
+          (log/trace "After frames inc"))
+          (zt/refresh! terminal)
+          (swap! frames inc)
+          (catch Throwable t
+            (log/error t)))
+        (recur)))))
 
-(defn context
-  [terminal & [frames]]
-  (let [context (g/context {"commitMount" (partial commit-mount terminal frames)})]
-    context))
-
-(defn render
-  [context-ref element]
-  (binding [g/*context* context]
-    ; render into an empty vector
-    (g/render context-ref element [])))
-  
+(defmacro defcomponent
+  [compname args & body]
+  `(g/defcomponent ~compname ~args ~@body))
+ 

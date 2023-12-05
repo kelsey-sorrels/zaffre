@@ -454,7 +454,7 @@
         (name (get this :type))
         (display-name (get this :type)))
       props
-      (get-state *updater* this)))
+      "unknown"  #_(get-state *updater* this)))
   PartialHash
   (hash-type-and-props [this]
     (log/info "id" id "type" (if (component? type) (display-name type) type))
