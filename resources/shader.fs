@@ -24,7 +24,7 @@ void main(void) {
   for (int i = 0; i < numLayers; i++) {
       ivec3 termXYZ = ivec3(termXY.x, termXY.y, i);
       uvec3 glyphXYT = texelFetch(uGlyphs, termXYZ, 0).xyz;
-      int glyphType = int(glyphXYT.t);
+      int glyphType = int(glyphXYT.z);
       uvec2 fontIndex = glyphXYT.xy;
       ivec2 fontXY = ivec2(int(fontIndex.x) * charSize.x, int(fontIndex.y) * charSize.y);
       // calc the position of the fragment relative to the terminal cell
@@ -35,9 +35,9 @@ void main(void) {
       vec4 fg  = texelFetch(uFg, termXYZ, 0);
       vec4 bg  = texelFetch(uBg, termXYZ, 0);
 
-    if (glyphType == 0) {
+    if (glyphType == 1) {
         result = mix(bg, fg, fnt.r);
-    } else {
+    } else if (glyphType == 2) {
         result += fnt * fnt.a + (result * (1.0 - fnt.a));
     }
   }

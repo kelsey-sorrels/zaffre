@@ -576,6 +576,7 @@
                     character-width
                     character-height
                     character->col-row
+                    character->transparent
                     font-texture-width
                     font-texture-height
                     font-texture]} (get @font-textures (font-key @normal-font))
@@ -594,7 +595,7 @@
         ;;  (doseq [[row line] (map-indexed vector (reverse @character-map))
         ;;          [col c]    (map-indexed vector line)]
             ;;(log/info "row" row "col" col "c" c)
-        (loop-with-index row [line (reverse @character-map)]
+        (loop-with-index row [line @character-map]
           (loop-with-index col [c line]
             (let [chr        (or (get c :fx-character) (get c :character))
                   chr        (if (and (= layer-id base-layer-id)
@@ -612,7 +613,8 @@
                   ;s         (str (get c :character))
                   style     (get c :style)
                   i         (* 4 (+ (* texture-columns row) col) layer)
-                  [x y]     (get character->col-row chr)]
+                  [x y]     (get character->col-row chr)
+                  transparent (get character->transparent chr)]
               ;(log/info "Drawing at col row" col row "character from atlas col row" x y c "(index=" i ")")
               (when (zero? col)
                 (.position glyph-image-data i)
@@ -624,7 +626,8 @@
                   (assert (or (not (nil? x)) (not (nil? y))) (format "X/Y nil - glyph not found for character %s %s" (or (str chr) "nil") (or (format "%x" (int chr)) "nil")))
                   (.put glyph-image-data (unchecked-byte x))
                   (.put glyph-image-data (unchecked-byte y))
-                  (.put glyph-image-data (unchecked-byte 0))
+                  ;; TODO fill with appropriate type
+                  (.put glyph-image-data (unchecked-byte (if transparent 2 1)))
                   (.put glyph-image-data (unchecked-byte 0))
                   (.put fg-image-data    (unchecked-byte fg-r))
                   (.put fg-image-data    (unchecked-byte fg-g))
@@ -840,8 +843,8 @@
          default-fg-color [255 255 255]
          default-bg-color [0 0 0]
          on-key-fn        nil
-         windows-font     (TTFFont. "Courier New" 16)
-         else-font        (TTFFont. "Monospaced" 16)
+         windows-font     (TTFFont. "Courier New" 16 false)
+         else-font        (TTFFont. "Monospaced" 16 false)
          fullscreen       false
          antialias        true
          icon-paths       nil

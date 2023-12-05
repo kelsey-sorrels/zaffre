@@ -40,9 +40,13 @@
                                         line))
                          tilemap))))
 
-(def font (CompositeFont. [(CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2)
+(defn map->tile->transparent [tilemap]
+  (zipmap (flatten tilemap) (repeat false)))
+
+(def font (CompositeFont. [(CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2 true)
                            (TileSet. "http://opengameart.org/sites/default/files/tileset_1bit.png" :green 16 16
-                                     (map->tile->col-row one-bit-map))]))
+                                     (map->tile->col-row one-bit-map)
+                                     (map->tile->transparent one-bit-map))]))
                                      
 #_(def font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2))
                                      
