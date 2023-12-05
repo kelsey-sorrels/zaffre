@@ -18,12 +18,13 @@
   [:ul-cover-bg :u-cover-bg :ur-cover-bg :ul-dark-cover-bg :u-dark-cover-bg :ur-dark-cover-bg :ul-light-cover-bg :u-light-cover-bg :ur-light-cover-bg :? :? :? :? ]
   [:l-cover-bg :cover-bg :r-cover-bg :l-dark-cover-bg :dark-cover-bg :r-dark-cover-bg :l-light-cover-bg :light-cover-bg :r-light-cover-bg :? :? :? :? ]
   [:bl-color-bg :b-cover-bg :br-cover-bg :bl-dark-cover-bg :b-dark-cover-bg :br-dark-cover-bg :bl-light-cover-bg :blight-cover-bg :br-light-cover-bg :? :? :? :? ]
-  [:? :? :? :? :? :? :? :? :? :? :? :? :? ]
-  [:? :? :? :? :? :? :? :? :? :? :? :? :? ]
-  [:? :? :? :? :? :? :? :? :? :? :? :? :? ]
-  [:? :? :? :? :? :? :? :? :? :? :? :? :? ]
-  [:? :? :? :? :? :? :? :? :? :? :? :? :? ]
-  [:? :? :? :? :? :? :? :? :? :? :? :? :? ]
+  [:ul-cover-rev :ur-cover-rev :ul-dark-cover-rev :ur-dark-cover-rev :ul-light-cover-rev :ur-light-cover-rev :? :? :? :? :? :? :? ]
+  [:bl-cover-rev :br-cover-rev :bl-dark-cover-rev :br-dark-cover-rev :bl-light-cover-rev :br-light-cover-rev :? :? :? :? :? :? :? ]
+  [:ul-trans :u-trans :ur-trans :ul-dark-trans :u-dark-trans :ur-dark-trans :ul-light-trans :u-light-trans :ur-light-trans :dot-trans :leaf-0-trans :leaf-1-trans :? ]
+  [:l-trans :trans :r-trans :l-dark-trans :dark-trans :r-dark-trans :l-light-trans :light-trans :r-light-trans :dot-light-trans :leaf-0-light-trans :leaf-1-light-trans :? ]
+  [:bl-trans :b-trans :br-trans :bl-dark-trans :b-dark-trans :br-dark-trans :bl-light-trans :b-light-trans :br-light-trans :dot-dark-trans :leaf-0-dark-trans :leaf-1-dark-trans :? ]
+  [:ul-rev :u-rev :ur-rev :ul-cover-rev :u-cover-trans :ur-cover-rev :ul-cover-rev :ur-cover-rev :? :? :? :? :? :? :? ]
+  [:bl-rev :br-rev :bl-cover-rev :br-cover-rev :bl-cover-rev :br-cover-rev :? :? :? :? :? :? :? ]
   [:? :? :? :? :? :? :? :? :? :? :? :? :? ]
   [:? :? :? :? :? :? :? :? :? :? :? :? :? ]
   [:? :? :? :? :? :? :? :? :? :? :? :? :? ]
@@ -44,6 +45,13 @@
     [156 175 131 255]
     [209 213 201 255]
     [209 213 201 255]
+    [209 213 201 255]]
+   [[ 57  29  29   0]
+    [147 103  59 255]
+    [149  65  35 255]
+    [177 157 105 255]
+    [209 213 201 255]
+    [215 215 151 255]
     [209 213 201 255]]])
 
 (def tileset-bw
@@ -59,12 +67,19 @@
 
       
 
-(def palette (for [[row line] (map-indexed vector tile-names)
-                   [col id]   (map-indexed vector line)]
-               {:c id :fg [255 255 255] :bg [0 0 0] :x col :y row :palette-index 1}))
+(defn palette
+  [palette-index]
+  (for [[row line] (map-indexed vector tile-names)
+        [col id]   (map-indexed vector line)]
+    {:c id :fg [255 255 255] :bg [0 0 0] :x col :y row :palette-index palette-index}))
+
+(def color-table-chars
+  (for [[row line] (map-indexed vector color-table)
+        [col bg]   (map-indexed vector line)]
+    {:c \space :fg [255 255 255] :bg bg :x col :y (+ row 28)}))
 
 (log/info font)
-(log/info "palette" (vec palette))
+;(log/info "palette" (vec palette))
 
 (defn -main [& _]
   ;; render in background thread
@@ -89,14 +104,16 @@
                            :2 (atom {})
                            :3 (atom {})}
             current-layer (atom :0)
-            current-tile  (atom (ffirst tile-names))]
+            current-tile  (atom (ffirst tile-names))
+            palette-index (atom 1)]
         ;; Every 33ms, draw a full frame
         (zat/do-frame terminal 33
-          (zutil/put-string terminal :ui 2 30 (format "layer: %s" (str @current-layer)))
+          (zat/put-chars! terminal :ui (palette @palette-index))
+          (zat/put-chars! terminal :ui [{:c @current-tile :fg [255 255 255] :bg [128 128 128] :x 0 :y 26 :palette-index 1}])
+          (zutil/put-string terminal :ui 2 26 (format "layer: %s" (str @current-layer)))
           (when @current-tile
-            (zutil/put-string terminal :ui 16 30 (str @current-tile)))
-          (zat/put-chars! terminal :ui palette)
-          (zat/put-chars! terminal :ui [{:c @current-tile :fg [255 255 255] :bg [128 128 128] :x 0 :y 30 :palette-index 1}])
+            (zutil/put-string terminal :ui 16 26 (str @current-tile)))
+          (zat/put-chars! terminal :ui color-table-chars)
           (zat/put-chars! terminal :0 (map (fn [[[col row] t]]
                                              {:c t :fg [255 255 255] :bg [0 0 0] :x col :y row :palette-index 1})
                                            @(get layers :0)))
@@ -132,11 +149,13 @@
           (fn [{:keys [button state col row] :as click}]
             (log/info "got click" click)
             (if (< col 12)
-              ;; select new tile
-              (do
-                (log/info "selecting tile at" [row col])
-                (when-let [tile (get-in tile-names [row col])]
-                  (reset! current-tile tile)))
+              (if (< row 27)
+                ;; select new tile
+                (do
+                  (log/info "selecting tile at" [row col])
+                  (when-let [tile (get-in tile-names [row col])]
+                    (reset! current-tile tile)))
+                (reset! palette-index (- row 27)))
               ;; draw new tile
               (do
                 (log/info "placing tile at" [row col])
