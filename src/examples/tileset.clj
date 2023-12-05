@@ -39,16 +39,21 @@
 (defn -main [& _]
   ;; render in background thread
   (zgl/make-terminal
-    [:ui :0 :1 :2 :3]
-    {:title "Zaffre demo"
-     :columns 31 :rows 35
+    [{:id      :app
+      :layers  [:ui :0 :1 :2 :3]
+      :columns 31
+      :rows    35
+      :pos     [0 0]}]
+    {:title            "Zaffre demo"
+     :screen-width     (* 31 16)
+     :screen-height    (* 35 16)
      :default-fg-color [250 250 250]
      :default-bg-color [5 5 8]
-     :windows-font font
-     :else-font font
-     :icon-paths ["images/icon-16x16.png"
-                  "images/icon-32x32.png"
-                  "images/icon-128x128.png"]}
+     :windows-font     font
+     :else-font        font
+     :icon-paths       ["images/icon-16x16.png"
+                        "images/icon-32x32.png"
+                        "images/icon-128x128.png"]}
     (fn [terminal]
       (let [term-pub      (zat/pub terminal)
             ;key-chan      (async/chan)
