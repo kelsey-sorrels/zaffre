@@ -19,6 +19,7 @@
   :lein-release {:deploy-via :lein-deploy
                  :scm :git
                  :build-uberjar true}
+  :global-vars {*warn-on-reflection* true}
   :jvm-opts ~(if (-> (System/getProperty "os.name")
                     (.toLowerCase)
                     (.contains "mac"))

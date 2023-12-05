@@ -5,6 +5,8 @@
  
 (declare ^:dynamic *current-owner*)
 
+(declare element?)
+
 ;; State
 (defprotocol IUpdater
   (enqueue-set-state! [this element partial-state callback])
@@ -30,28 +32,52 @@
                (get updater :prev-state))))))
   IUpdater
   (enqueue-set-state! [this element partial-state callback]
-    (assert (some? element) "Element must not be nil")
-    (assert (-> element :id some?) "Element must have :id")
+    {:pre [(element? element) (get element :id)
+           (or (map? partial-state)
+               (fn? callback))]}
     (let [k (get element :id)
           callback (cond
                      (map? partial-state)
-                       (fn [s]
-                         (update-in s [k] #(merge % partial-state)))
+                       (fn partial-state-callback [s]
+                         {:pre [(some? s)]
+                          :post [(some? %)
+                                 (map? %)]}
+                         (try
+                           (println "partial-state-callback" s k partial-state)
+                           (update s k #(merge % partial-state))
+                           (catch Exception e
+                             (log/error "Exception applying callback" e)
+                             s)))
                      (fn? callback)
-                       (fn [s]
-                         (update s k callback))
+                       (fn fn-callback [s]
+                         {:pre [(some? s)]
+                          :post [(some? %)
+                                 (map? %)]}
+                         (try
+                           (println "fn-callback" s k callback)
+                           (update s k callback)
+                           (catch Exception e
+                             (log/error "Exception applying callback" e)
+                             s)))
                      :else
-                       (fn [s] nil))]
-      (swap! a (fn [{:keys [q prev-state] :as updater}]
+                       (assert false (str "Got neither partial-state nor callback" partial-state callback)))]
+      (swap! a (fn [{:keys [q] :as updater}]
                  (assoc updater :q (conj q callback)))))
       this)
   (update-state! [this]
     (swap! a (fn [{:keys [q s] :as updater}]
+               (assert q (str "q cannot be nil" q s))
+               (assert (some? s) (str "s cannot be nil" q s))
+               (log/info "update-state!" (count q) "queued updates")
                ;; apply queued changes to old state to make new state
-               (let [new-s (reduce (fn [s f] (f s)) s q)
-                     ;; diff the old state and new state to find changed element ids
-                     [a b _] (clojure.data/diff s new-s)
-                     dirty (clojure.set/union (keys a) (keys b))]
+               (let [new-s (reduce (fn [s f]
+                                     {:pre [(some? s) (some? f)]
+                                      :post [(some? %)]}
+                                     (println "f" f "s" s)
+                                     (let [r (f s)]
+                                       (println "r" r)
+                                       r)) s q)]
+                 (assert (some? new-s) (str "new-s cannot be nil q:" q "s:" s "new-s:" new-s))
                  (assoc updater :q []
                                 :s new-s
                                 :prev-state s))))
@@ -61,7 +87,7 @@
     (assert (-> element :id some?) "Element must have :id")
     (let [k (get element :id)
           {:keys [s prev-state] :as updater} @a]
-      (= (get s k) (get prev-state k))))
+      (not= (get s k) (get prev-state k))))
   (get-state [this element]
     (let [k (get element :id)]
       (-> a deref :s (get k))))
@@ -69,7 +95,12 @@
     (let [k (get element :id)]
       (-> a deref :prev-state (get k)))))
 
-(defn empty-state [] (->Updater (atom {:q [] :s {} :prev-state {}})))
+(defn empty-state [] (->Updater (atom {:q [] :s {} :prev-state {}}
+                                      :validator (fn [{:keys [q s prev-state]}]
+                                                   (and (vector? q)
+                                                        (every? fn? q)
+                                                        (map? s)
+                                                        (map? prev-state))))))
 
 (defrecord NoopUpdater []
   IUpdater
@@ -77,6 +108,7 @@
     (assert (-> element :id some?) "Element must not be nil")
       this)
   (update-state! [this]
+    (log/error "Updating noop state")
     this)
   (element-state-changed? [this element]
     (assert (-> element :id some?) "Element must not be nil")
@@ -86,7 +118,22 @@
 
 (def noop-updater (->NoopUpdater))
 
-(def ^:dynamic *updater* noop-updater)
+(defrecord AlwaysThrowUpdater []
+  IUpdater
+  (enqueue-set-state! [this element partial-state callback]
+    (assert false))
+  (update-state! [this]
+    (assert false))
+  (element-state-changed? [this element]
+    (assert false))
+  (get-state [this element]
+    (assert false))
+  (get-prev-state [this element]
+    (assert false)))
+
+(def always-throw-updater (->AlwaysThrowUpdater))
+
+(def ^:dynamic *updater* always-throw-updater #_noop-updater)
 
 ;; PureComponent
 ;; context is for context api
@@ -125,8 +172,7 @@
 
 
 (declare ->ComponentInstance)
-(defrecord Component [updater
-                      component-will-mount
+(defrecord Component [component-will-mount
                       render
                       component-did-mount
                       component-will-receive-props
@@ -225,15 +271,13 @@
   ComponentMethods
   (set-state [this update]
     (if (or (map? update) (fn? update))
-      (let [updater (get type :updater)
-            partial-state (when (map? update) update)
-            callback (when (fn? update update))]
-        (enqueue-set-state! updater *current-owner* partial-state callback))
+      (let [partial-state (when (map? update) update)
+            callback (when (fn? update) update)]
+        (enqueue-set-state! *updater* *current-owner* partial-state callback))
       (throw "setState(...): takes an object of state variables to update or a
              function which returns an object of state variables.")))
   (force-update [this callback]
-    (let [updater (get type :updater)]
-      (enqueue-set-state! updater *current-owner* nil callback)))
+    (enqueue-set-state! *updater* *current-owner* nil callback))
 
   ComponentProperties
   (default-props [this] (default-props component))
@@ -328,8 +372,7 @@
           get-derived-state-from-props (get-opts :get-derived-state-from-props)
           display-name                 (get opts :display-name "")]
       (assert render "Class specification must implement a `render` method.")
-      (->Component *updater*
-                   component-will-mount
+      (->Component component-will-mount
                    render
                    component-did-mount
                    component-will-receive-props
@@ -385,13 +428,13 @@
   "Maps element's childrend and more's children calling (f element-child & more-children).
    Returns updated children."
   ;; `more` may contain nil elements. nil elements return infinite nil children
-  (letfn [(element-children-or-nil [element] (or (element-children element) (repeat nil)))]
+  (letfn [(element-children-or-nil [element] (concat (element-children element) (repeat nil)))]
     (let [elements (cons element more)
           children (map element-children-or-nil elements)
           _ (assert (every? coll? children) (str "Non collection children " (vec (map type children))))
           children (apply map vector children)
-          children (vec (take-while (fn [v] (not (nil? v))) children))
-          new-children (vec (map (fn [child-vec] (apply f child-vec))children))]
+          children (vec (take-while (fn [v] (not-every? nil? v)) children))
+          new-children (vec (map (fn [child-vec] (apply f child-vec)) children))]
       new-children)))
 
 (defn map-in-children [f element & more]
@@ -454,14 +497,22 @@
                                     2 [(first v) (second v) []]
                                     3 [(first v) (second v) (last v)]
                                     [(first v) (second v) (drop 2 v)])
-             csx-children (map csx* children)
+             _ (println "type children" (type children))
+             csx-children (if (and children (symbol? children))
+                            children
+                            (map csx* children))
              _ (println "props" props)
              #_#_display-name (display-name type)
              ; TODO: is there a better way to calculate display-name?
              config (merge {#_#_:display-name display-name
                             #_#_:state (get type :initial-state)}
                             props)]
-           (list `create-element type config (cons list csx-children))))))
+           (list `create-element
+                  type
+                  config
+                  (if (symbol? csx-children)
+                    csx-children
+                    (cons list csx-children)))))))
   
 (defmacro csx [v]
   (let [r (csx* v)]
@@ -475,6 +526,27 @@
     (list 'def sym# (list create-react-class {
                :display-name display-name#
                :render `(fn ~@fn-tail)}))))
+
+(defn construct-instance
+  [element]
+  {:pre [(element? element)]
+   :post [(component-instance? %)]}
+  (log/info "constructing component instance" (get element :id))
+  (log/info "*updater*" *updater*)
+  (let [{:keys [type props]} element
+        state (or (get-state *updater* element)
+                  (when (component? type)
+                    (when-let [s ((get type :get-initial-state))]
+                      (log/info "construct-instance state" s)
+                      (-> *updater*
+                        (enqueue-set-state! element s nil)
+                        update-state!
+                        (get-state element)))))
+        _ (log/trace "construct-component element type" (str type))
+        instance (if (fn? type)
+                   (create-instance (assoc (fn->component type) :props props))
+                   (create-instance (assoc type :props props) state))]
+    instance))
 
 ;; Higher Order Components
 (defn compose [& funcs]

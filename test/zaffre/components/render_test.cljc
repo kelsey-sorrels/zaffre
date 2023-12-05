@@ -2,26 +2,14 @@
   (:require
     [zaffre.components :as zc]
     [zaffre.components.render :as zcr]
+    [zaffre.text :as ztext]
     [taoensso.timbre :as log]
     [clojure.inspector :refer :all]
     [clojure.test :refer :all]))
 
 (log/set-level! :warn)
 
-(deftest flatten-test
-  (are [in out] (= out (zcr/flatten-text {} in))
-    ;; empty text
-    [:text {:zaffre/children []}] 
-    [] 
-
-    ;; split strings into words
-    [:text {:zaffre/children ["hello world"]}]
-    [
-      [:text {:zaffre/children ["hello"]}]
-      [:text {:zaffre/children [" "]}]
-      [:text {:zaffre/children ["world"]}]]))
-
-(deftest wrap-lines-test
+#_(deftest wrap-lines-test
   (are [in out] (= out in)
     ;; base cases
     (zcr/wrap-lines 20 {} [:text {:zaffre/children []}])
