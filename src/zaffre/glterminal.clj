@@ -1,4 +1,4 @@
-;; Functions for rendering characters to screen
+; Functions for rendering characters to screen
 (ns zaffre.glterminal
   (:require [zaffre.aterminal :as zat]
             [zaffre.util :as zutil]
@@ -99,9 +99,13 @@
   (let [font-file ^File (clojure.java.io/as-file name-or-path)]
     (if (.exists font-file)
       ;; Load font from file
-      (.deriveFont (Font/createFont Font/TRUETYPE_FONT font-file) (int style) (float size))
+      (do
+        (log/info "Loading font from file" name-or-path)
+        (.deriveFont (Font/createFont Font/TRUETYPE_FONT font-file) (int style) (float size)))
       ;; Load font from font registry
-      (Font. name-or-path style size))))
+      (do
+        (log/info "Loading font by name")
+        (Font. name-or-path style size)))))
 
 (defn next-pow-2 [v]
   (int (Math/pow 2 (inc (Math/floor (/ (Math/log v) (Math/log 2)))))))
@@ -754,17 +758,13 @@
          icon-paths       nil}}]
     (let [is-windows       (>= (.. System (getProperty "os.name" "") (toLowerCase) (indexOf "win")) 0)
           normal-font      (atom nil)
-          _                (log/info "Using font" normal-font)
-          boxy-font        (make-font "fonts/Boxy/Boxy.ttf" Font/PLAIN 24)
-          ;icon-paths       ["images/icon-16x16.png"
-          ;                  "images/icon-32x32.png"
-          ;                  "images/icon-128x128.png"]
           font-textures    (atom {})
           antialias        (atom antialias)
           _                (add-watch
                              normal-font
                              :font-watcher
                              (fn [_ _ _ new-font]
+                               (log/info "Using font" new-font)
                                (let [font-metrics  ^FontMetrics (.getFontMetrics (Canvas.) new-font)
                                      char-width                 (.charWidth font-metrics \M)
                                      char-height                (.getHeight font-metrics)
@@ -861,7 +861,7 @@
                                                                       [screen-width screen-height 1.0])
                             :character-width character-width
                             :character-height character-height
-                            :character->col-row (character->col-row (character-idxs character-width (displayable-characters boxy-font)))
+                            :character->col-row (character->col-row (character-idxs character-width (displayable-characters @normal-font)))
                             :buffers {:vertices-vbo-id vertices-vbo-id
                                       :vertices-count vertices-count
                                       :texture-coords-vbo-id texture-coords-vbo-id}
@@ -974,6 +974,8 @@
                                     :columns 80 :rows 24
                                     :default-fg-color [250 250 250]
                                     :default-bg-color [5 5 8]
+                                    :windows-font "/home/santos/Downloads/cour.ttf"
+                                    :else-font "/home/santos/Downloads/cour.ttf"
                                     :font-size 18
                                     :antialias true
                                     :icon-paths ["images/icon-16x16.png"
