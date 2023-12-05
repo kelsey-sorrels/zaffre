@@ -62,7 +62,9 @@
                    "images/icon-32x32.png"
                    "images/icon-128x128.png"]}
      (fn [terminal]
-       (let [key-chan   (zat/get-key-chan terminal)
+       (let [term-pub    (zat/pub terminal)
+             key-chan    (async/chan)
+             close-chan  (async/chan)
              last-key    (atom nil)
              ;; Every 33ms, draw a full frame
              render-chan (go-loop []
@@ -82,9 +84,10 @@
                                ;; ~30fps
                              (Thread/sleep 33)
                              (recur))]
-         ;; get key presses in fg thread
-         (loop []
-           (let [new-key (async/<!! key-chan)]
+         (async/sub term-pub :keypress key-chan)
+         (async/sub term-pub :close close-chan)
+         (go-loop []
+           (let [new-key (async/<! key-chan)]
              (reset! last-key new-key)
              (log/info "got key" (or (str @last-key) "nil"))
              (case new-key
@@ -92,7 +95,8 @@
                nil)
              (if (= new-key :exit)
                (do
-                 (async/close! render-chan)
-                 (System/exit 0))
                ;; change font size on s/m/l keypress
-               (recur))))))))
+               (recur)))))
+         (let [_ (async/<! close-chan)]
+           (async/close! render-chan)
+           (System/exit 0))))))

@@ -996,7 +996,9 @@
                                           [last-col
                                            last-row] @mouse-col-row]
                                       (when (not= [col row] @mouse-col-row)
-                                        (async/put! term-chan {:type :mouse-leave :col last-col :row last-row})
+                                        (when (and (not (nil? last-col))
+                                                   (not (nil? last-row)))
+                                          (async/put! term-chan {:type :mouse-leave :col last-col :row last-row}))
                                         (reset! mouse-col-row [col row])
                                         (async/put! term-chan {:type :mouse-enter :col col :row row})))))
           terminal

@@ -33,7 +33,10 @@
                   "images/icon-32x32.png"
                   "images/icon-128x128.png"]}
      (fn [terminal]
-       (let [last-key    (atom nil)
+       (let [term-pub    (zat/pub terminal)
+             key-chan    (async/chan)
+             close-chan  (async/chan)
+             last-key    (atom nil)
              ;; Every 10ms, set the "Rainbow" text to have a random fg color
              fx-chan     (go-loop []
                            (dosync
@@ -57,19 +60,20 @@
                                ;; ~30fps
                              (Thread/sleep 33)
                              (recur))]
+       (async/sub term-pub :keypress key-chan)
+       (async/sub term-pub :close close-chan)
        ;; get key presses in fg thread
-       (loop []
-         (let [new-key (async/<!! (zat/get-key-chan terminal))]
+       (go-loop []
+         (let [new-key (async/<! key-chan)]
            (reset! last-key new-key)
-           ;; quit on \q keypress
            (case new-key
+             ;; quit on \q keypress
              \q (zat/destroy! terminal)
              nil)
-           (if (= new-key :exit)
-             (do
-               (async/close! fx-chan)
-               (async/close! render-chan)
-               (System/exit 0))
-             (recur))))))))
+           (recur)))
+       (let [_ (async/<! close-chan)]
+         (async/close! fx-chan)
+         (async/close! render-chan)
+         (System/exit 0))))))
 
 
