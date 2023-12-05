@@ -48,6 +48,11 @@
                            (TileSet. "http://opengameart.org/sites/default/files/tileset_1bit.png" :green 16 16 0
                                      (map->tile->col-row one-bit-map)
                                      (map->tile->transparent one-bit-map))]))
+
+;; Use zfont/construct to download and build the font now
+;; If zfont/construct was ommitted, each apply-font! call would result in an HTTP GET of the font image
+(def fg-font-a (zfont/construct (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 true)))
+(def fg-font-b (zfont/construct (CP437Font. "http://dwarffortresswiki.org/images/f/ff/CGA8x8thin.png" :green 1 true)))
                                      
 (defn background-chars []
   (for [x (range 1 11)
@@ -62,27 +67,25 @@
         :columns 16
         :rows 16
         :pos [0 0]
-        :font (fn [_] font)}
+        :font (constantly font)}
       :foreground {
         :layers [:overlay]
         :columns 32
         :rows 32
         :pos [8 8]
-        :font (fn [_] (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 true))}
+        :font (constantly fg-font-a)}
      }
      {:title "Zaffre demo"
       :screen-width (* 16 16)
       :screen-height (* 16 16)
       :default-fg-color [250 250 250]
-      :default-bg-color [5 5 8]
-      #_#_:icon-paths ["images/icon-16x16.png"
-                   "images/icon-32x32.png"
-                   "images/icon-128x128.png"]}
+      :default-bg-color [5 5 8]}
      (fn [terminal]
        (let [term-pub    (zat/pub terminal)
              key-chan    (async/chan)
              close-chan  (async/chan)
              last-key    (atom nil)
+             fg-font     (atom :fg-font-a)
              ;; Every 33ms, draw a full frame
              render-chan (go-loop []
                            (dosync
@@ -114,12 +117,25 @@
              (reset! last-key new-key)
              (log/info "got key" (or (str @last-key) "nil"))
              (case new-key
+               \f (case @fg-font
+                    :fg-font-a (do
+                                 (try
+                                   (do
+                                     (reset! fg-font :fg-font-b)
+                                     (zat/apply-font! terminal :foreground (constantly fg-font-b)))
+                                   (catch Exception e
+                                     (log/error e)))
+                                 (log/info "Done altering font"))
+                    :fg-font-b (do
+                                 (do
+                                   (reset! fg-font :fg-font-a)
+                                   (zat/apply-font! terminal :foreground (constantly fg-font-a)))
+                                 (log/info "Done altering font"))
+                    nil)
                \q (zat/destroy! terminal)
                nil)
-             (if (= new-key :exit)
-               (do
                ;; change font size on s/m/l keypress
-               (recur)))))
+             (recur)))
          (let [_ (async/<! close-chan)]
            (async/close! render-chan)
            (System/exit 0))))))

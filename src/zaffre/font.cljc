@@ -364,3 +364,5 @@
        :character->col-row (get font :tile-id->col-row)
        :character->transparent (get font :tile-id->transparent)})))
 
+
+(defn construct [font] (glyph-graphics font))

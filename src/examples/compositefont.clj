@@ -96,10 +96,8 @@
              (case new-key
                \q (zat/destroy! terminal)
                nil)
-             (if (= new-key :exit)
-               (do
                ;; change font size on s/m/l keypress
-               (recur)))))
+             (recur)))
          (let [_ (async/<! close-chan)]
            (async/close! render-chan)
            (System/exit 0))))))
