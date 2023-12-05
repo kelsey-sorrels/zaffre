@@ -4,14 +4,15 @@
    [zaffre.color :as zcolor]
    [taoensso.timbre :as log])
   (:import
+    (java.nio ByteBuffer)
     (java.util Arrays)
     (org.lwjgl.glfw GLFW)))
 
 (defn blend-mode->byte [blend-mode]
-  (case blend-mode
+  (blend-mode {
     :normal 0x0
-    :multiply 0x1
-    (assert false (str "Unknown blend-mode " blend-mode))))
+    :multiply 0x1}
+    #_(assert false (str "Unknown blend-mode " blend-mode))))
 
 (defprotocol IBuffer
   (num-cols [this])
@@ -25,8 +26,8 @@
   (get-fg [this col row])
   (get-bg [this col row])
   (set! [this c blend-mode fg bg col row])
-  (copy-fg [this offset length dest])
-  (copy-bg [this offset length dest])
+  (copy-fg [this offset-col offset-row length dest])
+  (copy-bg [this offset-col offset-row length dest])
   (zero! [this]))
 
 (defrecord Buffers [^int num-cols ^int num-rows
@@ -44,29 +45,29 @@
   (get-char [this col row]
     (let [col (int col)
           row (int row)
-          index (+ (* col num-rows) row)]
+          index (+ (* row num-cols) col)]
       (aget character-buffer index)))
   (get-blend-mode [this col row]
     (let [col (int col)
           row (int row)
-          index (+ (* col num-rows) row)]
+          index (+ (* row num-cols) col)]
       (aget blend-mode-buffer index)))
   (get-fg [this col row]
     (let [col (int col)
           row (int row)
-          index (+ (* col num-rows) row)]
+          index (+ (* row num-cols) col)]
       (aget fg-buffer index)))
   (get-bg [this col row]
     (let [col (int col)
           row (int row)
-          index (+ (* col num-rows) row)]
+          index (+ (* row num-cols) col)]
       (aget bg-buffer index)))
   (set! [this c blend-mode fg bg col row]
     (let [col (int col)
           row (int row)]
       (when (and (< -1 col) (< col num-cols)
                  (< -1 row) (< row num-rows))
-        (let [index (+ (* col num-rows) row)
+        (let [index (+ (* row num-cols) col)
               fg-rgba (cond
                            (integer? fg) fg
                            (vector? fg) (zcolor/color fg))
@@ -77,10 +78,14 @@
           (aset blend-mode-buffer index (unchecked-int (blend-mode->byte blend-mode)))
           (aset fg-buffer index (unchecked-int fg-rgba))
           (aset bg-buffer index (unchecked-int bg-rgba))))))
-  (copy-fg [this offset length dest]
-    (.put fg-buffer offset dest))
-  (copy-bg [this offset length dest]
-    (.put bg-buffer offset dest))
+  (copy-fg [this offset-col offset-row length dest]
+    (let [^ByteBuffer dest dest
+          offset (+ (* offset-row num-cols) offset-col)]
+      (.put (.asIntBuffer dest) fg-buffer offset length)))
+  (copy-bg [this offset-col offset-row length dest]
+    (let [^ByteBuffer dest dest
+          offset (+ (* offset-row num-cols) offset-col)]
+      (.put (.asIntBuffer dest) bg-buffer offset length)))
   (zero! [this]
     (Arrays/fill character-buffer (char 0))
     (Arrays/fill blend-mode-buffer (int 0))

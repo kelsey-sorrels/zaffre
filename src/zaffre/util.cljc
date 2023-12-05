@@ -71,8 +71,8 @@
       []
       (let [[x1 y1] start
             [x2 y2] end
-            xdiff (- x2 x1)
-            ydiff (- y2 y1)
+            xdiff (int (- x2 x1))
+            ydiff (int (- y2 y1))
             maxdiff (max (Math/abs xdiff) (Math/abs ydiff))
             dx (/ xdiff maxdiff)
             dy (/ ydiff maxdiff)]

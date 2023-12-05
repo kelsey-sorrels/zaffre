@@ -613,9 +613,6 @@
           texture-rows    (int (zutil/next-pow-2 rows))
           layer-size      (* 4 texture-columns texture-rows)
           layer-index     (layer-id layer-id->index)
-          character-buffer (zt/character-buffer buffers)
-          fg-buffer        (zt/character-buffer buffers)
-          bg-buffer        (zt/character-buffer buffers)
           num-cols         (int (zt/num-cols buffers))
           num-rows         (int (zt/num-rows buffers))]
       (try
@@ -634,47 +631,49 @@
           (log/error "fg-image-data nil"))
         (when-not bg-image-data
           (log/error "bg-image-data nil"))
-        (zutil/loop-range row 0 (zt/num-rows buffers)
-          (zutil/loop-range col 0 num-cols
-            (let [row (int row)
-                  col (int col)
-                  c     (zt/get-char buffers col (- num-rows row 1))
-                  [x y] (character->col-row c)
-                  blend-mode-byte (zt/get-blend-mode buffers col (- num-rows row 1))
-                  fg    (unchecked-int (zt/get-fg buffers col (- num-rows row 1)))
-                  bg    (unchecked-int (zt/get-bg buffers col (- num-rows row 1)))]
-              (when (and (not= (int c) 0) x y)
-                (let [i (int (+ (* 4 (+ (* texture-columns row) col)) (* layer-size layer-index)))]
-                  (when (or (nil? x) (nil? y))
-                    (log/error (format "X/Y nil - glyph not found for character %s %s"
-                                 (or (str c) "nil")
-                                 (or (cond
-                                       (nil? c) "nil"
-                                       (char? c) (format "%x" (int c))
-                                       :else (str c)))))
-                    (assert
-                      (format "X/Y nil - glyph not found for character %s %s"
-                        (or (str c) "nil")
-                        (or (cond
-                              (nil? c) "nil"
-                              (char? c) (format "%x" (int c))
-                              :else (str c))))))
-                  (when false
-                    (log/info "put-layer!" col row i x y (Integer/toHexString fg) (Integer/toHexString bg)))
-                  (.position glyph-image-data i)
-                  (.position fg-image-data i)
-                  (.position bg-image-data i)
+        (zutil/loop-range row 0 num-rows
+          (let [row (int row)]
+            (zutil/loop-range col 0 num-cols
+              (let [col (int col)
+                    c     (zt/get-char buffers col (- num-rows row 1))
+                    [x y] (character->col-row c)
+                    blend-mode-byte (zt/get-blend-mode buffers col (- num-rows row 1))
+                    fg    (unchecked-int (zt/get-fg buffers col (- num-rows row 1)))
+                    bg    (unchecked-int (zt/get-bg buffers col (- num-rows row 1)))]
+                (when (and (not= (int c) 0) x y)
+                  (let [i (int (+ (* 4 (+ (* texture-columns row) col)) (* layer-size layer-index)))]
+                    (when (or (nil? x) (nil? y))
+                      (log/error (format "X/Y nil - glyph not found for character %s %s"
+                                   (or (str c) "nil")
+                                   (or (cond
+                                         (nil? c) "nil"
+                                         (char? c) (format "%x" (int c))
+                                         :else (str c)))))
+                      (assert
+                        (format "X/Y nil - glyph not found for character %s %s"
+                          (or (str c) "nil")
+                          (or (cond
+                                (nil? c) "nil"
+                                (char? c) (format "%x" (int c))
+                                :else (str c))))))
+                    #_(when false
+                      (log/info "put-layer!" col row i x y (Integer/toHexString fg) (Integer/toHexString bg)))
 
-                  (.put glyph-image-data (unchecked-byte x))
-                  (.put glyph-image-data (unchecked-byte y))
-                  ;; TODO fill with appropriate type
-                  (.put glyph-image-data (unchecked-byte blend-mode-byte))
-                  (.put glyph-image-data (unchecked-byte 0))
-                  (.putInt fg-image-data fg)
-                  (.putInt bg-image-data bg))))))
+                    (when (zero? col)
+                      (.position glyph-image-data i)
+                      (.position fg-image-data i)
+                      (.position bg-image-data i)
+                      (zt/copy-fg buffers col (- num-rows row 1) num-cols fg-image-data) 
+                      (zt/copy-bg buffers col (- num-rows row 1) num-cols bg-image-data))
+                    (.put glyph-image-data (unchecked-byte x))
+                    (.put glyph-image-data (unchecked-byte y))
+                    ;; TODO fill with appropriate type
+                    (.put glyph-image-data (unchecked-byte blend-mode-byte))
+                    (.put glyph-image-data (unchecked-byte 0))))))))
        (catch Exception e
          (log/error "Error replacing characters in layer" layer-id "=" layer-index
-                    "texture-columns" texture-columns "texture-rows" texture-rows glyph-image-data fg-image-data bg-image-data e)))))
+                    "texture-columns" texture-columns "texture-rows" texture-rows glyph-image-data fg-image-data bg-image-data e)
+         (log/error e)))))
   (assoc-shader-param! [_ k v]
     (-> fx-uniforms (get k) first (reset! v)))
   (pub [_]
@@ -1335,7 +1334,6 @@
             (.countDown latch)
             (if (with-gl-context gl-lock window capabilities
                   (except-gl-errors "Start of loop")
-                  (Thread/sleep 8)
                   ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
                   ; input on the thread that created the window
                   (GLFW/glfwPollEvents)
@@ -1395,5 +1393,6 @@
                                                       (quot (- monitor-height height) 2))))
                     (reset! last-video-mode @window-size)))
                 ;(GLFW/glfwWaitEvents)
+                (Thread/sleep 1)
                 (recur)))))))
       
