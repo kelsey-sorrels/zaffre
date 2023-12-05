@@ -5,7 +5,8 @@
             [taoensso.timbre :as log]
             [clojure.core.async :as async :refer [go go-loop]]
             [clojure-watch.core :as cwc]
-            [clojure.core.async :as async])
+            [clojure.core.async :as async]
+            [clojure.java.io :as jio])
   (:import
     (java.lang.reflect Field)
     (java.awt Canvas
@@ -113,7 +114,7 @@
     (log/info "key" key)
     (on-key-fn key)))
 
-(defn font-key [^Font font] [(.getName font) (.getSize font)])
+(defn font-key [font] font)
 
 (defn make-font
   [name-or-path style size]
@@ -129,7 +130,7 @@
         (Font. name-or-path style size)))))
 
 (defn next-pow-2 [v]
-  (int (Math/pow 2 (inc (Math/floor (/ (Math/log v) (Math/log 2)))))))
+  (int (Math/pow 2 (Math/ceil (/ (Math/log v) (Math/log 2))))))
 
 
 (def cjk-blocks
@@ -145,56 +146,135 @@
   (let [chars (map char (filter (fn [c] (and (.canDisplay font (char c))
                                              (not (contains? cjk-blocks c))))
                                 (range 0x0000 0xFFFF)))]
-    (concat (map vector chars (repeat false))
-            (map vector chars (repeat true)))))
+    chars))
 
 (defn characters-per-line [char-width num-characters]
   (int (Math/floor (/ (Math/pow 2 11) char-width))))
 
-;; A sequence of [[\character underline?] x y] where [x y] is the column,row in the character atlas.
+;; A sequence of [\character col row] where [col row] is the column,row in the character atlas.
 (defn character-idxs
   [char-width characters]
-  ;(let [character-matrix (partition-all (int (inc (Math/sqrt (count characters)))) characters)]
-  (let [character-matrix    (partition-all (characters-per-line char-width (count characters)) characters)]
+  (let [character-matrix (partition-all (characters-per-line char-width (count characters)) characters)]
     (log/info "arranging character with" characters-per-line "per line")
     (mapcat concat
     (map-indexed (fn [row line]
-                   (map-indexed (fn [col c-underline?]
-                                  [c-underline? col row])
+                   (map-indexed (fn [col c]
+                                  [c col row])
                                 line))
                  character-matrix))))
 
 
-;; Map [\character underline?] to [col row]
-(defn-memoized character->col-row
+;; Map \character to [col row]
+(defn character->col-row
   [character-idxs]
-  (reduce (fn [m [c-underline? x y]]
-            (assoc m c-underline? [x y]))
+  (reduce (fn [m [c x y]]
+            (assoc m c [x y]))
           {}
           character-idxs))
 
-(defn make-glyph-image
-  [char-width char-height font]
+(def cp437-unicode
+  (mapv char
+    (concat
+      [0x0000 0x263A 0x263B 0x2665 0x2666 0x2663 0x2660 0x2022 0x25D8 0x25CB 0x25D9 0x2642 0x2640 0x266A 0x266B 0x263C]
+      [0x25BA 0x25C4 0x2195 0x203C 0x00B6 0x00A7 0x25AC 0x21A8 0x2191 0x2193 0x2192 0x2190 0x221F 0x2194 0x25B2 0x25BC]
+      (range (int \space) (int \~)) [0x2302]
+      [0x00C7 0x00FC 0x00E9 0x00E2 0x00E4 0x00E0 0x00E5 0x00E7 0x00EA 0x00EB 0x00E8 0x00EF 0x00EE 0x00EC 0x00C4 0x00C5] 
+      [0x00C9 0x00E6 0x00C6 0x00F4 0x00F6 0x00F2 0x00FB 0x00F9 0x00FF 0x00D6 0x00DC 0x00A2 0x00A3 0x00A5 0x20A7 0x0192]
+      [0x00E1 0x00ED 0x00F3 0x00FA 0x00F1 0x00D1 0x00AA 0x00BA 0x00BF 0x2310 0x00AC 0x00BD 0x00BC 0x00A1 0x00AB 0x00BB]
+      [0x2591 0x2592 0x2593 0x2502 0x2524 0x2561 0x2562 0x2556 0x2555 0x2563 0x2551 0x2557 0x255D 0x255C 0x255B 0x2510]
+      [0x2514 0x2534 0x252C 0x251C 0x2500 0x253C 0x255E 0x255F 0x255A 0x2554 0x2569 0x2566 0x2560 0x2550 0x256C 0x2567]
+      [0x2568 0x2564 0x2565 0x2559 0x2558 0x2552 0x2553 0x256B 0x256A 0x2518 0x250C 0x2588 0x2584 0x258C 0x2590 0x2580]
+      [0x03B1 0x00DF 0x0393 0x03C0 0x03A3 0x03C3 0x00B5 0x03C4 0x03A6 0x0398 0x03A9 0x03B4 0x221E 0x03C6 0x03B5 0x2229]
+      [0x2261 0x00B1 0x2265 0x2264 0x2320 0x2321 0x00F7 0x2248 0x00B0 0x2219 0x00B7 0x221A 0x207F 0x00B2 0x25A0 0x00A0])))
+
+(defn copy-channel [v channel]
+  (let [channel-shift (case channel
+                       :alpha 24
+                       :blue  16
+                       :green  8
+                       :red    0)
+        c (->
+            (bit-shift-left 0xFF channel-shift)
+            (bit-and v)
+            (unsigned-bit-shift-right channel-shift))]
+    (reduce (fn [a n] (bit-or a (bit-shift-left c n))) 0 [24 16 8 0])))
+
+(defn ^BufferedImage copy-channels! [^BufferedImage buffered-image channel]
+  (doseq [x (range (.getWidth buffered-image))
+          y (range (.getHeight buffered-image))]
+      (.setRGB buffered-image  x y (copy-channel (.getRGB buffered-image x y) channel)))
+  buffered-image)
+
+(defn ^BufferedImage scale-image [^BufferedImage buffered-image scale]
+  (let [scaled-image    (BufferedImage. (* scale (.getWidth buffered-image))
+                                        (* scale (.getHeight buffered-image))
+                                        (.getType buffered-image))
+        scaled-graphics (.createGraphics scaled-image)]
+    (doto scaled-graphics
+      (.scale scale scale)
+      (.drawImage buffered-image 0 0 nil)
+      (.dispose))
+    scaled-image))
+
+(defrecord CP437Font [path-or-url alpha scale])
+
+(defrecord TTFFont [name-or-path size])
+
+(defmulti glyph-graphics class)
+(defmethod glyph-graphics CP437Font [font]
+  (let [characters    (map char cp437-unicode)
+        font-image    (copy-channels! (scale-image (ImageIO/read (jio/input-stream (get font :path-or-url))) (get font :scale)) (get font :alpha))
+        ;font-image    (ImageIO/read (jio/input-stream (get font :path-or-url)))
+        width         (next-pow-2 (.getWidth font-image))
+        height        (next-pow-2 (.getHeight font-image))
+        cwidth        (/ (.getWidth font-image) 16)
+        cheight       (/ (.getHeight font-image) 16)
+        texture-image (BufferedImage. width height BufferedImage/TYPE_4BYTE_ABGR)
+        texture-graphics (.createGraphics texture-image)]
+    (doto texture-graphics
+      (.setColor (Color. 0 0 0 0))
+      (.fillRect 0 0 width height)
+      (.drawImage font-image 0 0 nil)
+      (.dispose))
+    (ImageIO/write font-image "png", (File. "font-texture.png"))
+    {:font-texture-width width
+     :font-texture-height height
+     :font-texture-image texture-image
+     :character-width cwidth
+     :character-height cheight
+     :character->col-row (zipmap
+                           characters
+                           (for [row (range 16)
+                                 col (range 16)]
+                             [col row]))}))
+       
+(defmethod glyph-graphics TTFFont [font]
   ;; Adjust canvas to fit character atlas size
-  (let [characters (displayable-characters font)
+  (let [j-font                     (make-font (get font :name-or-path) Font/PLAIN (get font :size))
+        characters                 (displayable-characters j-font)
+        font-metrics  ^FontMetrics (.getFontMetrics (Canvas.) j-font)
+        char-width                 (.charWidth font-metrics \M)
+        char-height                (.getHeight font-metrics)
         _ (log/info "characters per line" (characters-per-line char-width (count characters)))
+        ;screen-width               (* columns char-width)
+        ;screen-height              (* rows char-height)
         cwidth     2048
         cheight    (next-pow-2 (* char-height (int (Math/ceil (/ (count characters)
                                                                  (characters-per-line char-width (count characters)))))))
         width      cwidth ;(max cwidth cheight)
         height     cheight ;(max cwidth cheight)
         antialias  true
-        font-metrics  ^FontMetrics (.getFontMetrics (Canvas.) font)]
+        char-idxs   (character-idxs char-width characters)]
     (log/info "characters" (count characters) "cwidth" cwidth "cheight" cheight)
     (log/info "glyph image width" width "height" height)
     ;(log/info "characters" (vec characters))
     ;(log/info "character-idxs" (vec (character-idxs characters)))
     (let [texture-image    (BufferedImage. width height BufferedImage/TYPE_4BYTE_ABGR)
-          texture-graphics ^Graphics2D (.getGraphics texture-image)
+          texture-graphics (.createGraphics texture-image)
           white            (Color. 255 255 255 255)]
       ;; Create and clear graphics
       (doto texture-graphics
-        (.setFont font)
+        (.setFont j-font)
         (.setRenderingHint RenderingHints/KEY_TEXT_ANTIALIASING (if antialias
                                                                   RenderingHints/VALUE_TEXT_ANTIALIAS_GASP
                                                                   RenderingHints/VALUE_TEXT_ANTIALIAS_OFF))
@@ -202,32 +282,27 @@
         (.setColor (Color. 0 0 0 0))
         (.fillRect 0 0 width height))
       ;; Loop through each character, drawing it
-      (doseq [[[s underline?] col row]  (character-idxs char-width characters)]
+      (doseq [[c col row]  char-idxs]
         (let [x ^int (* col char-width)
               y ^int (* (inc row) char-height)
               cx (+ 0 x)
               cy (- y (.getDescent font-metrics))]
           ;(log/info s x y)
-        (when (not= s " ")
+        (when (not= c \space)
           ;(println "drawing" s "@" x y "underline?" underline?)
           (doto texture-graphics
             (.setColor white)
             (.setClip cx (+ (- cy char-height) (.getDescent font-metrics)) char-width char-height)
-            (.drawString (str s) cx cy)))
-        (when underline?
-          (let [y (dec y)]
-            (doto texture-graphics
-              (.setColor white)
-              (.drawLine x
-                         y
-                         (+ x char-width)
-                         y))))))
+            (.drawString (str c) cx cy)))))
       ;; cleanup texture resource
-      ;(ImageIO/write texture-image "jpg", (File. "glyph-texture.jpg"))
+      (ImageIO/write texture-image "png", (File. "glyph-texture.png"))
       (.dispose texture-graphics)
       {:font-texture-width width
        :font-texture-height height
-       :font-texture-image texture-image})))
+       :font-texture-image texture-image
+       :character-width char-width
+       :character-height char-height
+       :character->col-row (character->col-row char-idxs)})))
 
 
 (defn- buffered-image-byte-buffer [^BufferedImage buffered-image]
@@ -347,7 +422,7 @@
 
 (defn- init-display [title screen-width screen-height icon-paths gl-lock destroyed]
   (let [pixel-format       (PixelFormat.)
-        context-attributes (doto (ContextAttribs. 3 2)
+        context-attributes (doto (ContextAttribs. 4 4)
                              (.withForwardCompatible true)
                              (.withProfileCore true))
         icon-array         (when icon-paths
@@ -663,7 +738,7 @@
              {:keys [^ByteBuffer glyph-image-data
                      ^ByteBuffer fg-image-data
                      ^ByteBuffer bg-image-data]} :data
-             :keys [p-matrix-buffer mv-matrix-buffer character-width character-height character->col-row]} gl
+             :keys [p-matrix-buffer mv-matrix-buffer]} gl
             glyph-image-data glyph-image-data
             fg-image-data fg-image-data
             bg-image-data bg-image-data
@@ -671,6 +746,7 @@
                     screen-height
                     character-width
                     character-height
+                    character->col-row
                     font-texture-width
                     font-texture-height
                     font-texture]} (get @font-textures (font-key @normal-font))
@@ -703,7 +779,7 @@
                   ;s         (str (get c :character))
                   style     (get c :style)
                   i         (* 4 (+ (* texture-columns row) col))
-                  [x y]     (get character->col-row [chr (contains? style :underline)])]
+                  [x y]     (get character->col-row chr)]
               ;(log/info "Drawing at col row" col row "character from atlas col row" x y c "(index=" i ")")
               (when (zero? col)
                 (.position glyph-image-data i)
@@ -921,28 +997,30 @@
                              :font-watcher
                              (fn [_ _ _ new-font]
                                (log/info "Using font" new-font)
-                               (let [font-metrics  ^FontMetrics (.getFontMetrics (Canvas.) new-font)
-                                     char-width                 (.charWidth font-metrics \M)
-                                     char-height                (.getHeight font-metrics)
-                                     screen-width               (* columns char-width)
-                                     screen-height              (* rows char-height)
-                                     ;; create texture atlas as Buffered texture
+                               (let [;; create texture atlas as Buffered texture
                                      {:keys [font-texture-width
                                              font-texture-height
-                                             font-texture-image]} (make-glyph-image char-width char-height new-font)]
-                                 (log/info "Created font texture. screen-width" screen-width "screen-height" screen-height)
+                                             font-texture-image
+                                             character-width
+                                             character-height
+                                             character->col-row]
+                                      :as font-parameters} (glyph-graphics new-font)
+                                     screen-width (* character-width columns)
+                                     screen-height (* character-height rows)]
+                                 (log/info "Created font texture " (dissoc font-parameters :character->col-row) " screen-width" screen-width "screen-height" screen-height)
                                  (swap! font-textures assoc
                                                      (font-key new-font)
                                                      {:screen-width screen-width
                                                       :screen-height screen-height
-                                                      :character-width char-width
-                                                      :character-height char-height
+                                                      :character-width character-width
+                                                      :character-height character-height
+                                                      :character->col-row character->col-row
                                                       :font-texture-width font-texture-width
                                                       :font-texture-height font-texture-height
                                                       :font-texture-image font-texture-image}))))
           _                  (reset! normal-font (if is-windows
-                                                   (make-font windows-font Font/PLAIN font-size)
-                                                   (make-font else-font Font/PLAIN font-size)))
+                                                   windows-font
+                                                   else-font))
           ;; false if Display is destoyed
           destroyed          (atom false)
           gl-lock            (atom true)
@@ -1058,9 +1136,6 @@
                            {:p-matrix-buffer (ortho-matrix-buffer screen-width screen-height)
                             :mv-matrix-buffer (position-matrix-buffer [(- (/ screen-width 2)) (- (/ screen-height 2)) -1.0 0.0]
                                                                       [screen-width screen-height 1.0])
-                            :character-width character-width
-                            :character-height character-height
-                            :character->col-row (character->col-row (character-idxs character-width (displayable-characters @normal-font)))
                             :buffers {:vertices-vbo-id vertices-vbo-id
                                       :vertices-count vertices-count
                                       :texture-coords-vbo-id texture-coords-vbo-id
@@ -1138,16 +1213,33 @@
   "Show a terminal and echo input."
   [& _]
   ;; render in background thread
-  (let [terminal   (make-terminal [:text]
+  (let [colorShift    (atom 0.0001)
+        brightness    (atom 0.68)
+        contrast      (atom 2.46)
+        scanlineDepth (atom 0.94)
+        time          (atom 0.0)
+        noise         (atom 0.0016)
+        terminal   (make-terminal [:text :rainbow]
                                   {:title "Zaffre demo"
                                    :columns 80 :rows 24
                                    :default-fg-color [250 250 250]
                                    :default-bg-color [5 5 8]
-                                   :font-size 18
+                                   :windows-font "Consolas"
+                                   ;:else-font "/home/santos/Downloads/cour.ttf"
+                                   ;:else-font (TTFFont. "/home/santos/Downloads/cour.ttf" 12)
+                                   ;:else-font (CP437Font. "http://dwarffortresswiki.org/images/2/29/Potash_8x8.png" :green)
+                                   :else-font (CP437Font. "/home/santos/Pictures/LN_EGA8x8.png" :green 1)
                                    :antialias true
                                    :icon-paths ["images/icon-16x16.png"
                                                 "images/icon-32x32.png"
-                                                "images/icon-128x128.png"]})
+                                                "images/icon-128x128.png"]
+                                   :fx-shader {:name     "retro.fs"
+                                               :uniforms [["time" @time]
+                                                          ["noise" @noise]
+                                                          ["colorShift" @colorShift]
+                                                          ["scanlineDepth" @scanlineDepth]
+                                                          ["brightness" @brightness]
+                                                          ["contrast" @contrast]]}})
         last-key   (atom nil)
         input-chan (go-loop []
           (reset! last-key (async/<!! (zat/get-key-chan terminal)))
@@ -1193,8 +1285,12 @@
                                     :default-fg-color [250 250 250]
                                     :default-bg-color [5 5 8]
                                     :windows-font "Consolas"
-                                    :else-font "/home/santos/Downloads/cour.ttf"
-                                    :font-size 18
+                                    ;:else-font "/home/santos/Downloads/cour.ttf"
+                                    ;:else-font (TTFFont. "/home/santos/Downloads/cour.ttf" 12)
+                                    ;:else-font (TTFFont. "Monospaced" 12)
+                                    ;:else-font (TTFFont. "/home/santos/src/robinson/fonts/Boxy/Boxy.ttf" 12)
+                                    ;:else-font (CP437Font. "http://dwarffortresswiki.org/images/2/29/Potash_8x8.png" :green)
+                                    :else-font (CP437Font. "/home/santos/Pictures/LN_EGA8x8.png" :green 2)
                                     :antialias true
                                     :icon-paths ["images/icon-16x16.png"
                                                  "images/icon-32x32.png"
