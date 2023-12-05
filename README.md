@@ -24,6 +24,18 @@ Add the dependency to your project:
 [zaffre "0.4.0"]
 ```
 
+## Examples
+
+Run with
+
+`lein run examples.handleinputinmain`
+
+or
+
+`lein run -m examples.drawinmain`
+
+etc.
+
 Setup your namespace imports:
 
 ```clojure
