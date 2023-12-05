@@ -481,6 +481,14 @@
           (str " Not every child is a component or element " (vec children)))
   true)
 
+(defn deep-merge [v & vs]
+  (letfn [(rec-merge [v1 v2]
+                     (if (and (map? v1) (map? v2))
+                       (merge-with deep-merge v1 v2)
+                       v2))]
+    (when (some identity vs)
+(reduce #(rec-merge %1 %2) v vs))))
+
 ;; React.createElement(Hello, {toWhat: 'World'}, null)
 (defn create-element [type config children & more]
   (assert (every? is-valid-event-handler-key?
@@ -494,12 +502,13 @@
         ;; either a single children array arg or multiple children using & more
         children (if (not (empty? more)) (cons children more) children)
         _ (valid-children? children)
-        props  (merge {:children children}
-                      (if type (get type :default-props {}) {})
-                      (into {}
-                        (remove (fn [[prop-name _]]
-                                  (reserved-prop? prop-name)))
-                                config))
+        props  (deep-merge
+                    {:children children}
+                    (if type (get type :default-props {}) {})
+                    (into {}
+                      (remove (fn [[prop-name _]]
+                                (reserved-prop? prop-name)))
+                              config))
         element (->ReactElement nil type key ref self source *current-owner* props)]
     (assoc element :id (System/identityHashCode element))))
 

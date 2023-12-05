@@ -40,7 +40,11 @@
     :get-default-props (fn input-get-default-props [] {
       :max-length 28
       :style {:width 30
-              :height 1}
+              :height 1
+              :cursor-char-on \u2592
+              :cursor-char-off \space
+              :cursor-fg [255 255 255]
+              :cursor-bg [0 0 0]}
       :on-focus (fn [this e] nil)
       :on-blur (fn [this e] nil)
       :on-keypress (fn input-on-keypress [this e]
@@ -59,8 +63,13 @@
     :render
       (fn [this]
         (let [{:keys [value show-cursor]} (zc/state this)
-              cursor (when show-cursor \u2592)]
-          (log/info "Input render" show-cursor)
+              {:keys [style] :as props} (zc/props this)
+              {:keys [cursor-char-on cursor-char-off
+                      cursor-fg cursor-bg]}  style
+              cursor (if show-cursor cursor-char-on cursor-char-off)]
+          (log/info "Input render" show-cursor (dissoc props :children))
           (zc/csx [:view {:style {:border-style :single
-                                  :border 1}} [
-                    [:text {} [(str value cursor)]]]])))}))
+                                  :border-bottom 1}} [
+                    [:text {} [
+                      [:text {} [value]]
+                      [:text {:style {:fg cursor-fg :bg cursor-bg}} [(str cursor)]]]]]])))}))

@@ -11,6 +11,12 @@
 (def default-style
   {:fg [255 255 255 255]
    :bg [0 0 0 255]
+   :border-style :single
+   :border 0
+   :border-left 0
+   :border-right 0
+   :border-top 0
+   :border-bottom 0
 })
 
 ;; Primitive elements
@@ -134,28 +140,42 @@
 (defmethod render-component-into-container :view
   [target [type {:keys [style zaffre/layout]}]]
     (let [{:keys [x y width height]} layout
-          {:keys [fg bg border-style]} style]
+          {:keys [fg bg
+                  border border-style
+                  border-top border-bottom
+                  border-left border-right]} (merge default-style style)]
       ;; render background when set
       (when bg
         (doseq [dy (range height)
                 :let [fg (or fg (get default-style :fg))]]
-          (render-string-into-container target x (+ y dy) fg bg (repeat width " "))))
+          (render-string-into-container target x (+ y dy) fg bg (apply str (repeat width " ")))))
       ; render border when set
       (when border-style
-        (let [{:keys [fg bg border-style]} (merge default-style style)
-              border (case border-style
-                        :single single-border
-                        :double double-border)]
+        (let [border-map (case border-style
+                           :single single-border
+                           :double double-border)]
           ; render top
-          (render-string-into-container target x y fg bg
-            (str (get border :top-left) (apply str (repeat (- width 2) (get border :horizontal))) (get border :top-right)))
+          (when (or (< 0 border) (< 0 border-top))
+            (render-string-into-container target x y fg bg
+              (str (when (or (< 0 border) (< 0 border-left))
+                     (get border-map :top-left))
+                   (apply str (repeat (- width (+ border-left border-right))
+                                      (get border-map :horizontal)))
+                   (when (or (< 0 border) (< 0 border-right))
+                     (get border-map :top-right)))))
           ; render middle
           (doseq [dy (range (- height 2))]
-            (render-string-into-container target x (+ y dy 1) fg bg (str (get border :vertical)))
-            (render-string-into-container target (+ x width -1) (+ y dy 1) fg bg (str (get border :vertical))))
+            (render-string-into-container target x (+ y dy 1) fg bg (str (get border-map :vertical)))
+            (render-string-into-container target (+ x width -1) (+ y dy 1) fg bg (str (get border-map :vertical))))
           ; render bottom
-          (render-string-into-container target x (+ y height -1) fg bg
-            (str (get border :bottom-left) (apply str (repeat (- width 2) (get border :horizontal))) (get border :bottom-right))))))
+          (when (or (< 0 border) (< 0 border-bottom))
+            (render-string-into-container target x (+ y height -1) fg bg
+              (str (when (or (< 0 border) (< 0 border-left))
+                     (get border-map :bottom-left))
+                   (apply str (repeat (- width (+ border-left border-right))
+                              (get border-map :horizontal)))
+                   (when (or (< 0 border) (< 0 border-right))
+                     (get border-map :bottom-right))))))))
     nil)
 
 ;; Do nothing for :layer
