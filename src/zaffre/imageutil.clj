@@ -118,33 +118,35 @@
   (.flip dbytes)
   dimg)
 
-(defn clip [min-v v max-v]
-  (max min-v (min v max-v)))
+(defn rect-intersect [x0 y0 x1 y1 x2 y2 x3 y3]
+  (let [x4 (max x0 x2)
+        y4 (max y0 y2)
+        x5 (min x1 x3)
+        y5 (min y1 y3)]
+    (when (and (< x4 x5)
+               (< y4 y5))
+      [x4 y4 x5 y5])))
 
 (defn draw-image [{dwidth :width dheight :height :as dest-img}
                   {swidth :width sheight :height :as src-img}
                   x y]
-  (let [;; source corner in dest coord-space
-        sx1       (+ x swidth)
-        sy1       (+ y sheight)
-        ;; clip x and y to dest rect
-        clipped-x (clip 0 x dwidth)
-        clipped-y (clip 0 y dheight)
-        ;; convert clipped xy to src coords
-        sx0    (- clipped-x x)
-        sy0    (- clipped-y y)
-
-        ;; clip src corner
-        clipped-x1 (clip 0 sx1 dwidth)
-        clipped-y1 (clip 0 sy1 dheight)
-        ;; convert clipped corder to src coords
-        sx1    (- clipped-x1 x)
-        sy1    (- clipped-y1 y)
-        ;; find src width/height
-        width  (- x swidth)
-        height (- y sheight)]
-    (log/info "copying from [" sx0 sy0 "] [" sx1 sy1 "] to" x y)
-    (copy-sub-image dest-img src-img x y sx0 sy0 sx1 sy1)))
+  (let [;; dest image rect
+        x0 0
+        y0 0
+        x1 dwidth
+        y1 dheight
+        ;; src image rect
+        x2 x
+        y2 y
+        x3 (+ x swidth)
+        y3 (+ y sheight)]
+    (when-let [[x4 y4 x5 y5] (rect-intersect x0 y0 x1 y1 x2 y2 x3 y3)]
+      (let [sx0 (- x4 x)
+            sy0 (- y4 y)
+            sx1 (- x5 x)
+            sy1 (- y5 y)]
+        (log/info "copying from [" sx0 sy0 "] [" sx1 sy1 "] to" x y)
+        (copy-sub-image dest-img src-img x y sx0 sy0 sx1 sy1)))))
                       
 
 (defn resize [{swidth :width sheight :height :as img} width height]
