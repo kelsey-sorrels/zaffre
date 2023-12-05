@@ -29,7 +29,29 @@
 (defn env-path->str [env]
   (str (interpose (reverse (env-path env)) " > ")))
 
+;;; Element methods
+;; Elements are [type props] where props contain :children
+(defn walk-elements-indexed [parent-fn child-fn element]
+  "Walks an element tree applying parent-fn to the root, and then calling (child-fn root index child) to each child
+   replacing them."
+  (let [[type {:keys [children] :as props} :as new-element] (parent-fn element)]
+    (assoc element
+      0 type
+      1 (assoc props :children
+          (map-indexed (fn [index child]
+            (if (seq? child)
+              (walk-elements-indexed parent-fn child-fn (child-fn new-element index child))
+              child))
+            children)))))
+
+(defn walk-elements [parent-fn child-fn element]
+  "Walks an element tree applying parent-fn to the root, and then calling (child-fn root child) to each child
+   replacing them"
+  (walk-elements-indexed parent-fn (fn [parent _ child] (child-fn parent child)) element))
+  
+
 ;;; Component methods
+;; Components are 
 
 ;; Find the dimensions of a component
 (defmulti dimensions (fn [component]
@@ -176,4 +198,3 @@
 (defmethod render-comp :input [type props]
   (let [{:keys [value]} props]
     [:label props value]))
-

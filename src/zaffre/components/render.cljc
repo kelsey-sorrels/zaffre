@@ -2,9 +2,11 @@
   (:require [clojure.test :refer [is]]
             [taoensso.timbre :as log]
             [zaffre.components :as zc]
+            [zaffre.components.layout :as zcl]
             [zaffre.terminal :as zt]))
 
 
+;; Components -> Elements -> Rendered into terminal
 ;; Env functions
 (defn get-props-in-env [env k]
   (if (nil? env)
@@ -104,11 +106,12 @@
         (render-primitive env render-state component)
         (render-composite env render-state component)))))
 
-(defn merge-envs [env other]
-  {:fg (or (get other :fg) (get env :fg))
-   :bg (or (get other :bg) (get env :bg))
-   :left  (+ (get env :left 0) (get other :left 0))
-   :top  (+ (get env :top 0) (get other :top 0))})
+(def cascaded-styles
+  [:fg
+   :bg])
+
+(defn cascade-style [parent child]
+  (merge (juxt cascaded-styles parent) child))
 
 (defn flatten-text [parent-style element]
   "Splits text into words and flattens all child text element"
@@ -130,7 +133,7 @@
 (defn space? [text-element]
   (= " " (-> text-element second :children first)))
 
-;; Adapted frmo https://www.rosettacode.org/wiki/Word_wrap#Clojure
+;; Adapted from https://www.rosettacode.org/wiki/Word_wrap#Clojure
 (defn wrap-lines [size style text]
   "Text elements may only contain child text elements"
   (loop [left size line [] lines []
@@ -155,28 +158,34 @@
   (when (< y (count target))
     (let [target-line (aget target y)
           max-x (count target-line)]
-    (log/trace "render-string-into-container" x y fg bg s)
+    (log/info "render-string-into-container" x y fg bg s)
     (loop [index 0 s s]
       (let [target-index (+ x index)]
         (when (and (seq s) (< target-index max-x))
           (aset target-line target-index {:c (first s) :fg fg :bg bg})
           (recur (inc index) (rest s))))))))
 
-(defn render-text-into-container [target parent-layout env text]
-  (log/trace "render-text-into-container" parent-layout env text)
-  (let [{:keys [columns rows]} parent-layout
-        {:keys [top left fg bg]} env
-        [type {:keys [style children] :as props}] text
-        style (compute-style env)
-        lines (wrap-lines columns
-                          style
+(defn render-text-into-container [target props text]
+  (log/info "render-text-into-container" props text)
+  (let [{:keys [top left width height fg bg]} props
+        [_ {:keys [style children] :as props}] text
+        lines (wrap-lines width
+                          props
                           text)]
-    (log/trace "render-text-into-container lines" lines)
+    (log/info "render-text-into-container lines" lines)
     (doseq [[index line] (map-indexed vector lines)]
       (let [offsets (cons 0 (reductions + (map (fn [word] (text-length word)) line)))]
         (doseq [[offset [_ {:keys [style children]}]] (map vector offsets line)]
           (render-string-into-container target (+ left offset) (+ top index) fg bg (first children)))))))
 
+(defn render-view-into-container [target props]
+  (log/trace "render-view-into-container" props)
+  (let [{:keys [top left width height fg bg]} props]
+    ;; TODO draw non-bordered-view
+    ;; TODO draw bordered-view))
+    nil))
+
+;; Mirrors https://github.com/facebook/yoga/blob/master/yoga/Yoga-internal.h#L195
 (def default-style
   {:left 0
    :top 0
@@ -185,6 +194,8 @@
 
    :width 0
    :height 0
+
+   :flex 0
 
    ;:margin-left 0
    ;:margin-top 0
@@ -198,53 +209,53 @@
    ;:border-top 0
    ;:border-right 0
    ;:border-bottom 0
-   ;:flex-direction :column
+   :flex-direction :column
 })
 
+(defn style-element-tree [parent-env element]
+  (zc/walk-elements
+    identity
+    (fn [[_ parent-props] [child-type child-props]]
+      [child-type
+       (merge child-props (cascade-style parent-props child-props))])
+    element))
 
-(defmulti merge-linear-dimension (fn [parent child]
-  (cond
-    (number? child) :absolute
-    (nil? child) :default
-    (contains? child :%) :percent)))
-(defmethod merge-linear-dimension :absolute [parent child] (min parent child))
-(defmethod merge-linear-dimension :default [parent _] parent)
-(defmethod merge-linear-dimension :percent [parent child] (int (* parent (/ (get child :%) 100.0))))
-
-(defn- merge-layouts [parent-layout layout]
-  {:columns (let [parent-columns (get parent-layout :columns)
-                  child-columns (get layout :columns parent-columns)]
-              (merge-linear-dimension parent-columns child-columns))
-   :rows (let [parent-rows (get parent-layout :rows)
-                  child-rows (get layout :rows parent-rows)]
-              (merge-linear-dimension parent-rows child-rows))})
+(defn element-seq [element]
+  (log/info "element-seq" element)
+  (tree-seq (fn [[_ {:keys [children]}]] (not (empty? children)))
+            (fn [[_ {:keys [children]}]] children)
+            element))
 
 (defn render-layer-into-container
-  ([target layer-info layer]
-    (let [[_ {:keys [children]}] layer]
-      (doseq [child children]
-        (render-layer-into-container target layer-info default-style child))))
-  ([target parent-layout env component]
-    (log/trace "render-layer-into-container" parent-layout env component)
-    (cond
-      ;; render strings
-      (= :text (first component))
-        (let [[type {:keys [children]} :as props] component]
-          (doseq [child children]
-            (render-text-into-container target parent-layout env child)))
-      ;; render views
-      (= :view (first component))
-        (let [[type {:keys [children] :as props}] component
-              merged-layout (merge-layouts parent-layout props)
-              merged-env (merge-envs env props)]
-          (doseq [child children]
-            (render-layer-into-container target merged-layout merged-env child)))
-      ;; die on other components
-      :default
-        (assert false (format "Found unknown component %s" component)))))
+  [target layer-info layer]
+  (log/trace "render-layer-into-container" layer-info layer)
+  (let [{:keys [columns rows]} layer-info
+        env {:width columns
+             :height rows}
+        styled-tree (style-element-tree env layer)
+        laid-out-tree (zcl/layout-element styled-tree)]
+    (log/info "styled-tree" styled-tree)
+    (doseq [element (element-seq laid-out-tree)]
+      (cond
+        ;; render text
+        (= :text (first element))
+          (let [[type {:keys [children] :as props}] element]
+            (doseq [child children]
+              (render-text-into-container target props child)))
+        ;; render views
+        (= :view (first element))
+          (let [[type {:keys [children] :as props}] element]
+            (doseq [child children]
+              (render-view-into-container target props child)))
+        ;; no-op :layer
+        (= :layer (first element))
+          nil
+        ;; die on other elements
+        :default
+          (assert false (format "Found unknown element %s" element))))))
                     
 (defn layer-info [group-info]
-  "Given a terminal's group info, create a map layer-id->{:columns rows}."
+  "Given a terminal's group info, create a map layer-id->{:columns :rows}."
   (into {}
     (mapcat identity
       (map (fn [{:keys [layers columns rows]}]
