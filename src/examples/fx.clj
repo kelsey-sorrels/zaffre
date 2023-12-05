@@ -1,6 +1,7 @@
 (ns examples.fx
   (:require [zaffre.terminal :as zat]
             [zaffre.glterminal :as zgl]
+            [zaffre.events :as zevents]
             [zaffre.font :as zfont]
             [zaffre.util :as zutil]
             [clojure.core.async :as async :refer [go-loop]]
@@ -36,47 +37,31 @@
      :default-fg-color [250 250 250]
      :default-bg-color [5 5 8]}
      (fn [terminal]
-       (let [term-pub    (zat/pub terminal)
-             key-chan    (async/chan)
-             close-chan  (async/chan)
-             last-key    (atom nil)
-             ;; Every 10ms, set the "Rainbow" text to have a random fg color
-             fx-chan     (go-loop []
-                           (dosync
-                             (doseq [x (range (count "Rainbow"))
-                                     :let [rgb (hsv->rgb (double (rand 360)) 1.0 1.0)]]
-                                 (zat/set-fx-fg! terminal :rainbow (inc x) 1 rgb)))
-                             (zat/refresh! terminal)
-                           (Thread/sleep 10)
-                           (recur))
+       (let [last-key    (atom nil)]
+         ;; Every 10ms, set the "Rainbow" text to have a random fg color
+         (go-loop []
+           (dosync
+             (doseq [x (range (count "Rainbow"))
+                     :let [rgb (hsv->rgb (double (rand 360)) 1.0 1.0)]]
+                 (zat/set-fx-fg! terminal :rainbow (inc x) 1 rgb)))
+             (zat/refresh! terminal)
+           (Thread/sleep 10)
+           (recur))
              ;; Every 33ms, draw a full frame
-             render-chan (go-loop []
-                           (dosync
-                             (let [key-in (or @last-key \?)]
-                               (zat/clear! terminal)
-                               (zutil/put-string terminal :text 0 0 "Hello world")
-                               (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
-                                 (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
-                               (zutil/put-string terminal :text 12 0 (str key-in))
-                               (zutil/put-string terminal :rainbow 1 1 "Rainbow")
-                               (zat/refresh! terminal)))
-                               ;; ~30fps
-                             (Thread/sleep 33)
-                             (recur))]
-       (async/sub term-pub :keypress key-chan)
-       (async/sub term-pub :close close-chan)
+         (zat/do-frame terminal 33
+           (let [key-in (or @last-key \?)]
+             (zutil/put-string terminal :text 0 0 "Hello world")
+             (doseq [[i c] (take 23 (map-indexed (fn [i c] [i (char c)]) (range (int \a) (int \z))))]
+               (zutil/put-string terminal :text 0 (inc i) (str c) [128 (* 10 i) 0] [0 0 50]))
+             (zutil/put-string terminal :text 12 0 (str key-in))
+             (zutil/put-string terminal :rainbow 1 1 "Rainbow")))
        ;; get key presses in fg thread
-       (go-loop []
-         (let [new-key (async/<! key-chan)]
+       (zevents/add-event-listener terminal :keypress
+         (fn [new-key]
            (reset! last-key new-key)
            (case new-key
              ;; quit on \q keypress
              \q (zat/destroy! terminal)
-             nil)
-           (recur)))
-       (async/<! close-chan)
-       (async/close! fx-chan)
-       (async/close! render-chan)
-       (System/exit 0)))))
+             nil)))))))
 
 
