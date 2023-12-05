@@ -100,6 +100,50 @@ maps))
        [:text {:key "cursor" :style {:color cursor-fg :background-color cursor-bg}} (str cursor)]
        [:text {:key "rest"} (apply str (repeat (- width (count value)) "_"))]]))
 
+(g/defcomponent Checkbox
+  [props _]
+  (let [[selected set-selected!] (g/use-state (get props :checked false))
+        [focused set-focus!] (g/use-state (get props :focus false))
+        [show-cursor set-show-cursor!] (g/use-state false)
+        duty-on 400
+        duty-off 400
+        on-focus (fn [_] (set-focus! true))
+        on-blur (fn [_] (set-focus! false))
+        on-keypress (fn [e]
+          (log/info "Checkbox on-keypress" e)
+          (set-selected! not))
+        {:keys [name value children]} props
+        default-props {:on-focus on-focus
+                       :on-blur on-blur
+                       :on-keypress on-keypress
+                       :gossamer.components/type :checkbox
+                       :gossamer.components/focusable true
+                       :gossamer.components/set-value set-selected!
+                       :style {:display :flex
+                               :flex-direction :row
+                               :cursor-char-on \u2592
+                               :cursor-char-off \_
+                               :cursor-fg (zcolor/color 255 255 255 255)
+                               :cursor-bg (zcolor/color 0 0 0 255)}}
+        props (assoc (merge default-props props)
+                :style (merge (:style default-props)
+                              (:style props)))
+        {:keys [cursor-char-on
+                cursor-char-off
+                cursor-fg
+                cursor-bg]} (get props :style)
+        cursor (if (and focused show-cursor) cursor-char-on (if selected "x" " "))]
+     (log/info "Checkbox selected" selected "focus" focused "cursor" cursor)
+     (g/use-effect (fn []
+       (go-loop []
+         (<! (timeout 400))
+         (set-show-cursor! not)
+         (recur))) [])
+
+    [:view props
+      (cons [:text {:key "Checkbox-text"} (str "[" cursor "]")]
+        children)]))
+
 (g/defcomponent Radio
   [props _]
   (let [[selected set-selected!] (g/use-state (get props :checked false))

@@ -91,37 +91,45 @@
           [:view {:key "inputs"}
             [Clock {:key "clock"}]
             [FPSMeter {:key "fpsmeter"}]
-            [zcui/Panel {:key "input-panel" :title "Inputs"}
-              [zcui/Input {:key "input1"
-                           :autofocus true
-                           :style {:cursor-fg (zcolor/color 244 208 65 255)}
-                           :on-change text-value-on-change} []]
-              [zcui/Input {:key "input2"
-                           :style {:cursor-fg (zcolor/color 65 244 208)}
-                           :on-change text-value-on-change} []]
-              [zcui/Input {:key "input3"
-                           :style {:cursor-fg (zcolor/color 208 65 244)}
-                           :on-change text-value-on-change} []]]
-            [zcui/Panel {:key "radio-panel" :title "Radio Group"}
-              [zcui/Radio {:key "option1" :name "group1" :value "option1"} [:text {} "Option 1"]]
-              [zcui/Radio {:key "option2" :name "group1" :value "option2"} [:text {} "Option 2"]]
-              [zcui/Radio {:key "option3" :name "group1" :value "option3"} [:text {} "Option 3"]]]]
+            [zcui/Panel {:key "input-panel" :title "Inputs"
+                         :style {:display :flex :flex-direction :row}}
+              [zcui/Panel {:key "input-panel" :title "Text" :style {:width 20}}
+                [zcui/Input {:key "input1"
+                             :autofocus true
+                             :style {:cursor-fg (zcolor/color 244 208 65 255)}
+                             :on-change text-value-on-change} []]
+                [zcui/Input {:key "input2"
+                             :style {:cursor-fg (zcolor/color 65 244 208)}
+                             :on-change text-value-on-change} []]
+                [zcui/Input {:key "input3"
+                             :style {:cursor-fg (zcolor/color 208 65 244)}
+                             :on-change text-value-on-change} []]]
+              [zcui/Panel {:key "radio-panel" :title "Radio Group" :style {:width 20}}
+                [zcui/Radio {:key "option1" :name "group1" :value "option1"} [:text {} "Option 1"]]
+                [zcui/Radio {:key "option2" :name "group1" :value "option2"} [:text {} "Option 2"]]
+                [zcui/Radio {:key "option3" :name "group1" :value "option3"} [:text {} "Option 3"]]]
+              [zcui/Panel {:key "checkbox-panel" :title "Checkboxes" :style {:width 20}}
+                [zcui/Checkbox {:key "option1" :value "option1"} [:text {} "Option 1"]]
+                [zcui/Checkbox {:key "option2" :value "option2"} [:text {} "Option 2"]]
+                [zcui/Checkbox {:key "option3" :value "option3"} [:text {} "Option 3"]]]]]
           [:view {:key "images"
-                  :style {:border 1
+                  :style {:display :flex
+                          :flex-direction :row
+                          :border 1
                           :border-style :single
                           :text-align :right}}
               ; From https://opengameart.org/content/64-16x16-food-sprites
               [zcui/Image {:key "img1" :src "https://opengameart.org/sites/default/files/Food.png" :style {:clip [0 0 16 16]}}]
               [zcui/Image {:key "img2" :src "https://opengameart.org/sites/default/files/Food.png" :style {:clip [0 (* 5 16) 16 (* 6 16)]}}]
-              [zcui/Image {:key "img3" :src "https://opengameart.org/sites/default/files/Food.png" :style {:clip [0 (* 6 16) 16 (* 7 16)]}}]
-            [:text {:key "hello"}
-              [:text {:key 1 :style {:color (zcolor/color 255 0 0)}} "he"]
-              [:text {:key 2 :style {:color (zcolor/color 255 255 0)}} "ll"]
-              [:text {:key 3 :style {:color (zcolor/color 0 255 0)}} "o w"]
-              [:text {:key 4 :style {:color (zcolor/color 0 255 255)}} "or"]
-              [:text {:key 5 :style {:color (zcolor/color 0 0 255)}} "ld"]
-              [:text {:key 6 :style {:color (zcolor/color 0 0 0) :bg (zcolor/color 255 255 255)}} text-value]]]
-          #_[:view {:key "lorem" :style {:border 1 :border-style :double}}
+              [zcui/Image {:key "img3" :src "https://opengameart.org/sites/default/files/Food.png" :style {:clip [0 (* 6 16) 16 (* 7 16)]}}]]
+          [:text {:key "hello"}
+            [:text {:key 1 :style {:color (zcolor/color 255 0 0)}} "he"]
+            [:text {:key 2 :style {:color (zcolor/color 255 255 0)}} "ll"]
+            [:text {:key 3 :style {:color (zcolor/color 0 255 0)}} "o w"]
+            [:text {:key 4 :style {:color (zcolor/color 0 255 255)}} "or"]
+            [:text {:key 5 :style {:color (zcolor/color 0 0 255)}} "ld"]
+            [:text {:key 6 :style {:color (zcolor/color 0 0 0) :bg (zcolor/color 255 255 255)}} text-value]]
+          [:view {:key "lorem" :style {:border 1 :border-style :double}}
             [:text {:style {:text-align :right}} text]]]
         #_[:layer {:id :popup}
             [zcui/Popup {} [#_[:text {} ["popup"]]
