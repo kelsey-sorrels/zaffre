@@ -90,6 +90,7 @@
         [:layer {:id :main}
           [:view {:key "inputs"}
             [Clock {:key "clock"}]
+            [zcui/LoadingSpinner {:speed 100}]
             [FPSMeter {:key "fpsmeter"}]
             [zcui/OutsetPanel {:key "input-panel" :title "Inputs"
                          :style {:display :flex :flex-direction :row}}

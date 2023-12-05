@@ -178,8 +178,20 @@ maps))
          [:text {:key "checkbox-check" :style {:content cursor
                                                :color color}} ""]
          [:text {:key "checkbox-right" :style {:content :ref/checkbox-right
-                                               :color :ref/on-surface}} ""]]
+                                           :color :ref/on-surface}} ""]]
         children)]))
+
+(g/defcomponent LoadingSpinner
+  [props _]
+  (let [{:keys [speed characters] :or {speed 100 characters ["/" "-" "\\" "|"]}} props
+        [index set-index!] (g/use-state 0)]
+    (g/use-effect (fn []
+      (go-loop []
+        (<! (timeout speed))
+        (set-index! (fn [index] 
+          (mod (inc index) (count characters))))
+        (recur))) [])
+    [:text {:style {:color :ref/on-surface}} (nth characters index)]))
 
 (g/defcomponent Radio
   [props _]
