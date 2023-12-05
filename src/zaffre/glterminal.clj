@@ -47,20 +47,6 @@
            (Display/releaseContext))
          (monitor-exit lockee#)))))
 
-(defmacro with-gl-lock
-  "Executes exprs in an implicit do, while holding the monitor of x and aquiring/releasing the OpenGL context.
-  Will release the monitor of x in all circumstances."
-  [x & body]
-  `(let [lockee# ~x]
-     (try
-       (monitor-enter lockee#)
-       (Display/makeCurrent)
-       ~@body
-       (finally
-         (when @lockee#
-           (Display/releaseContext))
-         (monitor-exit lockee#)))))
-
 (defmacro defn-memoized [fn-name & body]
   "Def's a memoized fn. Same semantics as defn."
   `(def ~fn-name (memoize (fn ~@body))))
@@ -335,7 +321,7 @@
     [LWJGLUtil/PLATFORM_WINDOWS true]
       (System/setProperty "org.lwjgl.librarypath", (.getAbsolutePath (File. "natives/windows/x86_64"))))))
 
-(defn- init-display [title screen-width screen-height icon-paths gl-lock]
+(defn- init-display [title screen-width screen-height icon-paths gl-lock destroyed]
   (let [pixel-format       (PixelFormat.)
         context-attributes (ContextAttribs. 3 0)
         icon-array         (when icon-paths
@@ -369,14 +355,13 @@
        ;; Signal to parent that display has been created
        (.countDown latch)
        (loop []
-         (if (or (with-gl-context gl-lock
-                   ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
-                   ; input on the thread that created the window
-                   (Display/processMessages)
-                   ;; Close the display if the close window button has been clicked
-                   ;; or the gl-lock has been released programmatically (e.g. by destroy!)
-                   (Display/isCloseRequested))
-                 (not @gl-lock))
+         (if (with-gl-context gl-lock
+               ; Process messages in the main thread rather than the input go-loop due to Windows only allowing
+               ; input on the thread that created the window
+               (Display/processMessages)
+               ;; Close the display if the close window button has been clicked
+               ;; or the gl-lock has been released programmatically (e.g. by destroy!)
+               (or (Display/isCloseRequested) @destroyed))
            (do
              (log/info "Destroying display")
              (with-gl-context gl-lock
@@ -538,7 +523,8 @@
                            cursor-xy
                            gl
                            key-chan
-                           gl-lock]
+                           gl-lock
+                           destroyed]
   zat/ATerminal
   (get-size [_]
     [columns rows])
@@ -759,7 +745,7 @@
                            line))
                    cm))))
   (destroy! [_]
-    (reset! gl-lock false)))
+    (reset! destroyed true)))
 
 
 (defn make-terminal
@@ -807,6 +793,7 @@
                                                    (make-font windows-font Font/PLAIN font-size)
                                                    (make-font else-font Font/PLAIN font-size)))
           ;; false if Display is destoyed
+          destroyed          (atom false)
           gl-lock            (atom true)
           {:keys [screen-width
                   screen-height
@@ -816,7 +803,7 @@
                   font-texture-height
                   font-texture-image]} (get @font-textures (font-key @normal-font))
           _                  (log/info "screen size" screen-width "x" screen-height)
-          _                  (init-display title screen-width screen-height icon-paths gl-lock)
+          _                  (init-display title screen-width screen-height icon-paths gl-lock destroyed)
 
           font-texture       (with-gl-context gl-lock (texture-id font-texture-image))
           _                  (swap! font-textures update (font-key @normal-font) (fn [m] (assoc m :font-texture font-texture)))
@@ -909,7 +896,8 @@
                                    :fg-image-data fg-image-data
                                    :bg-image-data bg-image-data}}
                            key-chan
-                           gl-lock)]
+                           gl-lock
+                           destroyed)]
       ;; Access to terminal will be multi threaded. Release context so that other threads can access it)))
       (Display/releaseContext)
       ;; Start font file change listener thread
@@ -993,7 +981,7 @@
                                     :columns 80 :rows 24
                                     :default-fg-color [250 250 250]
                                     :default-bg-color [5 5 8]
-                                    :windows-font "/home/santos/Downloads/cour.ttf"
+                                    :windows-font "Consolas"
                                     :else-font "/home/santos/Downloads/cour.ttf"
                                     :font-size 18
                                     :antialias true
