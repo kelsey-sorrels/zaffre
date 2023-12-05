@@ -38,7 +38,7 @@
     fg))
 
 
-;;; Effects
+;;; Effect helpers
 
 (defn rain-transition
   [advanced-cell old-cell]
@@ -152,9 +152,70 @@
            nil)
          (rain-transition advanced-cell old-cell))))))))
 
+
 (defprotocol ACmdStream
   (stream [this]))
 
+;;; Event Streams
+;; s is a seq of [dt [layer-id [{:c \* :x 1 :y 2 :fg [r g b] :bg [r g b]}...]]]
+(defrecord SeqEffect
+  [terminal s]
+  ACmdStream
+  (stream [this]
+    (go-loop [x (first s) xs (next s)]
+      (doseq [[_ {:keys [layer-id]}] x]
+        (zat/clear! terminal layer-id))
+      (let [[dt {:keys [layer-id characters]}] x]
+        (zat/put-chars! terminal layer-id characters)
+        (zat/refresh! terminal)
+        (<! (timeout dt))
+        (when xs
+          (recur (first xs) (next xs)))))))
+
+(defn effect-from-events
+  [s]
+  (fn [terminal]
+    (->SeqEffect terminal s)))
+
+(defn delay-events [duration s]
+  (cons [duration []] s))
+  
+(defn merge-events-helper [ss]
+  (cond
+    (empty? ss) []
+    ;; sort 
+    (seq ss)
+    (let [[[now & xs] & upcoming] (sort-by ffirst (remove empty? ss))]
+      (if now
+        (let [
+            ;_ (println "now" now)
+            duration         (first now)
+            ;_ (println "duration" duration)
+            ;_ (println "xs" xs)
+            ;_ (println "upcoming" upcoming)
+            new-upcoming     (map (fn [s]
+                                    (cons (update (first s) 0 #(- % duration)) (rest s)))
+                                  (or upcoming []))
+            ;_ (println "new-upcoming" new-upcoming)
+            new-ss           (if xs (cons xs new-upcoming) new-upcoming)]
+        ;(println "new-ss" new-ss)
+        (cons now (lazy-seq (merge-events-helper new-ss))))
+      []))))
+
+(defn- filter-events [s]
+  (remove (fn [e] (and (vector? e)
+                       (= 2 (count e))
+                       (zero? (first e))
+                       (or (seq? (second e))
+                           (vector? (second e)))
+                       (empty? (second e))))
+          s))
+
+(defn merge-events
+  ([s] (filter-events s))
+  ([s & ss] (filter-events (merge-events-helper (cons s ss)))))
+
+;;; Effects
 (defrecord RainEffect
   [terminal layer-id rain-state]
   ACmdStream
@@ -225,71 +286,6 @@
 (defn make-blip-effect
   [layer-id characters duration]
   (make-blink-effect layer-id characters [duration]))
-
-
-;; s is a seq of [dt [layer-id [{:c \* :x 1 :y 2 :fg [r g b] :bg [r g b]}...]]]
-(defrecord SeqEffect
-  [terminal s]
-  ACmdStream
-  (stream [this]
-    (go-loop [x (first s) xs (next s)]
-      (doseq [[_ {:keys [layer-id]}] x]
-        (zat/clear! terminal layer-id))
-      (let [[dt {:keys [layer-id characters]}] x]
-        (zat/put-chars! terminal layer-id characters)
-        (zat/refresh! terminal)
-        (<! (timeout dt))
-        (when xs
-          (recur (first xs) (next xs)))))))
-
-(defn from-seq
-  [s]
-  (fn [terminal]
-    (->SeqEffect terminal s)))
-
-(defn delay-seq [duration s]
-  (cons [duration []] s))
-  
-;; *******a*****b****c
-;; **d*****e***f**g****h
-;; ==
-;; --**d***a*e***bf*g*c**h
-(defn merge-events-helper [ss]
-  (cond
-    (empty? ss) []
-    ;; sort 
-    (seq ss)
-    (let [[[now & xs] & upcoming] (sort-by ffirst (remove empty? ss))]
-      (if now
-        (let [
-            ;_ (println "now" now)
-            duration         (first now)
-            ;_ (println "duration" duration)
-            ;_ (println "xs" xs)
-            ;_ (println "upcoming" upcoming)
-            new-upcoming     (map (fn [s]
-                                    (cons (update (first s) 0 #(- % duration)) (rest s)))
-                                  (or upcoming []))
-            ;_ (println "new-upcoming" new-upcoming)
-            new-ss           (if xs (cons xs new-upcoming) new-upcoming)]
-        ;(println "new-ss" new-ss)
-        (cons now (lazy-seq (merge-events-helper new-ss))))
-      []))))
-
-(defn- filter-events [s]
-  (remove (fn [e] (and (vector? e)
-                       (= 2 (count e))
-                       (zero? (first e))
-                       (or (seq? (second e))
-                           (vector? (second e)))
-                       (empty? (second e))))
-          s))
-
-(defn merge-events
-  ([s] (filter-events s))
-  ([s & ss] (filter-events (merge-events-helper (cons s ss)))))
-
-;;(merge-events [[0 :a] [1 :b]] [[2 :c]])
 
 ;;; Queue cmds in a chan and foreard them to dst-chan on `(refresh)`.
 (defrecord WrappedAnimatedTerminal [terminal cmds dst-chan]
