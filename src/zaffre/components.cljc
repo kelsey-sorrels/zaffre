@@ -492,12 +492,12 @@
               (str " Not every child is a pixel in " type " "
                 (vec (filter (complement child-validator) children)))))
     (letfn [(child-validator [child] (or (component? child)
-                                  (element? child)
-                                  (string? child)
-                                  (nil? child)))]
+                                         (element? child)
+                                         (string? child)
+                                         (nil? child)))]
       (assert (every? child-validator children)
           (str " Not every child is a component or element in " type " "
-               (vec (filter (complement child-validator) children))))))
+               (first (filter (complement child-validator) children))))))
   true)
 
 ;; React.createElement(Hello, {toWhat: 'World'}, null)
@@ -521,7 +521,7 @@
                       (remove (fn [[prop-name _]]
                                 (reserved-prop? prop-name)))
                               config))
-        element (->ReactElement nil type key ref self source *current-owner* props)]
+        element (->ReactElement nil type key ref self source nil props)]
     (assoc element :id (System/identityHashCode element))))
 
 (defn create-factory [type]
