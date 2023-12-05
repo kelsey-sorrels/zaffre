@@ -4,7 +4,7 @@
   :license {:name "The MIT License (MIT)"
             :url "https://raw.githubusercontent.com/kelsey-sorrels/zaffre/master/LICENSE"}
   :dependencies [[org.clojure/clojure "1.9.0"]
-                 [org.clojure/core.async "0.2.374"]
+                 [org.clojure/core.async "0.3.465"]
                  ;[kelsey-sorrels/lwjgl "3.0.0rc1"]
                  [org.lwjgl/lwjgl"3.1.5"]
                  [org.lwjgl/lwjgl"3.1.5" :classifier "natives-macos"]
