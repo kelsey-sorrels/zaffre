@@ -130,3 +130,9 @@
 (def herrbdog-14x14 (CP437Font. "http://dwarffortresswiki.org/images/9/94/Herrbdog_7x7_tileset.gif" :green 2 true))
 (def talryth-15x15 (CP437Font. "http://dwarffortresswiki.org/images/6/6d/Talryth_square_15x15.png" :alpha 1 true))
 
+;; Opaque version of CP437 fonts
+(def pastiche-8x8-op (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1 false))
+(def pastiche-16x16-op (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 2 false))
+(def herrbdog-7x7-op (CP437Font. "http://dwarffortresswiki.org/images/9/94/Herrbdog_7x7_tileset.gif" :green 1 false))
+(def herrbdog-14x14-op (CP437Font. "http://dwarffortresswiki.org/images/9/94/Herrbdog_7x7_tileset.gif" :green 2 false))
+(def talryth-15x15-op (CP437Font. "http://dwarffortresswiki.org/images/6/6d/Talryth_square_15x15.png" :alpha 1 false))

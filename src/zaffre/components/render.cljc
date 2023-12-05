@@ -20,7 +20,7 @@
 })
 
 ;; Primitive elements
-(def primitive-elements #{:terminal :group :layer :view :text})
+(def primitive-elements #{:terminal :group :layer :view :text :img})
 (defn primitive? [component]
   (or (string? component)
       (contains? primitive-elements (first component))))
@@ -44,7 +44,7 @@
 (defn cascade-style
   ([element] (cascade-style {} element))
   ([parent-style [type props children]]
-    (if (= type :text)
+    (if (or (= type :text) (= type :img))
       [type (update-in props [:style] #(apply dissoc (merge parent-style %) text-forbidden-styles)) children]
       (let [new-style (merge parent-style (get props :style {}))]
         [type
@@ -105,10 +105,34 @@
               (or bg (get default-style :bg))
               (clojure.string/trim s))))))))
 
+(defn render-img-into-container [target img-element]
+  {:pre [(= (first img-element) :img)
+         (map? (second img-element))
+         #_(not (empty? (last img-element)))]}
+  (log/trace "render-img-into-container" img-element)
+  (let [[type {:keys [style zaffre/layout] :or {style {}} :as props} children] img-element
+        {:keys [x y width height]} layout
+        lines (last img-element)]
+    (log/trace "render-img-into-container lines" (vec lines))
+    (doseq [[dy line] (map-indexed vector lines)
+            :let [target-y (+ y dy)]]
+      (when (and (< dy height) (not (empty? line)) (< target-y (count target)))
+        (log/trace "rendering line" (vec line))
+        (doseq [[dx {:keys [c fg bg] :as pixel}] (map-indexed vector line)]
+          (assert (char? c))
+          (assert (vector? fg))
+          (assert (vector? bg))
+          (let [^"[Ljava.lang.Object;" target-line (aget target target-y)
+                max-x (count target-line)
+                target-x (+ x dx)
+                #_#_pixel {:c \x :fg [255 255 255] :bg [0 0 0]}]
+            (when (< target-x max-x))
+              (log/trace "rendering pixel x:" target-x " y:" target-y " " pixel)
+              (aset target-line target-x pixel)))))))
 
 (defn element-seq [element]
   "Returns :view and top-level :text elements."
-  (tree-seq (fn [[type _ _]] (not= type :text))
+  (tree-seq (fn [[type _ _]] (and (not= type :text) (not= type :img)))
             (fn [[_ _ children]] children)
             element))
 
@@ -118,6 +142,11 @@
 (defmethod render-component-into-container :text
   [target text-element]
   (render-text-into-container target text-element))
+
+;; render imgs
+(defmethod render-component-into-container :img
+  [target img-element]
+  (render-img-into-container target img-element))
 
 ;; Border
 (def single-border
@@ -159,7 +188,7 @@
             (render-string-into-container target x y fg bg
               (str (when (or (< 0 border) (< 0 border-left))
                      (get border-map :top-left))
-                   (apply str (repeat (- width (+ border-left border-right))
+                   (apply str (repeat (- width (+ (or border border-left) (or border border-right)))
                                       (get border-map :horizontal)))
                    (when (or (< 0 border) (< 0 border-right))
                      (get border-map :top-right)))))
@@ -172,8 +201,8 @@
             (render-string-into-container target x (+ y height -1) fg bg
               (str (when (or (< 0 border) (< 0 border-left))
                      (get border-map :bottom-left))
-                   (apply str (repeat (- width (+ border-left border-right))
-                              (get border-map :horizontal)))
+                   (apply str (repeat (- width (+ (or border border-left) (or border border-right)))
+                                (get border-map :horizontal)))
                    (when (or (< 0 border) (< 0 border-right))
                      (get border-map :bottom-right))))))))
     nil)
@@ -235,21 +264,23 @@
 
 ;; render a single element if needed
 (defn render [existing parent element]
-  (log/trace "existing" [(zc/element-display-name existing) (get existing :id)]
-             "element" [(zc/element-display-name element) (get element :id)])
+  (log/info "existing" [(zc/element-display-name existing) (get existing :id)]
+            "element"  [(zc/element-display-name element) (get element :id)])
   
   (log/trace "existing" (zc/tree->str existing))
   (log/trace "element" (zc/tree->str element))
   (if (type-match? existing element)
     (log/trace "type-match? true")
     (log/trace "type-mismatch" (get existing :type) (get element :type)))
-  (if (props-without-children-match? existing element)
+  (if (and (zc/element? existing)
+           (props-without-children-match? existing element))
    (log/trace "props-without-children-match? true")
    (log/trace "props-without-children-mismatch" (vec (take 2
                                                   (clojure.data/diff
                                                     (get (zc/element-without-children existing) :props)
                                                     (get (zc/element-without-children element) :props))))))
-  (if (state-changed? existing)
+  (if (and (zc/element? existing)
+           (state-changed? existing))
     (log/trace "state-changed" (zc/get-state zc/*updater* existing))
     (log/trace "state-changed? false"))
   ;; if element = existing, no-op return element
@@ -348,11 +379,15 @@
         element)
       ;; built-in?
       (keyword? (get element :type))
-        (let [rendered-children (zc/map-children (fn [child existing-child]
-                                                   (render-recursively existing-child element child))
-                                                 element
-                                                 existing)]
-          (zc/assoc-children element rendered-children))
+        (if (= (get element :type) :img)
+          ;; imgs have pre-rendered pixel children
+          element
+          ;; render other built-ins by rendering their chldren
+          (let [rendered-children (zc/map-children (fn [child existing-child]
+                                                     (render-recursively existing-child element child))
+                                                   element
+                                                   existing)]
+            (zc/assoc-children element rendered-children)))
       :default
         (let [;; Render one level
               rendered-element (render existing parent element)]
@@ -382,6 +417,10 @@
          (if (every? string? children)
            children
            (mapcat extract-native-elements children)))]]
+    (= :img (get element :type))
+      [[:img
+       (dissoc (get element :props {}) :children)
+       (zc/element-children element)]]
     (keyword? (get element :type))
       [[(get element :type)
        (dissoc (get element :props {}) :children)

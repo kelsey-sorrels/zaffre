@@ -48,6 +48,18 @@
     (log/debug "measure-text :bi-restricted" width height text)
     [width (min height (count (ztext/word-wrap width text)))])
 
+(defn img-measure-func [{:keys [width height]}]
+  (let [img-width width
+        img-height height]
+    (YGMeasureFunc/create (reify YGMeasureFuncI
+      (invoke [_ node width width-mode height height-mode]
+        (log/info "img-measure-fun width:" width " height:" height)
+        (with-open[stack (MemoryStack/stackPush)]
+            (-> (YGSize/mallocStack stack)
+                (.width img-width)
+                (.height img-height)
+                YGMeasureFunc/toLong)))))))
+
 (defn text-measure-func [text]
   (YGMeasureFunc/create (reify YGMeasureFuncI
     (invoke [_ node width width-mode height height-mode]
@@ -290,8 +302,11 @@
     (when (= type :text)
       (Yoga/YGNodeSetMeasureFunc node (text-measure-func (last children))))
 
+    (when (= type :img)
+      (Yoga/YGNodeSetMeasureFunc node (img-measure-func props)))
+
     (log/trace "node" node)
-    (if (= type :text)
+    (if (or (= type :text) (= type :img))
       [type props children node]
       [type
        props
