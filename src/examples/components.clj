@@ -79,8 +79,8 @@
                                                  :overflow :hidden}} [
                                    #_[zcui/Image {:src "/home/santos/src/zaffre/earthmap.jpg"}] 
                                    #_[zcui/AnimateProps {:gen (fn [state-chan open-chan]
-                                                               (zcui/cycle open-chan
-                                                                 (zcui/sequence state-chan
+                                                               (zutil/cycle open-chan
+                                                                 (zutil/sequence state-chan
                                                                    {:style {
                                                                      :top (fn [steps]
                                                                                       (map (fn [x]
@@ -101,9 +101,9 @@
                                                                        y-min 4
                                                                        x-max 16
                                                                        y-max 16]
-                                                          (zcui/cycle open-chan
-                                                            (zcui/parallel
-                                                              (zcui/sequence state-chan
+                                                          (zutil/cycle open-chan
+                                                            (zutil/parallel
+                                                              (zutil/sequence state-chan
                                                                 {:style {
                                                                   :top (zcui/interpolate-to y-min y-max)}}
                                                                 200
@@ -116,7 +116,7 @@
                                                                 {:style {
                                                                   :top y-min}}
                                                                 200)
-                                                              (zcui/sequence state-chan
+                                                              (zutil/sequence state-chan
                                                                 {:style {
                                                                   :left x-min}}
                                                                 200

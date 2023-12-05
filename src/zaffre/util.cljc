@@ -1,5 +1,6 @@
 (ns zaffre.util
   (:require [zaffre.terminal :as zat]
+            [clojure.core.async :as async :refer [>! <! chan to-chan timeout go go-loop thread]]
             clojure.set)
   (:import (zaffre.terminal Terminal)))
 
@@ -87,3 +88,70 @@
         i (min 1.0 (/ (* 1.0 (dot (unit [0 0 1]) (unit rl))) (* d d)))]
     i))
  
+
+(defn cycle [open-chan chan-fn]
+  (fn []
+    (go-loop []
+       (<! (chan-fn))
+       (when (= :open (<! open-chan))
+         (recur)))))
+
+(defn parallel [& chans]
+  (fn []
+    (go
+      (<! (async/merge (map (fn [c] (c)) chans))))))
+
+(defn keys-to-leaves [prefix m]
+  (mapcat (fn [[k v]]
+            (if (map? v)
+              (keys-to-leaves (conj prefix k) v)
+              [[(conj prefix k) v]]))
+          m))
+
+(defn transpose [xs]
+  (apply map list xs))
+
+(defn- map-generator [steps [ks g]]
+  (map (fn [v] [ks v])
+       (if (fn? g)
+         (g steps)
+         (repeat steps g))))
+
+(defn- reduce-event [event]
+  (reduce (fn [m [ks v]]
+            (assoc-in m ks v))
+          {}
+          event))
+
+(defn- sequence-cmd [state-chan cmd next-cmd]
+  ;; maps are prop generators
+  (let [generators (keys-to-leaves [] cmd)
+        dt 33
+        duration (if (number? next-cmd) next-cmd 1)
+        steps (int (/ duration dt))
+        events (transpose
+                 (map (partial map-generator steps)
+                      generators))
+        state-changes (map reduce-event
+                           events)
+        change-cmds (interpose dt state-changes)]
+    (go
+      (doseq [cmd change-cmds]
+        (if (number? cmd)
+          (<! (timeout cmd))
+          (>! state-chan cmd))))))
+
+(defn sequence [state-chan & cmds]
+  (fn [] (go
+    (doseq [[cmd next-cmd] (map list
+                             cmds
+                             (concat (rest cmds) [(first cmds)]))]
+      (cond
+        (number? cmd)
+          ;; numbers are pauses
+          (<! (timeout cmd))
+        (and (map? cmd) (number? next-cmd))
+          (sequence-cmd state-chan cmd next-cmd) 
+        :default
+           (assert false (str "cmd must be map or number. found:" cmd " " next-cmd)))))))
+

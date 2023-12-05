@@ -541,11 +541,9 @@
                                     2 [(first v) (second v) []]
                                     3 [(first v) (second v) (last v)]
                                     [(first v) (second v) (drop 2 v)])
-             _ (println "type children" (type children))
              csx-children (if (and children (or (symbol? children) (list? children)))
                             children
                             (map csx* children))
-             _ (println "props" props)
              #_#_display-name (display-name type)
              ; TODO: is there a better way to calculate display-name?
              config props]
