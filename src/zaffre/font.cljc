@@ -93,6 +93,19 @@
       (.dispose))
     converted-image))
 
+(defn compact [^BufferedImage buffered-image tile-width tile-height margin]
+  (if (pos? margin)
+    (let [cols (/ (.getWidth buffered-image) (+ tile-width margin))
+          rows (/ (.getHeight buffered-image) (+ tile-height margin))
+          compact-buffered-image (BufferedImage. (* cols tile-width) (* rows tile-height) (.getType buffered-image))
+          graphics (.createGraphics compact-buffered-image)]
+      (doseq [row (range rows)
+              col (range cols)]
+        (.drawImage graphics buffered-image (* col tile-width) (row * tile-height) tile-width tile-height))
+      (.dispose graphics)
+      compact-buffered-image)
+    buffered-image))
+
 (defn- copy-channel [v channel]
   (let [channel-shift (case channel
                        :alpha 24
@@ -128,7 +141,7 @@
 
 (defrecord CompositeFont [fonts])
 
-(defrecord TileSet [path-or-url alpha tile-width tile-height tile-id->col-row tile-id->transparent])
+(defrecord TileSet [path-or-url alpha tile-width tile-height margin tile-id->col-row tile-id->transparent])
 
 (defmulti glyph-graphics class)
 
@@ -299,6 +312,9 @@
     (let [font-image    (->
                           (ImageIO/read image-stream)
                           (convert-type BufferedImage/TYPE_4BYTE_ABGR)
+                          (compact (get font :tile-width)
+                                   (get font :tile-height)
+                                   (get font :margin))
                           (copy-channels! (get font :alpha)))
           width         (zutil/next-pow-2 (.getWidth font-image))
           height        (zutil/next-pow-2 (.getHeight font-image))
@@ -310,7 +326,7 @@
       (while (not (.drawImage texture-graphics font-image 0 0 nil))
         (Thread/sleep(100)))
       (.dispose texture-graphics)
-      (ImageIO/write font-image "png", (File. "tileset-texture.png"))
+      ;(ImageIO/write font-image "png", (File. "tileset-texture.png"))
       {:font-texture-width width
        :font-texture-height height
        :font-texture-image texture-image
