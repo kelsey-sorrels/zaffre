@@ -295,23 +295,42 @@
           layers (rockpick.core/read-xp (clojure.java.io/input-stream data))
           layer (nth layers layer-index)
           pixels (mapv (fn [line]
-               (log/info "line" line)
-               (mapv (fn [{:keys [ch fg bg]}]
-                      (let [fg-r (get fg :r)
-                            fg-g (get fg :g)
-                            fg-b (get fg :b)
-                            fg-a 255
-                            bg-r (get bg :r)
-                            bg-g (get bg :g)
-                            bg-b (get bg :b)
-                            bg-a 255]
-                      {:c (get zfont/cp437-unicode (int ch))
-                       :fg [fg-r fg-g fg-b fg-a]
-                       :bg [bg-r bg-g bg-b bg-a]}))
-                     line))
+                   (log/info "line" line)
+                   (mapv (fn [{:keys [ch fg bg]}]
+                          (let [fg-r (get fg :r)
+                                fg-g (get fg :g)
+                                fg-b (get fg :b)
+                                fg-a 255
+                                bg-r (get bg :r)
+                                bg-g (get bg :g)
+                                bg-b (get bg :b)
+                                bg-a 255]
+                          {:c (get zfont/cp437-unicode (int ch))
+                           :fg [fg-r fg-g fg-b fg-a]
+                           :bg [bg-r bg-g bg-b bg-a]}))
+                         line))
                layer)]
       (log/info "pixels" pixels)
       (zc/csx [:img {:width (count (first pixels)) :height (count pixels)} pixels])))}))
+
+(defn data-to-pixels [data]
+  (mapv (fn [[line1 line2]]
+          (mapv (fn [px1 px2]
+                 {:c \u2580
+                  :fg (conj (mapv (partial bit-and 0xFF) px1) 255)
+                  :bg (conj (mapv (partial bit-and 0xFF) px2) 255)}) ; ▀
+               line1 line2))
+        (partition 2 data)))
+
+(def ListImage (zc/create-react-class {
+  :display-name "ListImage"
+  :render (fn [this]
+    (let [{:keys [data]} (zc/props this)
+          width (reduce max (map count data))
+          height (count data)
+          pixels (data-to-pixels data)]
+      (log/trace "img-characters" pixels)
+      (zc/csx [:img {:width width :height (/ height 2)} pixels])))}))
 
 (def DataImage  (zc/create-react-class {
   :display-name "DataImage"
