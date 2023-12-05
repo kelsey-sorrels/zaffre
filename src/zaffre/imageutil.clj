@@ -77,10 +77,17 @@
                                                       (* s height)
                                                       channels))]
     (when (zero?
-            (STBImageResize/stbir_resize_uint8
+            (STBImageResize/stbir_resize_uint8_generic
               byte-buffer width height 0
               scaled-bytes (* s width) (* s height) 0
-              channels))
+              channels
+              (if (= channels 4)
+                3
+                STBImageResize/STBIR_ALPHA_CHANNEL_NONE)
+              0
+              STBImageResize/STBIR_EDGE_ZERO
+              STBImageResize/STBIR_FILTER_BOX
+              STBImageResize/STBIR_COLORSPACE_LINEAR))
       (throw (RuntimeException. "Error scaling image")))
     (log/info "scaled-bytes" scaled-bytes)
     (->Image (* s width) (* s height) channels scaled-bytes)))
