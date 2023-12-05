@@ -124,7 +124,7 @@ void main(void) {
     vec4 bg  = texelFetch(uBg, termXYZ, 0);
     if (paletteOffset != 0u) {
         uint colorIndex = uint(256u * fnt.r);
-        fg = texelFetch(uColorTable, ivec2(colorIndex + paletteOffset - 2u, 0), 0);
+        fg = texelFetch(uColorTable, ivec2(colorIndex + paletteOffset - 1u, 0), 0);
     }
 
 

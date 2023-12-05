@@ -31,7 +31,7 @@
 
 (def color-table-chars
   (->>
-    (for [row (range 2)
+    (for [row (range 3)
         col (range 4)]
       {:c :dark-trans :fg [0 0 0] :bg [0 0 0] :x col :y (+ row 28)})
     (map-indexed (fn [i c] (assoc c :palette-offset i)))))
