@@ -41,7 +41,7 @@
                        (fn [s]
                          (update s k callback))
                      :else
-                       (assert false "enqueue-set-state called with neither map not fn"))]
+                       (fn [s] nil))]
       (swap! a (fn [{:keys [q prev-state] :as updater}]
                  (assoc updater :q (conj q callback)))))
       this)
@@ -567,5 +567,5 @@
          (format "%s  children (%d)\n" indent (count children))]
         (map (fn [child] (tree-level->str child (+ 2 level))) children)))))
 
-(defn print-tree [v]
-  (println (tree-level->str v 0)))
+(defn tree->str [v]
+  (tree-level->str v 0))
