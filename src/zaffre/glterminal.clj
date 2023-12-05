@@ -108,9 +108,8 @@
                    Keyboard/KEY_NUMPAD8 :numpad8
                    Keyboard/KEY_NUMPAD9 :numpad9
                    ;; event-key didn't match, default to event-char if it is printable, else nil
-                   (if (<= (int (first " ")) (int event-char) (int \~))
-                     event-char
-                     nil))]
+                   (when (<= (int (first " ")) (int event-char) (int \~))
+                     event-char))]
     (log/info "key" key)
     (on-key-fn key)))
 
@@ -246,15 +245,15 @@
     texture-buffer))
 
 (defn- get-fields [#^Class static-class]
-  (. static-class getFields))
+  (.getFields static-class))
 
 (defn- gl-enum-name
   "Takes the numeric value of a gl constant (i.e. GL_LINEAR), and gives the name"
   [enum-value]
-  (if (= 0 enum-value)
+  (if (zero? enum-value)
     "NONE"
     (.getName #^Field (some
-                       #(if (= enum-value (.get #^Field % nil)) % nil)
+                       #(when (= enum-value (.get #^Field % nil)) %)
                        (mapcat get-fields [GL11 GL12 GL13 GL15 GL20 GL30])))))
 
 (defn- except-gl-errors
@@ -836,7 +835,7 @@
           ;;; Set fx uniforms
           ;(log/info "fx-uniforms" (vec fx-uniforms))
           (doseq [[uniform-name [value-atom location]] fx-uniforms]
-            (when (not (neg? location))
+            (when-not (neg? location)
               (GL20/glUniform1f location (-> value-atom deref float))))
           ;; Draw fx shaded terminal
           (GL11/glDrawArrays GL11/GL_TRIANGLE_STRIP 0 vertices-count)
