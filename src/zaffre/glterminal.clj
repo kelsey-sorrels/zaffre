@@ -660,6 +660,7 @@
                            font-textures
                            normal-font
                            fbo-texture
+                           fullscreen
                            antialias
                            character-map-cleared
                            layers-character-map
@@ -732,7 +733,8 @@
             ^ByteBuffer bbnil nil]
         (log/info "screen size" screen-width "x" screen-height)
         (try
-          (Display/setDisplayMode (DisplayMode. screen-width screen-height))
+          (when-not @fullscreen
+            (Display/setDisplayMode (DisplayMode. screen-width screen-height)))
           ;; resize FBO
           (GL11/glBindTexture GL11/GL_TEXTURE_2D fbo-texture)
           (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGB (int screen-width) (int screen-height) 0 GL11/GL_RGB GL11/GL_UNSIGNED_BYTE bbnil)
@@ -765,6 +767,8 @@
                     font-texture-width
                     font-texture-height
                     font-texture]} (get @font-textures (font-key @normal-font))
+            [display-width display-height] (let [mode (Display/getDisplayMode)]
+                                             [(.getWidth mode) (.getHeight mode)])
             base-layer-id (first layer-order)]
         (assert (not (nil? font-texture-width)) "font-texture-width nil")
         (assert (not (nil? font-texture-height)) "font-texture-height")
@@ -904,8 +908,10 @@
 
           ;; Draw fbo to screen
           (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
-          (GL11/glViewport 0 0 screen-width screen-height)
-          (GL11/glClearColor 1.0 0.0 0.0 1.0)
+          (GL11/glViewport (- (/ display-width 2) (/ screen-width 2))
+                           (- (/ display-height 2) (/ screen-height 2))
+                           screen-width screen-height)
+          (GL11/glClearColor 0.0 0.0 0.0 1.0)
           (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
           (GL20/glUseProgram fb-program-id)
           (GL20/glUniformMatrix4 u-fb-PMatrix false (ortho-matrix-buffer screen-width screen-height p-matrix-buffer))
@@ -947,6 +953,28 @@
   (clear! [_ layer-id]
     {:pre [(contains? (set layer-order) layer-id)]}
     (ref-set (get layers-character-map layer-id) character-map-cleared))
+  (fullscreen! [_ v]
+    (with-gl-context gl-lock
+      (if (false? v)
+        (let [{:keys [screen-width screen-height]} (get @font-textures (font-key @normal-font))]
+          (reset! fullscreen false)
+          (Display/setDisplayMode (DisplayMode. screen-width screen-height)))
+        (let [[width height mode] v]
+          (reset! fullscreen true)
+          (Display/setDisplayMode mode)
+          (Display/setFullscreen true)))))
+  (fullscreen-sizes [_]
+    (with-gl-context gl-lock
+      (let [desktop-mode (Display/getDesktopDisplayMode)
+            modes (Display/getAvailableDisplayModes)
+            compatible-modes (filter (fn [^DisplayMode mode]
+                                       (and (= (.getBitsPerPixel mode) (.getBitsPerPixel desktop-mode))
+                                            (= (.getFrequency mode) (.getFrequency desktop-mode))))
+                                     modes)]
+        (mapv (fn [^DisplayMode mode] [(.getWidth mode)
+                          (.getHeight mode)
+                          mode])
+             compatible-modes))))
   (set-fx-fg! [_ layer-id x y fg]
     {:pre [(vector? fg)
            (= (count fg) 3)
@@ -990,21 +1018,23 @@
 
 
 (defn make-terminal
-  [layer-order {:keys [title columns rows default-fg-color default-bg-color on-key-fn windows-font else-font font-size antialias icon-paths fx-shader]
+  [layer-order {:keys [title columns rows default-fg-color default-bg-color on-key-fn windows-font else-font font-size fullscreen antialias icon-paths fx-shader]
     :or {title "Zaffre"
          columns 80
          rows    24
-         default fg-color [255 255 255]
-         default bg-color [0 0 0]
+         default-fg-color [255 255 255]
+         default-bg-color [0 0 0]
          on-key-fn        nil
          windows-font     (TTFFont. "Courier New" 16)
-         else-font        (TTFFONT. "Monospaced" 16)
+         else-font        (TTFFont. "Monospaced" 16)
+         fullscreen       false
          antialias        true
          icon-paths       nil
          fx-shader        {:name "passthrough.fs"}}}]
     (let [is-windows       (>= (.. System (getProperty "os.name" "") (toLowerCase) (indexOf "win")) 0)
           normal-font      (atom nil)
           font-textures    (atom {})
+          fullscreen       (atom fullscreen)
           antialias        (atom antialias)
           _                (add-watch
                              normal-font
@@ -1058,7 +1088,7 @@
 
           key-chan         (async/chan)
           on-key-fn        (or on-key-fn
-                               (fn default-on-key-fn [k]
+                               (fn alt-on-key-fn [k]
                                  (async/put! key-chan k)))
 
           ;; create width*height texture that gets updated each frame that determines which character to draw in each cell
@@ -1141,6 +1171,7 @@
                            font-textures
                            normal-font
                            fbo-texture
+                           fullscreen
                            antialias
                            character-map-cleared
                            layers-character-map
@@ -1192,6 +1223,8 @@
                            destroyed)]
       ;; Access to terminal will be multi threaded. Release context so that other threads can access it)))
       (Display/releaseContext)
+      (when @fullscreen
+        (zat/fullscreen! terminal (first (zat/fullscreen-sizes terminal))))
       ;; Start font file change listener thread
       #_(cwc/start-watch [{:path "./fonts"
                          :event-types [:modify]
@@ -1316,6 +1349,7 @@
                                     :else-font (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 1)
                                     ;:else-font (CP437Font. "/home/santos/Pictures/LN_EGA8x8.png" :green 2)
                                     :antialias true
+                                    ;:fullscreen true
                                     :icon-paths ["images/icon-16x16.png"
                                                  "images/icon-32x32.png"
                                                  "images/icon-128x128.png"]
@@ -1326,6 +1360,7 @@
                                                            ["scanlineDepth" @scanlineDepth]
                                                            ["brightness" @brightness]
                                                            ["contrast" @contrast]]}})
+        fullscreen-sizes (zat/fullscreen-sizes terminal)
         last-key    (atom nil)
         ;; Every 10ms, set the "Rainbow" text to have a random fg color
         fx-chan     (go-loop []
@@ -1350,6 +1385,7 @@
                           ;; ~30fps
                         (Thread/sleep 33)
                         (recur))]
+    (log/info "Fullscreen sizes" fullscreen-sizes)
     ;; get key presses in fg thread
     (loop []
       (let [new-key (async/<!! (zat/get-key-chan terminal))]
@@ -1366,6 +1402,8 @@
           \l (zat/apply-font! terminal
                (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 3)
                (CP437Font. "http://dwarffortresswiki.org/images/b/be/Pastiche_8x8.png" :green 3))
+          \f (zat/fullscreen! terminal (first fullscreen-sizes))
+          \w (zat/fullscreen! terminal false)
           \0 (zat/assoc-fx-uniform! terminal "brightness" (swap! brightness #(- % 0.02)))
           \1 (zat/assoc-fx-uniform! terminal "brightness" (swap! brightness #(+ % 0.02)))
           \2 (do (swap! contrast #(- % 0.02))
