@@ -1,12 +1,92 @@
 (ns zaffre.components
-  (:require [taoensso.timbre :as log]))
+  (:require clojure.data
+            clojure.string
+            [taoensso.timbre :as log]))
  
-(declare ^:dynamic *updater*)
 (declare ^:dynamic *current-owner*)
 
 ;; State
-(defn enqueue-set-state [updater component partial-state callback]
-  nil)
+(defprotocol IUpdater
+  (enqueue-set-state! [this element partial-state callback])
+  (update-state! [this])
+  (element-state-changed? [this element])
+  (get-state [this element])
+  (get-prev-state [this element]))
+
+;; Updater consists of q: a queue of update fns, and s: a map from key to state.
+(defrecord Updater [a]
+  Object
+  (toString [this]
+    (let [updater @a]
+      (format "Updater\npending:%d\nstate:\n%s\nprev-state:\n%s"
+        (-> updater :q count)
+        (clojure.string/join "\n"
+          (map (fn [[k v]]
+                 (format "%x: %s"(System/identityHashCode k) v))
+               (get updater :s)))
+        (clojure.string/join "\n"
+          (map (fn [[k v]]
+                 (format "%x: %s"(System/identityHashCode k) v))
+               (get updater :prev-state))))))
+  IUpdater
+  (enqueue-set-state! [this element partial-state callback]
+    (assert (some? element) "Element must not be nil")
+    (assert (-> element :id some?) "Element must have :id")
+    (let [k (get element :id)
+          callback (cond
+                     (map? partial-state)
+                       (fn [s]
+                         (update-in s [k] #(merge % partial-state)))
+                     (fn? callback)
+                       (fn [s]
+                         (update s k callback))
+                     :else
+                       (assert false "enqueue-set-state called with neither map not fn"))]
+      (swap! a (fn [{:keys [q prev-state] :as updater}]
+                 (assoc updater :q (conj q callback)))))
+      this)
+  (update-state! [this]
+    (swap! a (fn [{:keys [q s] :as updater}]
+               ;; apply queued changes to old state to make new state
+               (let [new-s (reduce (fn [s f] (f s)) s q)
+                     ;; diff the old state and new state to find changed element ids
+                     [a b _] (clojure.data/diff s new-s)
+                     dirty (clojure.set/union (keys a) (keys b))]
+                 (assoc updater :q []
+                                :s new-s
+                                :prev-state s))))
+    this)
+  (element-state-changed? [this element]
+    (assert (some? element) "Element must not be nil")
+    (assert (-> element :id some?) "Element must have :id")
+    (let [k (get element :id)
+          {:keys [s prev-state] :as updater} @a]
+      (= (get s k) (get prev-state k))))
+  (get-state [this element]
+    (let [k (get element :id)]
+      (-> a deref :s (get k))))
+  (get-prev-state [this element]
+    (let [k (get element :id)]
+      (-> a deref :prev-state (get k)))))
+
+(defn empty-state [] (->Updater (atom {:q [] :s {} :prev-state {}})))
+
+(defrecord NoopUpdater []
+  IUpdater
+  (enqueue-set-state! [this element partial-state callback]
+    (assert (-> element :id some?) "Element must not be nil")
+      this)
+  (update-state! [this]
+    this)
+  (element-state-changed? [this element]
+    (assert (-> element :id some?) "Element must not be nil")
+    false)
+  (get-state [this element] nil)
+  (get-prev-state [this element] nil))
+
+(def noop-updater (->NoopUpdater))
+
+(def ^:dynamic *updater* noop-updater)
 
 ;; PureComponent
 ;; context is for context api
@@ -28,7 +108,7 @@
   (component-did-catch [this]))
 
 (defprotocol ComponentMethods
-  (set-state [this partial-state callback])
+  (set-state [this update])
   (force-update [this callback]))
 
 (defprotocol ComponentProperties
@@ -61,10 +141,9 @@
                       initial-state]
   Object
   (toString [this]
-    (format "Component %s :props %s :state %s"
+    (format "Component %s :props %s"
       (get this :display-name)
-      (get this :props)
-      (get this :state)))
+      (get this :props)))
   LifecycleMethods
   ;; Mounting
   (component-will-mount [this]
@@ -91,15 +170,6 @@
   (component-did-catch [this]
     ((get this :component-did-catch) this))
 
-  ComponentMethods
-  (set-state [this partial-state callback]
-    (if (or (map? partial-state) (fn? partial-state)
-      (enqueue-set-state updater this partial-state callback "setState"))
-      (throw "setState(...): takes an object of state variables to update or a
-             function which returns an object of state variables.")))
-  (force-update [this callback]
-    nil)
-
   ComponentProperties
   (default-props [this] (get this :default-props))
   (display-name [this] (get this :display-name))
@@ -109,6 +179,9 @@
     (->ComponentInstance this props initial-state))
   (create-instance [this state]
     (->ComponentInstance this props state)))
+
+(defn component? [type]
+  (instance? Component type))
 
 (defrecord ComponentInstance [component props state]
   Object
@@ -144,10 +217,17 @@
     ((get component :component-did-catch) this))
 
   ComponentMethods
-  (set-state [this partial-state callback]
-    (set-state component partial-state callback))
+  (set-state [this update]
+    (if (or (map? update) (fn? update))
+      (let [updater (get type :updater)
+            partial-state (when (map? update) update)
+            callback (when (fn? update update))]
+        (enqueue-set-state! updater *current-owner* partial-state callback))
+      (throw "setState(...): takes an object of state variables to update or a
+             function which returns an object of state variables.")))
   (force-update [this callback]
-    (force-update component callback))
+    (let [updater (get type :updater)]
+      (enqueue-set-state! updater *current-owner* nil callback)))
 
   ComponentProperties
   (default-props [this] (default-props component))
@@ -157,8 +237,7 @@
   (props [this]
     (get this :props))
   (state [this]
-    (when-let [s (get this :state)]
-      @s)))
+    (get this :state)))
   
 (defn component-instance? [instance]
   (instance? ComponentInstance instance))
@@ -279,30 +358,19 @@
 (defn reserved-prop? [prop-name]
   (contains? #{:key :ref :self :source :state} prop-name))
 
-(defn react-current-owner []
-  nil)
-
 (defn has-valid-ref? [config] (true? (get config :ref)))
 (defn has-valid-key? [config] (true? (get config :key)))
 
 ;; ReactElement
-(declare ->ReactElement)
-(defrecord ReactElement [type key ref self source owner props state]
+(defrecord ReactElement [id type key ref self source owner props]
   Object
   (toString [this]
     (format "Element %s :props %s :state %s"
       (if (keyword? (get this :type))
         (name (get this :type))
         (display-name (get this :type)))
-      (get this :props)
-      (get this :state)))
-  java.lang.Cloneable
-  (clone [this]
-    (log/info "cloning element" (display-name type))
-    (->ReactElement type key ref self source owner props (-> state deref atom))))
-
-(defn clone [element]
-  (.clone element))
+      props
+      (get-state *updater* this))))
 
 (defn element-children [element]
   (get-in element [:props :children]))
@@ -357,7 +425,6 @@
         key    (if (and config (has-valid-key? config)) (get config :key))
         self   (get config :self)
         source (get config :source)
-        state  (atom (get config :state))
         ;; either a single children array arg or multiple children using & more
         children (if (not (empty? more)) (cons children more) children)
         _ (valid-children? children)
@@ -366,8 +433,9 @@
                       (into {}
                         (remove (fn [[prop-name _]]
                                   (reserved-prop? prop-name)))
-                                config))]
-    (->ReactElement type key ref self source (react-current-owner) props state)))
+                                config))
+        element (->ReactElement nil type key ref self source *current-owner* props)]
+    (assoc element :id (System/identityHashCode element))))
 
 (defn create-factory [type]
   (partial create-element type))
@@ -387,7 +455,7 @@
            #_#_display-name# (display-name type-value#)
            ; TODO: is there a better way to calculate display-name?
            config# (merge {#_#_:display-name display-name#
-                           :state (get ~type# :initial-state)}
+                           #_#_:state (get ~type# :initial-state)}
                           ~props#)]
        (create-element type-value# config# ~children#))))
 
@@ -492,10 +560,10 @@
         children (get-in element [:props :children])]
     (apply str
       (concat
-        [(format "%s%s (Element@%x)\n" indent (element-display-name element) (System/identityHashCode element))
+        [(format "%s%s (Element(id=%x)@%x)\n" indent (element-display-name element) (get element :id) (System/identityHashCode element))
          (format "%s  :props %s\n" indent (dissoc (get element :props) :children))
-         (let [s (get element :state)]
-           (format "%s  :state@(%x) %s\n" indent (System/identityHashCode s) (when s @s)))
+         (let [s (get-state *updater* element)]
+           (format "%s  :state@(%x) %s\n" indent (System/identityHashCode s) s))
          (format "%s  children (%d)\n" indent (count children))]
         (map (fn [child] (tree-level->str child (+ 2 level))) children)))))
 
