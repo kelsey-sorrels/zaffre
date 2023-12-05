@@ -94,8 +94,8 @@
 
 
 (defn copy-buffer-range! [dest src n]
-  (doseq [_ (range n)]
-    (.put dest (.get src))))
+  (let [slice (.limit (.slice src) n)]
+    (.put dest slice)))
 
 (defn copy-sub-image [{dwidth :width dheight :height dchannels :channels dbytes :byte-buffer :as dimg}
                       {swidth :width sheight :height schannels :channels sbytes :byte-buffer}
