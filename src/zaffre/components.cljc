@@ -579,9 +579,10 @@
   "(def-component red-text [this] (zc/csx [:text (props this) [\"label\"]]))"
   (let [sym# (symbol sym)
         display-name# (str sym#)]
-    (list 'def sym# (list create-react-class {
-               :display-name display-name#
-               :render `(fn ~sym ~@fn-tail)}))))
+    (println "Defining component" sym# display-name#)
+    (list 'def sym# (list fn->component
+               `(fn ~sym ~@fn-tail)
+               (or display-name# "Unknown")))))
 
 (defn component-display-name [component]
   (cond

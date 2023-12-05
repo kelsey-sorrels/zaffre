@@ -113,15 +113,16 @@
          (or (integer? color) (vector? color))
          (or (integer? background-color) (vector? background-color))
          (string? s)]}
+  ;(log/info "render-string-into-container" x y color background-color s)
   (when (between -1 y (zt/num-rows target))
     (let [max-x (int (zt/num-cols target))
           row (int y)]
       (loop [index 0 s s]
         (let [col (int (+ x index))
               c   (first s)]
-          (when (and (seq s) 
+          (when (and c 
                      (between -1 col max-x))
-            (zt/set! target (first s) blend-mode color background-color col row)
+            (zt/set! target c blend-mode color background-color col row)
             (recur (inc index) (rest s))))))))
 
 (defn render-text-into-container [target text-element]
@@ -297,14 +298,12 @@
   [_ component]
   (assert false (format "Found unknown component %s" component)))
 
-(defn intersect-bounds [[ax1 ay1 ax2 ay2 :as a-bounds] [bx1 by1 bx2 bt2 :as b-bounds]]
-  (cond
-    (nil? a-bounds)
-      b-bounds
-    (nil? b-bounds)
-      a-bounds
-    :else
-      []))
+(defn intersect-bounds [[ax1 ay1 ax2 ay2 :as a-bounds] [bx1 by1 bx2 by2 :as b-bounds]]
+  (and
+    (< ax1 bx2)
+    (> ax2 bx1)
+    (> ay1 by2)
+    (< ay2 by1)))
 
 (defn inherit-overflow-bounds
   ([element]
@@ -314,7 +313,9 @@
       (cond
         (or (= type :text) (= type :img))
           [type
-           (assoc-in props [:zaffre/layout :overflow-bounds] parent-bounds)
+           (if parent-bounds
+             (assoc-in props [:zaffre/layout :overflow-bounds] parent-bounds)
+             props)
            children]
         (= (get-in props [:style :overflow]) :hidden)
           [type
@@ -338,16 +339,17 @@
       #_(log/debug "render-layer-into-container element" element)
       (render-component-into-container target element))
     elements))
-                    
-(defn log-layer [^"[[Ljava.lang.Object;" layer-container]
-  (doseq [y (range (alength layer-container))
-          :let [^"[Ljava.lang.Object;" line (aget layer-container y)]]
-    (doseq [x (range (alength line))
-            :let [{:keys [c]} (aget line x)]]
-      (if-not (nil? c)
+
+(defn log-layer [layer-id layer-container]
+  (println "▓" layer-id "▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓")
+  (doseq [row (range (zt/num-rows layer-container))]
+    (doseq [col (range (zt/num-cols layer-container))
+            :let [c (zt/get-char layer-container col row)]]
+      (if (< 0 (int c) 255)
         (print c)
-        (print \u0000)))
-    (println "")))
+        (print \space)))
+    (println "▓"))
+  (println "▓" layer-id "▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓"))
   
 (defn layer-info [group-info]
   "Given a terminal's group info, create a map layer-id->{:columns rows}."
@@ -465,7 +467,9 @@
     ;; initial render
     :default
     (binding [zc/*current-owner* element]
-      (log/info "initial-render" "existing" (zc/element-display-name existing) "element" (zc/element-display-name element))
+      #_(log/info "initial-render" (type element))
+      #_(log/info "initial-render" (type existing))
+      #_(log/info "initial-render" "existing" (zc/element-display-name existing) "element" (zc/element-display-name element))
       (let [instance (zc/construct-instance element)
             _ (log/trace "constructed component")
             ;; derive state from props
@@ -633,7 +637,7 @@
                    ;; assign width and height to layer style
                    (assoc-in [1 :style :width] columns)
                    (assoc-in [1 :style :height] rows))))
-            #_(log-layer layer-container)
+            #_(log-layer id layer-container)
             ;; send layer changes to terminal
             (zt/put-layer! target id layer-container))))
       (with-meta root-element {:layout-elements @elements}))))

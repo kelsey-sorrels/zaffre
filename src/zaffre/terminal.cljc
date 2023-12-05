@@ -97,7 +97,7 @@
   (->Buffers
     num-cols
     num-rows
-    (char-array (* num-cols num-rows))
+    (char-array (* num-cols num-rows) \space)
     (int-array (* num-cols num-rows))
     (int-array (* num-cols num-rows))
     (int-array (* num-cols num-rows))))

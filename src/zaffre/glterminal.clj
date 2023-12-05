@@ -48,6 +48,7 @@
     (.flip buffer)
     float-buffer))
 
+(def last-context-thread-id (atom nil))
 (defmacro with-gl-context
   "Executes exprs in an implicit do, while holding the monitor of x and aquiring/releasing the OpenGL context.
   Will release the monitor of x in all circumstances."
@@ -58,8 +59,11 @@
      (try
        (monitor-enter lockee#)
        (when @lockee#
-         (GLFW/glfwMakeContextCurrent window#)
-         (GL/setCapabilities capabilities#)
+         (let [thread-id# (.getId (Thread/currentThread))]
+           (when-not (= thread-id# @last-context-thread-id)
+             (GLFW/glfwMakeContextCurrent window#)
+             (GL/setCapabilities capabilities#)
+             (reset! last-context-thread-id thread-id#)))
          ~@body)
        (finally
          (when @lockee#
@@ -617,6 +621,7 @@
           num-rows         (int (zt/num-rows buffers))]
       (try
         #_(log/info "put-layer! characters" columns rows group-id group-index layer-index glyph-image-data fg-image-data bg-image-data)
+        #_(log/info "put-layer!" num-cols num-rows)
         #_(log/info "put-layer!" (-> group-id group->font-texture deref))
         #_(log/info "put-layer!" character->col-row)
         #_(log/info (keys gl))
@@ -659,12 +664,15 @@
                     #_(when false
                       (log/info "put-layer!" col row i x y (Integer/toHexString fg) (Integer/toHexString bg)))
 
+                    ; start of row, copy full row
                     (when (zero? col)
                       (.position glyph-image-data i)
                       (.position fg-image-data i)
                       (.position bg-image-data i)
                       (zt/copy-fg buffers col (- num-rows row 1) num-cols fg-image-data) 
                       (zt/copy-bg buffers col (- num-rows row 1) num-cols bg-image-data))
+                    #_(.put (.asIntBuffer fg-image-data) (unchecked-int (zt/get-fg buffers col (- num-rows row 1))))
+                    #_(.put (.asIntBuffer bg-image-data) (unchecked-int (zt/get-bg buffers col (- num-rows row 1))))
                     (.put glyph-image-data (unchecked-byte x))
                     (.put glyph-image-data (unchecked-byte y))
                     ;; TODO fill with appropriate type
@@ -697,7 +705,9 @@
         (try
           ;(GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER, fbo-id)
           (GL11/glEnable GL11/GL_BLEND)
+          (except-gl-errors "glEnable GL_BLEND")
           (GL11/glDisable GL11/GL_DEPTH_TEST)
+          (except-gl-errors "glEnable GL_DEPTH_TEST")
           ;(log/info "glViewport" 0 0 framebuffer-width framebuffer-height)
           (GL11/glViewport 0 0 framebuffer-width framebuffer-height)
           (except-gl-errors (str "glViewport " framebuffer-width framebuffer-height))
@@ -761,8 +771,10 @@
             (flip-byte-buffer bg-image-data)
             ;(log/info character->transparent)
             (GL14/glBlendEquation (gl-enum-value gl-blend-equation))
+            (except-gl-errors "glBlendEquations")
             (GL11/glBlendFunc (gl-enum-value (first gl-blend-func))
                               (gl-enum-value (second gl-blend-func)))
+            (except-gl-errors "glBlendFunc")
             #_(doseq [layer (partition layer-size (vec (nio/buffer-seq glyph-image-data)))]
               (log/info "layer")
               (doseq [line (partition (* 4 texture-columns) layer)]
@@ -798,7 +810,6 @@
               (GL20/glUniform2f font-tex-dim font-texture-width font-texture-height)
               (GL20/glUniform2f glyph-tex-dim texture-columns texture-rows)
               (except-gl-errors "uniform2f bind")
-              (except-gl-errors "gl(en/dis)able")
               ; Bind font texture
               #_(log/info "binding font texture" font-texture)
               ; TODO: Find root of font texture update sync bug and remove this check

@@ -7,6 +7,8 @@
            (org.lwjgl.util.yoga
              YGMeasureFunc
              YGMeasureFuncI
+             YGLogger
+             YGLoggerI
              YGSize
              Yoga)))
 
@@ -385,10 +387,28 @@
            [])])
       yoga-tree)))
 
+(def yoga-logger
+  (YGLogger/create (reify YGLoggerI
+    (invoke [_ config node level format args]
+        (log/info "Got Yoga Log" config node level format)
+        #_(let [print-fn (Yoga/YGNodeGetPrintFunc node)]
+          (.invoke print-fn node))
+        (int 0)
+        #_(with-open[stack (MemoryStack/stackPush)]
+            (-> (YGSize/mallocStack stack)
+                (.width result-width)
+                (.height result-height)
+                YGMeasureFunc/toLong))))))
+
 (defn layout-element [element]
   (let [width (get-in element [1 :style :width])
         height (get-in element [1 :style :height])
-        yoga-tree (build-yoga-tree width height nil nil element)]
-    (log/trace "yoga-tree" yoga-tree)
-    (transfer-layout yoga-tree)))
+        yoga-config (Yoga/YGConfigNew)]
+    (try
+      (Yoga/YGConfigSetLogger yoga-config yoga-logger)
+      (let [yoga-tree (build-yoga-tree width height nil nil element)]
+        (log/trace "yoga-tree" yoga-tree)
+        (transfer-layout yoga-tree))
+      (catch Throwable t
+        (Yoga/YGConfigFree yoga-config)))))
 
