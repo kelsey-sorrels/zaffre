@@ -640,6 +640,21 @@
                        cm
                        (group-by :y characters))))
       #_(log/info "character-map" (str @character-map))))
+  (replace-chars! [_ layer-id characters]
+    (alter (get layer-character-map layer-id)
+           (fn [_]
+             (map (fn [line]
+                    (map (fn [c]
+                           (let [fg        (get c :fg [255 0 0 255])
+                                 bg        (get c :bg [0 0 0 0])
+                                 style     (get c :style #{})
+                                 ch        (get c :c \ )
+                                 fg-color  fg
+                                 bg-color  bg
+                                 character (make-terminal-character ch fg-color bg-color style)]
+                             character))
+                         line))
+                  characters))))
   (set-fg! [_ layer-id x y fg]
     {:pre [(is (vector? fg) "fg not a vector")
            (is (= (count fg) 3) "fg must have 3 elements")
@@ -933,7 +948,7 @@
                             :gl-blend-func [:gl-one :gl-one-minus-src-alpha]}
         group-map           (into {}
                               (map (fn [group]
-                                     (is (every? group #{:id :layers :columns :rows :pos :font :gl-blend-equation :gl-blend-func}))
+                                     (is (every? #{:id :layers :columns :rows :pos :font :gl-blend-equation :gl-blend-func} (keys group)))
                                      [(get group :id) (ref (merge default-blend group))])
                                    groups))
         group-order         (map :id groups)
@@ -994,9 +1009,9 @@
         ;; Turn term-chan into a pub(lishable) channel
         term-pub            (async/pub term-chan (fn [v]
                                           (cond
-                                            (char? v)    :keypress
-                                            (keyword? v) v
-                                            :else        (get v :type))))
+                                            (zkeyboard/is-keypress? v) :keypress
+                                            (keyword? v)               v
+                                            :else                      (get v :type))))
                                           
         on-key-fn           (or on-key-fn
                                 (fn alt-on-key-fn [k]
