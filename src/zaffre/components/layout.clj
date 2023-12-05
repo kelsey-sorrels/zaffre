@@ -169,7 +169,12 @@
           (keys style)))
 
 (defn border-keys [style]
-  (remove #{:border-style} (style-keys "border" style)))
+  (remove #{:border-style
+            :border-color
+            :border-color-top
+            :border-color-bottom
+            :border-color-left
+            :border-color-right} (style-keys "border" style)))
          
 (defn margin-keys [style]
   (style-keys "margin" style))

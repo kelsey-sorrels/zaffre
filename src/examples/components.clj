@@ -91,9 +91,9 @@
           [:view {:key "inputs"}
             [Clock {:key "clock"}]
             [FPSMeter {:key "fpsmeter"}]
-            [zcui/Panel {:key "input-panel" :title "Inputs"
+            [zcui/OutsetPanel {:key "input-panel" :title "Inputs"
                          :style {:display :flex :flex-direction :row}}
-              [zcui/Panel {:key "input-panel" :title "Text" :style {:width 20}}
+              [zcui/InsetPanel {:key "input-panel" :title "Text" :style {:width 20}}
                 [zcui/Input {:key "input1"
                              :autofocus true
                              :style {:cursor-fg (zcolor/color 244 208 65 255)}
@@ -104,14 +104,22 @@
                 [zcui/Input {:key "input3"
                              :style {:cursor-fg (zcolor/color 208 65 244)}
                              :on-change text-value-on-change} []]]
-              [zcui/Panel {:key "radio-panel" :title "Radio Group" :style {:width 20}}
+              [zcui/InsetPanel {:key "radio-panel" :title "Radio Group" :style {:width 20}}
                 [zcui/Radio {:key "option1" :name "group1" :value "option1"} [:text {} "Option 1"]]
                 [zcui/Radio {:key "option2" :name "group1" :value "option2"} [:text {} "Option 2"]]
                 [zcui/Radio {:key "option3" :name "group1" :value "option3"} [:text {} "Option 3"]]]
-              [zcui/Panel {:key "checkbox-panel" :title "Checkboxes" :style {:width 20}}
+              [zcui/InsetPanel {:key "checkbox-panel" :title "Checkboxes" :style {:width 20}}
                 [zcui/Checkbox {:key "option1" :value "option1"} [:text {} "Option 1"]]
                 [zcui/Checkbox {:key "option2" :value "option2"} [:text {} "Option 2"]]
-                [zcui/Checkbox {:key "option3" :value "option3"} [:text {} "Option 3"]]]]]
+                [zcui/Checkbox {:key "option3" :value "option3"} [:text {} "Option 3"]]]
+              [zcui/InsetPanel {:key "button-panel" :title "Buttons"
+                           :style {
+                             :width 20
+                             :display :flex
+                             :flex-direction :row}}
+                [zcui/Button {:key "option1"} [:text {} "Button1"]]
+                [zcui/Button {:key "option2"} [:text {} "Button2"]]
+                [zcui/Button {:key "option3"} [:text {} "Button3"]]]]]
           [:view {:key "images"
                   :style {:display :flex
                           :flex-direction :row
@@ -209,49 +217,13 @@
      :effects []}
     (fn [terminal] ;; Receive the terminal in a callback
       ;; Save the last key press in an atom
-      (let [first-render (atom true)
-            last-key (atom nil)
-            width (atom 16)
-            frames (atom 0)
-            fps (atom 0)
+      (let [last-key (atom nil)
             show-popup (atom true)
-            text-value (atom "")
-            on-change-text-value (fn [e] (reset! text-value (get e :value)))
             last-dom (atom nil)
-            key-event-queue (atom [])
-            fps-fn (atat/every 1000
-                               #(do
-                                 (log/info "frames " @frames)
-                                 (reset! fps @frames)
-                                 (reset! frames 0))
-                               zc/*pool*)]
+            key-event-queue (atom [])]
         (zcr/render terminal UI
-           {:show-popup @show-popup
-            :text-value @text-value
-            :text-value-on-change on-change-text-value})
+           {:show-popup @show-popup})
 
-        ;; Every 20ms, draw a full frame
-        #_(zat/do-frame terminal 20
-          #_(when (= @frames 2) (System/exit 0))
-          (let [key-in (or @last-key \?)
-                [key-events _] (reset-vals! key-event-queue [])
-                dom (zcr/render-into-container terminal
-                      @last-dom
-                      ui)]
-            (assert (zc/element? ui))
-            (when @first-render
-              (reset! first-render false)
-              ;; Select the first Input
-              (when-let [first-input-element (first (zcui/input-element-seq dom))]
-                (binding [zc/*current-owner* first-input-element]
-                  (let [instance (zc/construct-instance first-input-element)]
-                    (zc/set-state! instance {:focused true})))))
-            (reset! last-dom dom)
-            ;; pump all terminal events to elements
-            (zce/send-events-to-dom key-events dom)
-            (log/trace "--- End of Frame ---")
-            (swap! frames inc)))
-            
         ;; Wire up terminal events to channels we read from
         (zevents/add-event-listener terminal :keypress
           (fn [new-key]
@@ -266,7 +238,6 @@
               \i (log/set-level! :info)
               #_#_\s (clojure.inspector/inspect-tree @last-dom)
               \q (do
-                   (atat/stop fps-fn)
                    (atat/stop-and-reset-pool! zc/*pool* :strategy :kill)
                    (zat/destroy! terminal))
               nil)))))))

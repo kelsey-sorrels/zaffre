@@ -47,3 +47,26 @@
     (bit-or (bit-and 0x00ffffff color)
             (bit-shift-left (bit-and 0xff alpha) (int 24)))))
 
+(defn map-colors [f rgba1 rgba2]
+  (color
+    (f (red rgba1) (red rgba2))
+    (f (green rgba1) (green rgba2))
+    (f (blue rgba1) (blue rgba2))
+    (f (alpha rgba1) (alpha rgba2))))
+
+(defn lerp [initial final n]
+  (+ initial (* n (- final initial))))
+
+(defn lerp-rgb [initial-rgb final-rgb n]
+  (map-colors #(unchecked-byte (int (lerp %1 %2 n))) initial-rgb final-rgb))
+
+(def ^:private white (color 255 255 255))
+(defn overlay
+  [initial-color amount]
+  (lerp-rgb initial-color white amount))
+
+(defn overlay-percent
+  [initial-color amount]
+  (overlay initial-color (float (/ amount 100))))
+
+  

@@ -27,6 +27,10 @@
    :border-right 0
    :border-top 0
    :border-bottom 0
+   :border-color-left (zcolor/color 255 255 255)
+   :border-color-right (zcolor/color 255 255 255)
+   :border-color-top (zcolor/color 255 255 255)
+   :border-color-bottom (zcolor/color 255 255 255)
    :mix-blend-mode :normal
    ;; Theme (Dark)
    ; backgrounds
@@ -37,6 +41,9 @@
    :background (zcolor/color 18 18 18)
    :surface (zcolor/color 18 18 18)
    :error (zcolor/color 207 102 121)
+   ; overlay
+   :background-overlay-4 (zcolor/overlay-percent (zcolor/color 0 0 0) 4)
+   :surface-overlay-4 (zcolor/overlay-percent (zcolor/color 18 18 18) 8)
    ; text
    :on-primary (zcolor/color 0 0 0)
    :on-secondary (zcolor/color 0 0 0)
@@ -44,6 +51,8 @@
    :on-surface (zcolor/color 255 255 255)
    :on-error (zcolor/color 0 0 0)
    ; characters
+   :button-left "<"
+   :button-right ">"
    :radio-checked "*"
    :radio-unchecked " "
    :radio-left "("
@@ -51,7 +60,7 @@
    :checkbox-checked "x"
    :checkbox-unchecked " " 
    :checkbox-left "["
-   :checkbbox-right "]"
+   :checkbox-right "]"
    :progress-filled " "
    :progress-empty "\u2592"
 })
@@ -68,6 +77,11 @@
     :border-right
     :border-top
     :border-bottom
+    :border-color
+    :border-color-left
+    :border-color-right
+    :border-color-top
+    :border-color-bottom
     :border-horizontal
     :border-vertical
     :padding
@@ -125,12 +139,16 @@
   ;; Theme
   ;; NOTE: Theme values should ALWAYS be inheirited so that they propogate
   ;; throughout the element tree
+  :primary
   :primary-variant
   :secondary
   :secondary-variant
   :background
   :surface
   :error
+  ; overlay
+  :background-overlay-4
+  :surface-overlay-4
   ; text
   :on-primary
   :on-secondary
@@ -138,6 +156,8 @@
   :on-surface
   :on-error
   ; characters
+  :button-left
+  :button-right
   :radio-checked
   :radio-unchecked
   :radio-left
@@ -145,9 +165,11 @@
   :checkbox-checked
   :checkbox-unchecked
   :checkbox-left
-  :checkbbox-right
+  :checkbox-right
   :progress-filled
   :progress-empty
+  ;; Non-standard properties
+  :overlay-percent
 })
 
 (defn resolve-value
@@ -231,7 +253,12 @@
   #_(log/debug "render-text-into-container" text-element)
   (let [[type {:keys [style zaffre/layout] :or {style {}} :as props} children] text-element
         {:keys [x y width height]} layout
-        {:keys [text-align mix-blend-mode] :or {text-align :left mix-blend-mode :normal}} style
+        {:keys [text-align
+                mix-blend-mode
+                overlay-percent]
+           :or {text-align :left
+                mix-blend-mode :normal
+                overlay-percent 0}} style
         text-element (if (every? string? children)
                        [:text props (map (fn [child] [:text {} [child]]) children)]
                        text-element)
@@ -265,7 +292,7 @@
                 target
                 (+ x dx) (+ y dy)
                 (or color default-color)
-                (or background-color default-background-color)
+                (zcolor/overlay-percent (or background-color default-background-color) overlay-percent)
                 (clojure.string/trim s)
                 mix-blend-mode))))))))
 
@@ -351,7 +378,14 @@
                   border border-style
                   border-top border-bottom
                   border-left border-right
-                  mix-blend-mode]} (merge default-style style)]
+                  border-color-top border-color-bottom
+                  border-color-left border-color-right
+                  mix-blend-mode]} (merge default-style style)
+          border-color-top (or border-color-top color)
+          border-color-bottom (or border-color-bottom color)
+          border-color-left (or border-color-left color)
+          border-color-right (or border-color-right color)]
+      #_(log/info "view-border" border-top border-color-top)
       ;; render background when set
       (when background-color
         (doseq [dy (range height)
@@ -366,7 +400,7 @@
                            :double double-border)]
           ; render top
           (when (or (< 0 border) (< 0 border-top))
-            (render-string-into-container target x y color background-color
+            (render-string-into-container target x y border-color-top background-color
               (str (when (or (< 0 border) (< 0 border-left))
                      (get border-map :top-left))
                    (clojure.string/join (repeat (- width (+ (or border border-left) (or border border-right)))
@@ -377,12 +411,12 @@
           ; render middle
           (doseq [dy (range (- height 2))]
             (when (or (< 0 border) (< 0 border-left))
-              (render-string-into-container target x (+ y dy 1) color background-color (str (get border-map :vertical)) mix-blend-mode))
+              (render-string-into-container target x (+ y dy 1) border-color-left background-color (str (get border-map :vertical)) mix-blend-mode))
             (when (or (< 0 border) (< 0 border-right))
-              (render-string-into-container target (+ x width -1) (+ y dy 1) color background-color (str (get border-map :vertical)) mix-blend-mode)))
+              (render-string-into-container target (+ x width -1) (+ y dy 1) border-color-right background-color (str (get border-map :vertical)) mix-blend-mode)))
           ; render bottom
           (when (or (< 0 border) (< 0 border-bottom))
-            (render-string-into-container target x (+ y height -1) color background-color
+            (render-string-into-container target x (+ y height -1) border-color-bottom background-color
               (str (when (or (< 0 border) (< 0 border-left))
                      (get border-map :bottom-left))
                    (clojure.string/join (repeat (- width (+ (or border border-left) (or border border-right)))
@@ -432,15 +466,17 @@
 
 (defn render-layer-into-container
   [target layer]
-  (log/trace "render-layer-into-container" layer)
+  #_(log/trace "render-layer-into-container" layer)
   (let [layer-en-place (zl/layout-element layer)
         elements (-> (inherit-overflow-bounds layer-en-place)
                    element-seq
                    vec)]
-    #_(log/trace "render-layer-into-container elements" elements)
+    #_(log/info "render-layer-into-container layer" layer)
+    #_(log/info "render-layer-into-container layer-en-place" layer-en-place)
+    #_(log/info "render-layer-into-container elements" elements)
     #_(log/trace "render-layer-into-container layer-en-place" (zc/tree->str layer-en-place))
     (doseq [element elements]
-      #_(log/debug "render-layer-into-container element" element)
+      #_(log/info "render-layer-into-container element" element)
       (render-component-into-container target element))
     elements))
 

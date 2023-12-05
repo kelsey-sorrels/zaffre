@@ -100,6 +100,37 @@ maps))
        [:text {:key "cursor" :style {:color cursor-fg :background-color cursor-bg}} (str cursor)]
        [:text {:key "rest"} (apply str (repeat (- width (count value)) "_"))]]))
 
+(g/defcomponent Button
+  [props _]
+  (let [[focused set-focus!] (g/use-state (get props :focus false))
+        duty-on 400
+        duty-off 400
+        on-focus (fn [_] (set-focus! true))
+        on-blur (fn [_] (set-focus! false))
+        on-keypress (fn [_] nil)
+        {:keys [name children]} props
+        color (if focused :ref/on-secondary :ref/on-surface)
+        background-color (if focused :ref/secondary :ref/surface)
+        overlay-percent (if focused 0 12)
+        element-style {:color color
+                       :background-color background-color
+                       :overlay-percent overlay-percent}
+        default-props {:on-focus on-focus
+                       :on-blur on-blur
+                       :on-keypress on-keypress
+                       :gossamer.components/type :button
+                       :gossamer.components/focusable true
+                       :style {:display :flex
+                               :flex-direction :row}}
+        props (assoc (merge default-props props)
+                :style (merge (:style default-props)
+                              (:style props)))]
+
+    [:view props
+        [:text {:key "button-left" :style (merge element-style {:content :ref/button-left})} ""]
+        [:view {:key "button-content" :style element-style} children]
+        [:text {:key "button-right" :style (merge element-style {:content :ref/button-right})} ""]]))
+
 (g/defcomponent Checkbox
   [props _]
   (let [[selected set-selected!] (g/use-state (get props :checked false))
@@ -143,11 +174,11 @@ maps))
     [:view props
       (concat
         [[:text {:key "checkbox-left" :style {:content :ref/checkbox-left
-                                           :color :ref/on-surface}} ""]
+                                              :color :ref/on-surface}} ""]
          [:text {:key "checkbox-check" :style {:content cursor
-                                           :color color}} ""]
+                                               :color color}} ""]
          [:text {:key "checkbox-right" :style {:content :ref/checkbox-right
-                                           :color :ref/on-surface}} ""]]
+                                               :color :ref/on-surface}} ""]]
         children)]))
 
 (g/defcomponent Radio
@@ -438,6 +469,49 @@ maps))
              (str "\u2524" title "\u251C")]
       children)]))
 
+(g/defcomponent InsetPanel
+  [props _]
+  (let [{:keys [title border children]} props]
+    (log/info "Panel props" props)
+    (log/info "Panel children" children)
+    [:view {:style {:border (or border 1)
+                    :border-color-top :ref/background-overlay-4
+                    :border-color-left :ref/background-overlay-4
+                    :border-color-bottom :ref/surface-overlay-4
+                    :border-color-right :ref/surface-overlay-4
+                    :background-color :ref/surface}}
+      (cons [:view {:key "panel-title"
+                    :style {:position :absolute
+                            :height 1 :width (+ 2 (count title))
+                            :top -1 :left 1
+                            :display :flex
+                            :flex-direction :row}}
+              [:text {:style {:color :ref/background-overlay-4}} "\u2524"]
+              [:text {:style {:color :ref/on-surface}} title]
+              [:text {:style {:color :ref/background-overlay-4}} "\u251C"]]
+      children)]))
+
+(g/defcomponent OutsetPanel
+  [props _]
+  (let [{:keys [title border children]} props]
+    (log/info "Panel props" props)
+    (log/info "Panel children" children)
+    [:view {:style {:border (or border 1)
+                    :border-color-top :ref/surface-overlay-4
+                    :border-color-left :ref/surface-overlay-4
+                    :border-color-bottom :ref/background-overlay-4
+                    :border-color-right :ref/background-overlay-4
+                    :background-color :ref/surface}}
+      (cons [:view {:key "panel-title"
+                    :style {:position :absolute
+                            :height 1 :width (+ 2 (count title))
+                            :top -1 :left 1
+                            :display :flex
+                            :flex-direction :row}}
+              [:text {:style {:color :ref/background-overlay-4}} "\u2524"]
+              [:text {:style {:color :ref/on-surface}} title]
+              [:text {:style {:color :ref/background-overlay-4}} "\u251C"]]
+      children)]))
 ;; style taken from https://www.nucleo.com.au/using-flexbox-for-modal-dialogs/
 (def Popup (zc/create-react-class {
   :display-name "Popup"
