@@ -5,7 +5,6 @@
             [zaffre.tilesets :as ztiles]
             [zaffre.events :as zevents]
             [zaffre.util :as zutil]
-            [clojure.core.async :as async :refer [go-loop]]
             [taoensso.timbre :as log])
   (:import (zaffre.terminal Terminal)
            (zaffre.font CompositeFont CP437Font TileSet TTFFont)))
@@ -51,34 +50,26 @@
                            :2 (atom {})
                            :3 (atom {})}
             current-layer (atom :0)
-            current-tile  (atom (ffirst ztiles/fantasy-map))
-            ;; Every 33ms, draw a full frame
-            render-chan (go-loop []
-                          (dosync
-                            (zat/clear! terminal)
-                            (zutil/put-string terminal :ui 2 30 (format "layer: %s" (str @current-layer)))
-                            (when @current-tile
-                              (zutil/put-string terminal :ui 16 30 (str @current-tile)))
-                            (zat/put-chars! terminal :ui palette)
-                            (zat/put-chars! terminal :ui [{:c @current-tile :fg [255 255 255] :bg [128 128 128] :x 0 :y 30}])
-                            (zat/put-chars! terminal :0 (map (fn [[[col row] t]]
-                                                               {:c t :fg [255 255 255] :bg [0 0 0] :x col :y row})
-                                                             @(get layers :0)))
-                            (zat/put-chars! terminal :1 (map (fn [[[col row] t]]
-                                                               {:c t :fg [255 255 255] :bg [0 0 0] :x col :y row})
-                                                             @(get layers :1)))
-                            (zat/put-chars! terminal :2 (map (fn [[[col row] t]]
-                                                               {:c t :fg [255 255 255] :bg [0 0 0] :x col :y row})
-                                                             @(get layers :2)))
-                            (zat/put-chars! terminal :3 (map (fn [[[col row] t]]
-                                                               {:c t :fg [255 255 255] :bg [0 0 0] :x col :y row})
-                                                             @(get layers :3)))
-                            (zat/refresh! terminal))
-                          ;; ~30fps
-                          (Thread/sleep 33)
-                          (recur))]
-        ;(async/sub term-pub :keypress key-chan)
-        ;(async/sub term-pub :click mouse-chan)
+            current-tile  (atom (ffirst ztiles/fantasy-map))]
+        ;; Every 33ms, draw a full frame
+        (zat/do-frame terminal 33
+          (zutil/put-string terminal :ui 2 30 (format "layer: %s" (str @current-layer)))
+          (when @current-tile
+            (zutil/put-string terminal :ui 16 30 (str @current-tile)))
+          (zat/put-chars! terminal :ui palette)
+          (zat/put-chars! terminal :ui [{:c @current-tile :fg [255 255 255] :bg [128 128 128] :x 0 :y 30}])
+          (zat/put-chars! terminal :0 (map (fn [[[col row] t]]
+                                             {:c t :fg [255 255 255] :bg [0 0 0] :x col :y row})
+                                           @(get layers :0)))
+          (zat/put-chars! terminal :1 (map (fn [[[col row] t]]
+                                             {:c t :fg [255 255 255] :bg [0 0 0] :x col :y row})
+                                           @(get layers :1)))
+          (zat/put-chars! terminal :2 (map (fn [[[col row] t]]
+                                             {:c t :fg [255 255 255] :bg [0 0 0] :x col :y row})
+                                           @(get layers :2)))
+          (zat/put-chars! terminal :3 (map (fn [[[col row] t]]
+                                             {:c t :fg [255 255 255] :bg [0 0 0] :x col :y row})
+                                           @(get layers :3))))
         (zevents/add-event-listener terminal :keypress 
           (fn [keypress]
             (log/info "got keypress" keypress)
@@ -110,5 +101,4 @@
               ;; draw new tile
               (do
                 (log/info "placing tile at" [row col])
-                (swap! (get layers @current-layer) (fn [layer] (assoc layer [col row] @current-tile)))))))
-        (zevents/wait-for-close terminal [render-chan mouse-chan])))))
+                (swap! (get layers @current-layer) (fn [layer] (assoc layer [col row] @current-tile)))))))))))
