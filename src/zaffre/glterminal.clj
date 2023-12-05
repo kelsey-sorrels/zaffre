@@ -285,7 +285,7 @@
        (log/info "byte-buffer" icon-array)
        (GL11/glViewport 0 0 screen-width screen-height)
        ;; Release the Display so that any thread can aquire it including this thread - the thread that
-       ;; created it.j
+       ;; created it.
        (Display/releaseContext)
        ;; Signal to parent that display has been created
        (.countDown latch)
@@ -1085,37 +1085,38 @@
       ;; Poll keyboard in background thread and offer input to key-chan
       ;; If gl-lock is false ie: the window has been closed, put :exit on the key-chan
       (go-loop []
-         (with-gl-context gl-lock
-           (try
-             (loop []
-               (when (Keyboard/next)
-                 (when (Keyboard/getEventKeyState)
-                   (let [character (Keyboard/getEventCharacter)
-                         key       (Keyboard/getEventKey)]
-                     (convert-key-code character key on-key-fn)))
-                 (recur)))
-             (catch Exception e
-               (log/error "Error getting keyboard input" e)))
-           (try
-             (loop []
-               (when (Mouse/next)
-                 (let [button (Mouse/getEventButton)
-                       state  (if (Mouse/getEventButtonState) :mousedown :mouseup)
-                       event-x ^int (Mouse/getEventX)
-                       event-y ^int (Mouse/getEventY)
-                       {:keys [screen-height
-                               character-width
-                               character-height]} (get @font-textures (font-key @normal-font))
-                       col    (quot event-x (int character-width))
-                       row    (quot (- (int screen-height) event-y) (int character-height))]
-                   (when (<= 0 button 2)
-                     (async/put! mouse-chan (case button
-                       0 {:button :left :state state :col col :row row}
-                       1 {:button :right :state state :col col :row row}
-                       2 {:button :middle :state state :col col :row row}))))
-                 (recur)))
-             (catch Exception e
-               (log/error "Error getting keyboard input" e)))
+        (with-gl-context gl-lock
+          (try
+            (loop []
+              (when (Keyboard/next)
+                (when (Keyboard/getEventKeyState)
+                  (let [character (Keyboard/getEventCharacter)
+                        key       (Keyboard/getEventKey)]
+                    (convert-key-code character key on-key-fn)))
+                (recur)))
+            (catch Exception e
+              (log/error "Error getting keyboard input" e)))
+          (try
+            (loop []
+              (when (Mouse/next)
+                (let [button (Mouse/getEventButton)
+                      state  (if (Mouse/getEventButtonState) :mousedown :mouseup)
+                      event-x ^int (Mouse/getEventX)
+                      event-y ^int (Mouse/getEventY)
+                      {:keys [screen-height
+                              character-width
+                              character-height]} (get @font-textures (font-key @normal-font))
+                      col    (quot event-x (int character-width))
+                      row    (quot (- (int screen-height) event-y) (int character-height))]
+                  (when (<= 0 button 2)
+                    (async/put! mouse-chan (case button
+                      0 {:button :left :state state :col col :row row}
+                      1 {:button :right :state state :col col :row row}
+                      2 {:button :middle :state state :col col :row row}))))
+                (recur)))
+            (catch Exception e
+              (log/error "Error getting mouse input" e)))
+          (try
             (let [{:keys [screen-height
                           character-width
                           character-height]} (get @font-textures (font-key @normal-font))
@@ -1126,11 +1127,13 @@
               (when (not= [col row] @mouse-col-row)
                 (async/>! mouse-chan {:mouse-leave @mouse-col-row})
                 (reset! mouse-col-row [col row])
-                (async/>! mouse-chan {:mouse-enter @mouse-col-row}))))
-         (if @gl-lock
-           (do
-             (Thread/sleep 5)
-             (recur))
-           (on-key-fn :exit)))
+                (async/>! mouse-chan {:mouse-enter @mouse-col-row})))
+            (catch Throwable e
+              (log/error "Error getting mouse movement" e))))
+        (if @gl-lock
+          (do
+            (Thread/sleep 5)
+            (recur))
+          (on-key-fn :exit)))
       terminal))
 
