@@ -217,49 +217,40 @@
      ;;(GLFW/glfwSetErrorCallback (GLFWErrorCallback/createPrint System/out))
      (GLFW/glfwSetErrorCallback (proxy [GLFWErrorCallback] []
                                            (invoke [error description] (log/error "GLFW error:" error description))))
-     ;(future
-       ;(GLUtil/setupDebugMessageCallback System/out)
-       (when-not (= (GLFW/glfwInit) GLFW/GLFW_TRUE)
-         (assert "Unable to initialize GLFW"))
-       (GLFW/glfwDefaultWindowHints)
-       (GLFW/glfwWindowHint GLFW/GLFW_VISIBLE GLFW/GLFW_FALSE)
-       (GLFW/glfwWindowHint GLFW/GLFW_RESIZABLE GLFW/GLFW_FALSE)
-       
-       (GLFW/glfwWindowHint GLFW/GLFW_CONTEXT_VERSION_MAJOR 3)
-       (GLFW/glfwWindowHint GLFW/GLFW_CONTEXT_VERSION_MINOR 2)
-       (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_PROFILE GLFW/GLFW_OPENGL_CORE_PROFILE)
-       (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_FORWARD_COMPAT GLFW/GLFW_TRUE)
-       (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_DEBUG_CONTEXT GLFW/GLFW_TRUE)
-       (if-let [window (GLFW/glfwCreateWindow (int screen-width) (int screen-height) (str title) 0 0)]
-         (do
-           ;(Display/setDisplayMode (DisplayMode. screen-width screen-height))
-           ;(Display/setTitle title)
-           #_(when icon-array
-             (log/info "Setting icons")
-             ;(Display/setIcon icon-array)
-             (Thread/sleep 100))
-           (log/info "byte-buffer" icon-array)
-           (let [vidmode      (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor))]
-             (GLFW/glfwSetWindowPos
-               window
-               (/ (- (.width vidmode) screen-width) 2)
-               (/ (- (.height vidmode) screen-height) 2))
-             (GLFW/glfwMakeContextCurrent window)
-             (GLFW/glfwSwapInterval 1)
-             (GLFW/glfwShowWindow window)
-             (let [capabilities (GL/createCapabilities)]
-               (GL11/glViewport 0 0 screen-width screen-height)
-               ;(GL11/glClearColor 0.0 0.0 1.0 1.0)
-               ;(except-gl-errors (str "glClearColor  " 0.0 0.0 1.0 1.0))
-               ;(GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_DEPTH_BUFFER_BIT))
-               ;(GLFW/glfwSwapBuffers window)
-               ;; Release the Display so that any thread can aquire it including this thread - the thread that
-               ;; created it.
-               ;(Display/releaseContext)
-               (GLFW/glfwMakeContextCurrent 0)
-               ;; Signal to parent that display has been created
-               [window capabilities])))
-       (throw (RuntimeException. "Failed to create the GLFW window")))))
+     ;(GLUtil/setupDebugMessageCallback System/out)
+     (when-not (= (GLFW/glfwInit) GLFW/GLFW_TRUE)
+       (assert "Unable to initialize GLFW"))
+     (GLFW/glfwDefaultWindowHints)
+     (GLFW/glfwWindowHint GLFW/GLFW_VISIBLE GLFW/GLFW_FALSE)
+     (GLFW/glfwWindowHint GLFW/GLFW_RESIZABLE GLFW/GLFW_FALSE)
+     
+     (GLFW/glfwWindowHint GLFW/GLFW_CONTEXT_VERSION_MAJOR 3)
+     (GLFW/glfwWindowHint GLFW/GLFW_CONTEXT_VERSION_MINOR 2)
+     (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_PROFILE GLFW/GLFW_OPENGL_CORE_PROFILE)
+     (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_FORWARD_COMPAT GLFW/GLFW_TRUE)
+     (GLFW/glfwWindowHint GLFW/GLFW_OPENGL_DEBUG_CONTEXT GLFW/GLFW_TRUE)
+     (if-let [window (GLFW/glfwCreateWindow (int screen-width) (int screen-height) (str title) 0 0)]
+       (do
+         ; TODO: set window icons
+         #_(when icon-array
+           (log/info "Setting icons")
+           ;(Display/setIcon icon-array)
+           (Thread/sleep 100))
+         (log/info "byte-buffer" icon-array)
+         (let [vidmode      (GLFW/glfwGetVideoMode (GLFW/glfwGetPrimaryMonitor))]
+           (GLFW/glfwSetWindowPos
+             window
+             (/ (- (.width vidmode) screen-width) 2)
+             (/ (- (.height vidmode) screen-height) 2))
+           (GLFW/glfwMakeContextCurrent window)
+           (GLFW/glfwSwapInterval 1)
+           (GLFW/glfwShowWindow window)
+           (let [capabilities (GL/createCapabilities)]
+             (GL11/glViewport 0 0 screen-width screen-height)
+             (GLFW/glfwMakeContextCurrent 0)
+             ;; Signal to parent that display has been created
+             [window capabilities])))
+     (throw (RuntimeException. "Failed to create the GLFW window")))))
 
 (defn- load-shader
   [^String shader-str ^Integer shader-type]
@@ -321,12 +312,12 @@
   ([viewport-width viewport-height]
     (ortho-matrix-buffer viewport-width viewport-height (BufferUtils/createFloatBuffer 16)))
   ([viewport-width viewport-height ^FloatBuffer matrix-buffer]
+    ; TODO: use simpler method to construct matrix
     #_(let [ortho-matrix (doto (Matrix4f.)
                              (.ortho2D 0 viewport-width 0 viewport-height))
           matrix-buffer matrix-buffer]
           (.clear matrix-buffer)
-          (.get ortho-matrix matrix-buffer)
-          (.flip matrix-buffer))
+          (.get ortho-matrix matrix-buffer))
     (let [ortho-matrix (doto (Matrix4f.) (.identity))
           matrix-buffer matrix-buffer
           zNear   10
@@ -500,7 +491,7 @@
             ^ByteBuffer bbnil nil]
         (log/info "screen size" screen-width "x" screen-height)
         (try
-          ;; TODO: fix
+          ;; TODO: fix fullscreen
           #_(when-not @fullscreen
             (Display/setDisplayMode (DisplayMode. screen-width screen-height)))
           ;; resize FBO
@@ -559,11 +550,6 @@
         (loop-with-index row [line (reverse @character-map)]
           (loop-with-index col [c line]
             (let [chr        (or (get c :fx-character) (get c :character))
-                  #_#_chr        (if (and (= layer-id base-layer-id)
-                                      (char? chr)
-                                      (= (char chr) (char 0)))
-                                 \space
-                                 chr)
                   highlight  (= @cursor-xy [col (- rows row 1)])
                   [fg-r fg-g fg-b] (if highlight
                                      (or (get c :fx-bg-color)  (get c :bg-color))
@@ -805,7 +791,8 @@
                              line))
                      cm)))))
   (destroy! [_]
-    (reset! destroyed true)))
+    (reset! destroyed true)
+    (async/put! term-chan :close)))
 
 
 (defn make-terminal
@@ -964,7 +951,7 @@
                                            (with-gl-context gl-lock window capabilities
                                              (log/info "getting location of uniform" uniform-name)
                                              (let [location (GL20/glGetUniformLocation fb-pgm-id (str uniform-name))]
-                                               #_(assert (not (neg? jocation)) (str "Could not find location for uniform " uniform-name location))
+                                               #_(assert (not (neg? location)) (str "Could not find location for uniform " uniform-name location))
                                                (log/info "got location of uniform" uniform-name location)
                                                location))]))
                                  {}
@@ -1075,6 +1062,7 @@
       (when @fullscreen
         (zat/fullscreen! terminal (first (zat/fullscreen-sizes terminal))))
       ;; Start font file change listener thread
+      ; TODO: fix resource reloader
       #_(cwc/start-watch [{:path "./fonts"
                          :event-types [:modify]
                          :bootstrap (fn [path] (println "Starting to watch " path))
@@ -1093,57 +1081,6 @@
       (GLFW/glfwSetCharCallback window char-callback)
       (GLFW/glfwSetMouseButtonCallback window mouse-button-callback)
       (GLFW/glfwSetCursorPosCallback window cursor-pos-callback)
-      #_(go-loop []
-        (with-gl-context gl-lock window capabilities
-          (try
-            (loop []
-              (when (Keyboard/next)
-                (when (Keyboard/getEventKeyState)
-                  (let [character (Keyboard/getEventCharacter)
-                        key       (Keyboard/getEventKey)]
-                    (convert-key-code character key on-key-fn)))
-                (recur)))
-            (catch Exception e
-              (log/error "Error getting keyboard input" e)))
-          (try
-            (loop []
-              (when (Mouse/next)
-                (let [button (Mouse/getEventButton)
-                      state  (if (Mouse/getEventButtonState) :mousedown :mouseup)
-                      event-x ^int (Mouse/getEventX)
-                      event-y ^int (Mouse/getEventY)
-                      {:keys [screen-height
-                              character-width
-                              character-height]} (get @font-textures (font-key @normal-font))
-                      col    (quot event-x (int character-width))
-                      row    (quot (- (int screen-height) event-y) (int character-height))]
-                  (when (<= 0 button 2)
-                    (async/put! term-chan (case button
-                      0 {:button :left :state state :col col :row row}
-                      1 {:button :right :state state :col col :row row}
-                      2 {:button :middle :state state :col col :row row}))))
-                (recur)))
-            (catch Exception e
-              (log/error "Error getting mouse input" e)))
-          (try
-            (let [{:keys [screen-height
-                          character-width
-                          character-height]} (get @font-textures (font-key @normal-font))
-                  mouse-x ^int (Mouse/getX)
-                  mouse-y ^int (Mouse/getY)
-                  col     (quot mouse-x (int character-width))
-                  row     (quot (- (int screen-height) mouse-y) (int character-height))]
-              (when (not= [col row] @mouse-col-row)
-                (async/>! term-chan {:mouse-leave @mouse-col-row})
-                (reset! mouse-col-row [col row])
-                (async/>! term-chan {:mouse-enter @mouse-col-row})))
-            (catch Throwable e
-              (log/error "Error getting mouse movement" e))))
-        (if @gl-lock
-          (do
-            (Thread/sleep 5)
-            (recur))
-          (on-key-fn :exit)))
       (future
         ;; Wait for Display to be created
         (.await latch)
