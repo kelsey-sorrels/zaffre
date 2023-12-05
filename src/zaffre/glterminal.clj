@@ -30,7 +30,8 @@
 ;; GLFW won't maintain a strong reference to our callback objects, so we have to
 (def key-callback-atom (atom nil))
 (def char-callback-atom (atom nil))
-(def mouse-callback-atom (atom nil))
+(def mouse-button-callback-atom (atom nil))
+(def cursor-pos-callback-atom (atom nil))
 
 (defmacro with-gl-context
   "Executes exprs in an implicit do, while holding the monitor of x and aquiring/releasing the OpenGL context.
@@ -450,7 +451,7 @@
              (reduce (fn [cm [row row-characters]]
                        (if (< -1 row rows)
                          (assoc cm
-                           row
+                           (int row)
                            (persistent!
                              (reduce
                                (fn [line c]
@@ -460,9 +461,9 @@
                                          fg-color  fg
                                          bg-color  bg
                                          character (make-terminal-character (get c :c) fg-color bg-color #{})]
-                                     (assoc! line (get c :x) character))
+                                     (assoc! line (int (get c :x)) character))
                                    line))
-                               (transient (get cm row))
+                               (transient (get cm (int row)))
                                row-characters)))
                          cm))
                      cm
@@ -972,15 +973,34 @@
                       name-buffer (BufferUtils/createByteBuffer 100)
                       uniform-name (GL20/glGetActiveUniform fb-pgm-id idx 256 size-buffer type-buffer)]
                 (log/info "Found uniform" uniform-name))))
-          key-callback (proxy [GLFWKeyCallback] []
-                                        (invoke [window key scancode action mods]
-                                          (when-let [key (zkeyboard/convert-key-code key scancode action mods)]
-                                            (log/info "key" key)
-                                            (on-key-fn key))))
-          char-callback (proxy [GLFWCharCallback] []
-                                        (invoke [window codepoint]
-                                          (log/info "char" key)
-                                          (on-key-fn (first (Character/toChars codepoint)))))
+          key-callback          (proxy [GLFWKeyCallback] []
+                                  (invoke [window key scancode action mods]
+                                    (when-let [key (zkeyboard/convert-key-code key scancode action mods)]
+                                      (log/info "key" key)
+                                      (on-key-fn key))))
+          char-callback         (proxy [GLFWCharCallback] []
+                                  (invoke [window codepoint]
+                                    (log/info "char" key)
+                                    (on-key-fn (first (Character/toChars codepoint)))))
+          mouse-button-callback (proxy [GLFWMouseButtonCallback] []
+                                  (invoke [window button action mods]
+                                    (let [state  (condp = (int action)
+                                                   GLFW/GLFW_PRESS :mousedown
+                                                   GLFW/GLFW_RELEASE :mouseup)
+                                          [col
+                                           row]   @mouse-col-row]
+                                      (async/put! mouse-chan (case button
+                                        0 {:button :left :state state :col col :row row}
+                                        1 {:button :right :state state :col col :row row}
+                                        2 {:button :middle :state state :col col :row row})))))
+          cursor-pos-callback   (proxy [GLFWCursorPosCallback] []
+                                  (invoke [window xpos ypos]
+                                    (let [col (int (quot xpos (int character-width)))
+                                          row (int (quot ypos (int character-height)))]
+                                      (when (not= [col row] @mouse-col-row)
+                                        (async/put! mouse-chan {:mouse-leave @mouse-col-row})
+                                        (reset! mouse-col-row [col row])
+                                        (async/put! mouse-chan {:mouse-enter @mouse-col-row})))))
           terminal
           ;; Create and return terminal
           (OpenGlTerminal. columns
@@ -1061,8 +1081,12 @@
       ;; If gl-lock is false ie: the window has been closed, put :exit on the key-chan
       (reset! key-callback-atom key-callback)
       (reset! char-callback-atom char-callback)
+      (reset! mouse-button-callback-atom mouse-button-callback)
+      (reset! cursor-pos-callback-atom cursor-pos-callback)
       (GLFW/glfwSetKeyCallback window key-callback)
       (GLFW/glfwSetCharCallback window char-callback)
+      (GLFW/glfwSetMouseButtonCallback window mouse-button-callback)
+      (GLFW/glfwSetCursorPosCallback window cursor-pos-callback)
       #_(go-loop []
         (with-gl-context gl-lock window capabilities
           (try
