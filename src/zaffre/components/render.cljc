@@ -17,7 +17,7 @@
 (def default-style
   {:color (unchecked-int 0xffffffff) #_[255 255 255 255]
    :background-color (unchecked-int 0x000000ff) #_[0 0 0 255]
-   :background-char \ 
+   :background-char \space
    :border-style :single
    :border 0
    :border-left 0
@@ -48,21 +48,21 @@
    :on-surface (zcolor/color 255 255 255)
    :on-error (zcolor/color 0 0 0)
    ; characters
-   :button-left "<"
-   :button-right ">"
-   :radio-checked "*"
-   :radio-unchecked " "
-   :radio-left "("
-   :radio-right ")"
-   :checkbox-checked "x"
-   :checkbox-unchecked " " 
-   :checkbox-left "["
-   :checkbox-right "]"
-   :progress-filled " "
-   :progress-empty "\u2592"
-   :slider-filled "\u2500"
-   :slider-empty "\u2500"
-   :slider-control "\u258C"
+   :button-left \<
+   :button-right \>
+   :radio-checked \*
+   :radio-unchecked \space
+   :radio-left \(
+   :radio-right \)
+   :checkbox-checked \x
+   :checkbox-unchecked \space
+   :checkbox-left \[
+   :checkbox-right \]
+   :progress-filled \space
+   :progress-empty \u2592
+   :slider-filled \u2500
+   :slider-empty \u2500
+   :slider-control \u258C
 })
 
 ;; Primitive elements
@@ -205,7 +205,7 @@
       v
       ; if not in cache, compute and place in cache
       ; try to resolve using m
-      (let [v (or (get m k)
+      (let [v (or (k m)
                    ; if not resolve using parent if parent exists and k is an inheiritable style
                    (when (and parent
                             (contains? inheritable-styles k))
@@ -269,7 +269,8 @@
          (number? y)
          (or (integer? color) (vector? color))
          (or (integer? background-color) (vector? background-color))
-         (string? s)]}
+         (or (coll? s)
+             (string? s))]}
   ;(log/info "render-string-into-container" x y color background-color s)
   (when (between -1 y (zt/num-rows target))
     (let [max-x (int (zt/num-cols target))
@@ -279,24 +280,39 @@
               c   (first s)]
           (when (and c 
                      (between -1 col max-x))
+            #_(assert (char? c) (str c s))
             (zt/set! target c blend-mode (int 0) color background-color col row)
             (recur (inc index) (rest s))))))))
+
+(defn word-wrap-or-last-word-wrap
+  [width height text-element]
+  (let [[_ props children host-dom requires-layout style-map] text-element
+        [last-element last-lines] (some-> host-dom deref meta (get :lines) first)]
+    (if (= last-element [props children])
+      last-lines
+      (let [lines (ztext/word-wrap-text-tree width height text-element)]
+        (swap! host-dom vary-meta assoc :lines {[props children] lines})
+        lines))))
 
 (defn render-text-into-container [target text-element]
   {:pre [(= (first text-element) :text)
          (map? (second text-element))
          (not (empty? (last text-element)))]}
   #_(log/info "render-text-into-container" text-element)
-  (let [[type {:keys [zaffre/layout] :as props} children _ _ style] text-element
+  (let [[type {:keys [zaffre/layout] :as props} children host-config requires-layout style] text-element
         {:keys [x y width height]} layout
         text-align (or (compute-style style :text-align) :left)
         mix-blend-mode (or (compute-style style :mix-blend-mode) (zt/blend-mode->byte :normal))
         overlay-percent (or (compute-style style :overlay-percent) 0)
         text-element (if (every? string? children)
-                       [:text props (map (fn [child] [:text {} [child]]) children)]
+                       [:text
+                        props
+                        (map (fn [child] [:text {} [child]]) children)
+                        host-config
+                        requires-layout]
                        text-element)
         #_ (log/info "text-element" text-element)
-        lines (ztext/word-wrap-text-tree width height text-element)]
+        lines (word-wrap-or-last-word-wrap width height text-element)]
     #_(log/trace "render-text-into-container lines" (vec lines))
     (zu/loop-with-index dy [line lines]
       (let [default-color (get default-style :color)
@@ -379,19 +395,33 @@
                   (get pixel :bg)
                   col row)))))))))
 
+(defn style-map-elements-add-content
+  [parent-style [type props children _ _ :as element]]
+  {:post [(= 6 (count %))]}
+  (let [element-style (merge-styles parent-style (get props :style {}))
+        content (compute-style element-style :content)]
+    (conj
+      (cond-> element
+        content
+          (assoc 2 [(str content)])
+        (not (contains? #{:text :img} type))
+          (assoc 2 
+            (map (partial style-map-elements-add-content element-style)
+                  children)))
+      element-style)))
+  
+  
 (defn element-seq
-  [parent-style [type props children host-dom requires-layout :as element]]
+  [[type _ children _ _ _  :as element]]
   "Cascades style-maps to children. Linearizes elements."
-  (let [element-style (merge-styles parent-style (get props :style {}))]
-    (assert (= (count element) 5) element)
-    (lazy-seq
-      (cons
-        ; add style-map to element
-        (conj element element-style)
-        ; include children if not :text or :img element
-        (when-not (contains? #{:text :img} type)
-          (mapcat (partial element-seq element-style)
-                  children))))))
+  (assert (= (count element) 6) (str (count element) element))
+  (lazy-seq
+    (cons
+      element
+      ; include children if not :text or :img element
+      (when-not (contains? #{:text :img} type)
+        (mapcat element-seq
+                children)))))
 
 (defmulti render-component-into-container (fn [_ element] (first element)))
 
@@ -433,14 +463,6 @@
         background-char (or (compute-style style :background-char) \space)
         border (compute-style style :border)
         border-style (compute-style style :border-style)
-        border-top (or (compute-style style :border-top) border)
-        border-bottom (or (compute-style style :border-bottom) border)
-        border-left (or (compute-style style :border-left) border)
-        border-right (or (compute-style style :border-right) border)
-        border-color-top (compute-style style :border-color-top)
-        border-color-bottom (compute-style style :border-color-bottom)
-        border-color-left (compute-style style :border-color-left)
-        border-color-right (compute-style style :border-color-right)
         mix-blend-mode (or (compute-style style :mix-blend-mode) (zt/blend-mode->byte :normal))]
     (assert width)
     (assert height)
@@ -450,25 +472,37 @@
     #_(log/info "view porps style" (get props :style))
     ;; render background when set
     (when background-color
-      (doseq [dy (range height)
-              :let [color (or color (get default-style :color))]]
-        #_(log/info "color" color "background-color" background-color)
-        (assert (or (integer? background-color) (vector? background-color)))
-        (render-string-into-container target x (+ y dy) color background-color (clojure.string/join (repeat width background-char)) mix-blend-mode)))
+      (let [line (repeat width background-char)] 
+        (doseq [dy (range height)
+                :let [color (or color (get default-style :color))]]
+          #_(log/info "color" color "background-color" background-color)
+          (assert (or (integer? background-color) (vector? background-color)))
+          (render-string-into-container target x (+ y dy) color background-color line mix-blend-mode))))
     ; render border when set
     (when border-style
-      (let [border-map (case border-style
-                         :single single-border
-                         :double double-border)]
+      (let [border-top (or (compute-style style :border-top) border)
+            border-bottom (or (compute-style style :border-bottom) border)
+            border-left (or (compute-style style :border-left) border)
+            border-right (or (compute-style style :border-right) border)
+            border-color-top (compute-style style :border-color-top)
+            border-color-bottom (compute-style style :border-color-bottom)
+            border-color-left (compute-style style :border-color-left)
+            border-color-right (compute-style style :border-color-right)
+            border-map (case border-style
+                             :single single-border
+                             :double double-border)]
         ; render top
         (when (or (< 0 border) (< 0 border-top))
           (render-string-into-container target x y border-color-top background-color
-            (str (when (or (< 0 border) (< 0 border-left))
-                   (get border-map :top-left))
-                 (clojure.string/join (repeat (- width (+ (or border border-left) (or border border-right)))
-                                              (get border-map :horizontal)))
-                 (when (or (< 0 border) (< 0 border-right))
-                   (get border-map :top-right)))
+            (concat
+              (if (or (< 0 border) (< 0 border-left))
+                [(get border-map :top-left)]
+                [])
+              (repeat (- width (+ (or border border-left) (or border border-right)))
+                      (get border-map :horizontal))
+              (if (or (< 0 border) (< 0 border-right))
+                [(get border-map :top-right)]
+                []))
              mix-blend-mode))
         ; render middle
         (doseq [dy (range (- height 2))]
@@ -510,7 +544,7 @@
   ([element]
     (inherit-overflow-bounds nil element))
   ([parent-bounds element]
-    (let [[type props children host-dom requires-layout] element]
+    (let [[type props children host-dom requires-layout style-map] element]
       (cond
         (or (= type :text) (= type :img))
           [type
@@ -519,19 +553,22 @@
              props)
            children
            host-dom
-           requires-layout]
+           requires-layout
+           style-map]
         (= (get-in props [:style :overflow]) :hidden)
           [type
            props
            (map (partial inherit-overflow-bounds (layout->bounds (get props :zaffre/layout))) children)
            host-dom
-           requires-layout]
+           requires-layout
+           style-map]
         :else
           [type
            props
            (map (partial inherit-overflow-bounds parent-bounds) children)
            host-dom
-           requires-layout]))))
+           requires-layout
+           style-map]))))
 
 (defn zipper-elements
   [root-element]
@@ -583,12 +620,12 @@
   #_(log/info "Render layer into container")
   #_(log/trace "render-layer-into-container" layer)
   ; replace :content with style-values
-  (let [layer-with-content (replace-content layer style-map)
-        layer-en-place (layout-or-last-layout layer)
+  (let [style-map-elements (style-map-elements-add-content style-map layer)
+        layer-en-place (layout-or-last-layout style-map-elements)
         ; linearize and add style-maps
         elements (->> layer-en-place
                    inherit-overflow-bounds
-                   (element-seq style-map)
+                   element-seq
                    vec)]
     #_(log/info "render-layer-into-container layer" (zc/tree->str layer))
     #_(log/info "render-layer-into-container layer-en-place" layer-en-place)

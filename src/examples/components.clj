@@ -3,7 +3,7 @@
             [zaffre.components :as zc]
             [zaffre.components.events :as zce]
             [zaffre.components.ui :as zcui]
-            [zaffre.components.render2 :as zcr]
+            [zaffre.components.render :as zcr]
             [zaffre.glterminal :as zgl]
             [zaffre.events :as zevents]
             [zaffre.color :as zcolor]

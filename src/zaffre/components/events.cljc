@@ -1,7 +1,7 @@
 (ns zaffre.components.events
   (:require [clojure.test :refer [is]]
             [taoensso.timbre :as log]
-            [zaffre.components.render2 :as zcr]
+            [zaffre.components.render :as zcr]
             [zaffre.components :as zc]
             [zaffre.components.ui :as zcui]))
 
@@ -61,10 +61,4 @@
          (on-keypress
            element
            {:key key})))))
-
-(defn send-events-to-dom [events dom]
-  (doseq [event events]
-    (send-event-to-dom event dom))
-  ;; Take all enqueued state changes and reduce them down to new state
-  (zc/update-state! zc/*updater*))
 

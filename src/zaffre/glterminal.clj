@@ -236,7 +236,6 @@
 (defn- init-display [title screen-width screen-height icon-paths destroyed]
    ;; init-natives must be called before the Display is created
    (init-natives)
-   ;;(GLFW/glfwSetErrorCallback (GLFWErrorCallback/createPrint System/out))
    (GLFW/glfwSetErrorCallback (proxy [GLFWErrorCallback] []
                                 (invoke [error description]
                                   (log/error "GLFW error:" error (GLFWErrorCallback/getDescription description)))))

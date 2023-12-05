@@ -765,7 +765,7 @@ maps))
                line1 line2))
         (partition 2 data)))
 
-(def ListImage (zc/create-react-class {
+#_(def ListImage (zc/create-react-class {
   :display-name "ListImage"
   :render (fn [this]
     (let [{:keys [data]} (zc/props this)
@@ -863,7 +863,7 @@ maps))
               [:text {:key "right" :style {:color :ref/background-overlay-4}} "\u251C"]]
       children)]))
 ;; style taken from https://www.nucleo.com.au/using-flexbox-for-modal-dialogs/
-(def Popup (zc/create-react-class {
+#_(def Popup (zc/create-react-class {
   :display-name "Popup"
   :render (fn [this]
     (log/trace "Popup render")
