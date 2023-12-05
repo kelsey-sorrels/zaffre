@@ -1,7 +1,7 @@
 (ns zaffre.keyboard
   (:import (org.lwjgl.glfw GLFW)))
 
-(defn convert-key-code [event-char event-key]
+(defn convert-key-code [event-key event-scancode]
   ;; Cond instead of case. For an unknown reason, case does not match event-key to GLFW/* constants.
   ;; Instead it always drops to the default case
   (when-let [key (condp = (int event-key)
@@ -78,8 +78,8 @@
                    ;GLFW/GLFW_KEY_SECTION       :section
                    ;GLFW/GLFW_KEY_SYSRQ         :sysrq
                    ;; event-key didn't match, default to event-char if it is printable, else nil
-                   (when (<= (int (first " ")) (int event-char) (int \~))
-                     event-char))]
+                   (when (<= (int (first " ")) (int event-key) (int \~))
+                     (char event-key)))]
     key))
 
 

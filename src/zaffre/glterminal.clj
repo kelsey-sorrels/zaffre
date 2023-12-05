@@ -27,6 +27,10 @@
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* true)
 
+;; GLFW won't maintain a strong reference to our callback objects, so we have to
+(def key-callback-atom (atom nil))
+(def mouse-callback-atom (atom nil))
+
 (defmacro with-gl-context
   "Executes exprs in an implicit do, while holding the monitor of x and aquiring/releasing the OpenGL context.
   Will release the monitor of x in all circumstances."
@@ -70,10 +74,10 @@
             ~@body
             (recur (next coll#) (inc ~idx-name)))))))
 
-(defn convert-key-code [event-char event-key on-key-fn]
+(defn convert-key-code [event-key event-scancode on-key-fn]
   ;; Cond instead of case. For an unknown reason, case does not match event-key to Keyboard/* constants.
   ;; Instead it always drops to the default case
-  (when-let [key (zkeyboard/convert-key-code event-char event-key)]
+  (when-let [key (zkeyboard/convert-key-code event-key event-scancode)]
     (log/info "key" key)
     (on-key-fn key)))
 
@@ -976,7 +980,9 @@
                 (log/info "Found uniform" uniform-name))))
           key-callback (proxy [GLFWKeyCallback] []
                                         (invoke [window key scancode action mods]
-                                          (on-key-fn (zkeyboard/convert-key-code key scancode))))
+                                          (when-let [key (zkeyboard/convert-key-code key scancode)]
+                                            (log/info "key" key)
+                                            (on-key-fn key))))
           terminal
           ;; Create and return terminal
           (OpenGlTerminal. columns
@@ -1055,6 +1061,7 @@
                          :options {:recursive true}}])
       ;; Poll keyboard in background thread and offer input to key-chan
       ;; If gl-lock is false ie: the window has been closed, put :exit on the key-chan
+      (reset! key-callback-atom key-callback)
       (GLFW/glfwSetKeyCallback window key-callback)
       #_(go-loop []
         (with-gl-context gl-lock window capabilities
